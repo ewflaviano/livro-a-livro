@@ -1,6 +1,7 @@
+import { BookCover } from '../components/BookCover';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Grid2X2, List, BookOpen } from 'lucide-react';
+import { Grid2X2, List } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import type { ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear } from '../../domain/library';
@@ -93,7 +94,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         {visible.map((book) => <li key={book.id}>
           <Link className="book-entry" to={`/livro/${book.id}`} state={{ returnTo: location.pathname }}
             onClick={() => positions.set(location.pathname, window.scrollY)}>
-            <div className="book-cover" aria-hidden="true"><BookOpen /><span>{book.title}</span></div>
+            <BookCover cover={book.cover} title={book.title} />
             <div className="book-information"><h2>{book.title}</h2><p>{book.authors.length ? book.authors.join(', ') : 'Autoria não informada'}</p>
               <span className={`reading-status reading-status--${book.status}`}>{statusLabels[book.status]}</span>
               {preferences.mode === 'list' && book.rating !== null && <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span>}
@@ -101,6 +102,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
           </Link>
         </li>)}
       </ol>}
+    {visible.some(book => book.cover?.provider === 'open_library') && <p className="field-help">Capas da Open Library usam conexão. Sem uma imagem disponível, o título e seus registros continuam aqui.</p>}
     <p className="local-note">Seus livros ficam neste dispositivo, neste navegador. <Link to="/dados">Seus dados</Link></p>
   </section>;
 }

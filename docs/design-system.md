@@ -273,3 +273,9 @@ Essa direção ainda não está implementada e não altera os tokens ou o catál
 A seção vem antes de Google Drive e privacidade. Exibe destino local, conteúdo privado do JSON e limite de 50 MiB; não apresenta autenticação como requisito. Seleção inicia “Validando o arquivo e as capas neste dispositivo…”, depois mostra contagens/anos do arquivo e deste dispositivo. Prévia permite Exportar biblioteca atual e Cancelar importação; a substituição abre diálogo de confirmação com rótulo explícito e singular/plural correto.
 
 Cancelar diálogo retorna ao acionador; cancelar importação, concluir ou recusar restauração retorna ao seletor. Preparação/substituição têm estado anunciado e confirmação fica indisponível durante o commit. Exportação anuncia “Download iniciado; confira se ele foi salvo”, sem afirmar backup concluído. Formato, versão, excesso, quota e conflito têm mensagens distintas. A nota privada acompanha o JSON/Drive quando a pessoa escolhe essas ações, e permanece excluída da imagem anual.
+
+### Capas na biblioteca — issue #42
+
+Revisão da busca, estante em Grade/Lista e detalhe compartilham a mesma moldura 2:3. Usar `object-fit: contain`; nenhuma parte da imagem é cortada para preencher o espaço. Capas enviadas continuam disponíveis offline. Referências Open Library usam conexão, com aviso na estante/detalhe e fallback tipográfico em erro, ausência ou offline.
+
+Título e autoria são conteúdo adjacente, não dependem da imagem nem ficam dentro do recorte. A imagem tem alt vazio por ser decorativa junto ao título; fallback é oculto para leitores de tela para evitar repetir o nome. Na busca, carregar apenas a capa do resultado já escolhido; a lista de resultados não dispara download de imagens. O catálogo permanece uma demonstração estática sem imagens remotas.

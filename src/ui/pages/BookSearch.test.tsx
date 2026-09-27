@@ -42,12 +42,19 @@ describe('optional book search UI', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Sua nota privada' }), { target: { value: 'Nota que fica local' } });
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     await screen.findByRole('heading', { name: 'Título revisado' });
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
     const saved = (await repository.readAll()).books[0];
     expect(saved).toMatchObject({ title: 'Título revisado', note: 'Nota que fica local', publicationYear: null, pageCount: null,
       cover: { provider: 'open_library', coverId: 123 }, source: { provider: 'open_library', workId: 'OL12W', editionId: null } });
     expect(fetch).toHaveBeenCalledOnce();
     await userEvent.click(screen.getByRole('link', { name: 'Voltar para a estante' }));
     await screen.findByRole('heading', { name: /Estante/ }); expect(fetch).toHaveBeenCalledOnce();
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    await userEvent.click(screen.getByRole('button', { name: 'Lista' }));
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    await userEvent.click(screen.getByRole('link', { name: /Título revisado/ }));
+    await screen.findByRole('heading', { name: 'Título revisado' });
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
   });
   it('keeps manual entry available on malformed data, empty results and offline', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response('not json'));
