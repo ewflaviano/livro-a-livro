@@ -19,6 +19,8 @@ A busca explícita usa a Open Library somente para sugerir um rascunho revisáve
 
 ## Desenvolvimento
 
+O núcleo opcional da [API de autorização do Drive](docs/auth-api.md) está em `api/` (Rust/Axum), com provider Google e testes de sessão. A composição persistente AWS e a conexão do frontend ainda são gates de entrega; nenhum serviço foi publicado nesta etapa.
+
 Use `npm install` e `npm run dev` para abrir o aplicativo localmente. `npm test`, `npm run typecheck` e `npm run build` verificam testes, tipos e produção. O build é estático e fica em `dist/`.
 
 ## Design system

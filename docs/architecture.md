@@ -531,6 +531,8 @@ Domínios de site e API permanecem separados. `api.*` é útil desde o início p
 
 ## 14. API Rust pequena; biblioteca sincronizada diretamente com Google Drive
 
+**Implementação parcial da issue #10:** `api/` contém o núcleo Axum, provider Google, portas de armazenamento/criptografia e entrada Lambda reutilizável. [Contrato e gates de produção](auth-api.md). O runtime não possui store em memória: persistência DynamoDB/KMS e composição executável são parte da issue #13. Sem publicação ou conexão do frontend nesta etapa.
+
 ### 14.1 Fronteira definitiva e comparação com o BioRotina
 
 **Regra inviolável:** livros, notas, avaliações, snapshots, hashes de conteúdo e arquivos de backup **não são enviados à nossa API, AWS ou telemetria**. O caminho é **PWA ↔ Google Drive**. A API recebe código OAuth, mantém sessão e usa refresh token protegido para fornecer acesso Google de curta duração ao navegador. Dados estritamente necessários à autenticação continuam protegidos no serviço; essa exceção técnica não inclui metadados de leitura. Não existe staging de biblioteca em S3, worker de upload, fila de snapshots, head de biblioteca no DynamoDB ou endpoint que aceite conteúdo pessoal de leitura.
