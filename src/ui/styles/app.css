@@ -158,7 +158,6 @@ h2 { font-size: var(--text-h2); }
   font-size: var(--text-small);
 }
 .pwa-status p { margin: var(--space-2) 0; }
-.pwa-update { margin-top: var(--space-4); }
 
 /* Shelf tools and navigation share the same compact rhythm on touch screens. */
 .bottom-navigation { display: none; }
@@ -223,3 +222,7 @@ h2 { font-size: var(--text-h2); }
 .global-action-error { flex-basis: 100%; margin: 0; font-size: var(--text-small); }
 
 .header-login-state { display: block; font-size: .68rem; line-height: 1.2; color: var(--color-text-secondary); }
+.pwa-update-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5); background: var(--color-surface-subtle); border-bottom: 1px solid var(--color-border); }
+.pwa-update-banner > div { flex: 1 1 240px; }
+.pwa-update-banner p { margin: 0; font-size: var(--text-small); }
+.pwa-update-banner button { flex-shrink: 0; }

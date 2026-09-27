@@ -7,7 +7,7 @@ import { createDriveClient } from '../sync/drive-client';
 import { createSyncCoordinator, type SyncCoordinator } from '../sync/coordinator';
 import type { SyncView } from '../sync/contracts';
 import { assertAuthorizationNavigationSafe } from './authorization-navigation';
-import { getPwaState } from '../pwa/register';
+import { getPwaState, holdPwaReload } from '../pwa/register';
 
 const local = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true';
 const enabled = local || import.meta.env.VITE_DRIVE_ENABLED === 'true';
@@ -35,7 +35,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         const fetcher = local ? (await import('../sync/local-client')).localTransport() : fetch;
         const auth = createAuthClient(fetcher);
         const next = createSyncCoordinator({ repository, resolutionRepository, store, auth, drive: binding => createDriveClient(auth, binding, fetcher),
-          online: () => navigator.onLine, visible: () => document.visibilityState !== 'hidden',
+          holdReload: holdPwaReload, online: () => navigator.onLine, visible: () => document.visibilityState !== 'hidden',
           hasDraft: () => getPwaState().blocked || getPwaState().update === 'applying', navigate: url => { assertAuthorizationNavigationSafe(); if (local) { window.location.hash = '/dados'; window.location.reload(); } else window.location.assign(url); },
         });
         const wake = () => { void next.wake().catch(() => {}); };

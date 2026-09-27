@@ -4,8 +4,9 @@ import { AppRouter } from './router';
 import '../../docs/tokens.css';
 import '../ui/styles/app.css';
 import { startInstallObservation } from '../pwa/install';
-import { registerPwa } from '../pwa/register';
+import { observePwaInteraction, registerPwa } from '../pwa/register';
 
+observePwaInteraction();
 startInstallObservation();
 if (import.meta.env.PROD) void registerPwa();
 

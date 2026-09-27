@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { applyPwaUpdate, checkPwaUpdate, getPwaState, subscribePwa } from '../../pwa/register';
+import { checkPwaUpdate, getPwaState, subscribePwa } from '../../pwa/register';
 
 export function PwaStatus({ detailed = false }: { detailed?: boolean }) {
   const [checking, setChecking] = useState(false);
@@ -22,14 +22,6 @@ export function PwaStatus({ detailed = false }: { detailed?: boolean }) {
     <p className="field-help">Instalar o aplicativo não cria uma cópia de segurança dos seus livros. A busca e capas externas precisam de conexão.</p>
     {detailed && <button className="button button-secondary" disabled={checking || !state.online || state.availability === 'unsupported'} onClick={() => void check()}>{checking ? 'Verificando…' : 'Verificar atualização'}</button>}
     {checkMessage && <p role="status">{checkMessage}</p>}
-    {state.update !== 'none' && <div className="pwa-update">
-      <p role="status">{state.update === 'other-tabs' ? 'Feche as outras abas e janelas do Livro a Livro antes de atualizar.' :
-        state.update === 'failed' ? 'Não foi possível atualizar agora. Você pode continuar usando sua estante.' : 'Uma atualização do aplicativo está disponível.'}</p>
-      {state.blocked && <p>Salve ou descarte suas alterações antes de atualizar.</p>}
-      <button className="button button-secondary" type="button" disabled={state.blocked || state.update === 'applying'} onClick={() => void applyPwaUpdate()}>
-        {state.update === 'applying' ? 'Atualizando…' : 'Atualizar aplicativo'}
-      </button>
-      <p className="field-help">A página será reaberta. Seus registros já salvos continuam neste dispositivo.</p>
-    </div>}
+
   </section>;
 }

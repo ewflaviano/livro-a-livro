@@ -96,3 +96,7 @@ Atualização de rollout: o responsável solicitou continuar seu teste manual em
 ### União simplificada — decisão após PR #60
 
 O teste manual levou à adoção da regra exata de `mergeAppData(current, remote)` do BioRotina: juntar todos os IDs, mantendo o registro local inteiro em divergências e as preferências deste navegador. IDs diferentes continuam separados. Uma única confirmação apresenta contagens e avisa sobre possível retorno de removidos; não há seleção por livro. Todas as pontas remotas entram, com precedência canônica entre variantes ausentes localmente. Recuperação e validações de concorrência permanecem.
+
+### Atualização automática na abertura — decisão do responsável
+
+Verificar e aplicar nova versão ao abrir, antes de interação e com biblioteca/sync/UI prontos e sem operação/rascunho. Se a pessoa já começou a usar ou há impedimento, aviso visível abaixo do cabeçalho. Primeira instalação não recarrega. Uma ativação terminada durante edição mantém ação Reabrir aplicativo, sem perder o rascunho. O app shell offline é específico do Livro a Livro; não copiar a política de push do BioRotina.

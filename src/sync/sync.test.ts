@@ -811,3 +811,34 @@ describe('V2 receiving, complete comparison and explicit union', () => {
   });
 
 });
+
+describe('reload operation capability', () => {
+  it('holds a complete sync cycle without treating its own hold as a draft, and always releases', async () => {
+    const s = await setup(); s.coordinator.close();
+    let held = 0; const release = vi.fn(() => { held--; });
+    const coordinator = createSyncCoordinator({ ...s.options, holdReload: () => { held++; return release; } }); close.push(coordinator.close);
+    await s.repository.commit({ kind: 'put', book: book() }, await s.repository.readRevision());
+    let finish!: () => void;
+    vi.mocked(s.remote.upload).mockImplementationOnce(async value => { expect(held).toBeGreaterThan(0); expect(s.options.hasDraft()).toBe(false); await new Promise<void>(resolve => { finish = resolve; }); s.snapshots.push(value); });
+    const syncing = coordinator.runNow(); await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(held).toBeGreaterThan(0); finish(); await syncing;
+    expect(coordinator.getSnapshot().status).toBe('synced'); expect(held).toBe(0);
+    vi.mocked(s.auth.startSignIn).mockRejectedValueOnce(new Error('synthetic'));
+    await expect(coordinator.connect()).rejects.toBeDefined(); expect(held).toBe(0);
+  });
+  it('holds pending login/logout actions and refuses them before effects while applying', async () => {
+    const s = await setup(); s.coordinator.close(); let held = 0, applying = false;
+    const coordinator = createSyncCoordinator({ ...s.options, holdReload: () => { if (applying) return null; held++; return () => { held--; }; } }); close.push(coordinator.close);
+    let finish!: (url: string) => void;
+    vi.mocked(s.auth.startSignIn).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const connecting = coordinator.connect(); await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(held).toBeGreaterThan(0); finish('https://accounts.google.com'); await connecting; expect(held).toBe(0);
+    let loggedOut!: () => void; vi.mocked(s.auth.logout).mockImplementationOnce(() => new Promise(resolve => { loggedOut = resolve; }));
+    const logout = coordinator.disconnect(false); await vi.waitFor(() => expect(loggedOut).toBeTypeOf('function'));
+    expect(held).toBeGreaterThan(0); loggedOut(); await logout; expect(held).toBe(0);
+    applying = true; const revision = (await s.store.read()).authRevision;
+    await expect(coordinator.connect()).rejects.toMatchObject({ code: 'cancelled' });
+    await expect(coordinator.prepareResolution()).rejects.toMatchObject({ code: 'cancelled' });
+    await coordinator.runNow(); expect((await s.store.read()).authRevision).toBe(revision); expect(held).toBe(0);
+  });
+});

@@ -292,7 +292,7 @@ Configurações oferece os controles existentes de ano (incluindo atual automát
 
 Instalar oferece instruções Chrome/Android e Safari/iPhone/iPad. Botão só aparece com evento nativo disponível. Cancelamento e falha mantêm instruções; pedido aceito não vira instalado até observação do navegador. Estado instalado deixa backup acessível. Instalação não promete cópia ou conservação garantida dos registros.
 
-A preparação offline inicial nunca usa a mensagem de atualização. Versão nova aguardando permite consentir, respeitando rascunhos/operações e outras abas. A página desconhecida oferece Estante e backup, sem “Em construção”.
+A preparação offline inicial nunca usa a mensagem de atualização. Na abertura, uma nova versão pode ser aplicada automaticamente antes de interação e somente após inicialização segura. Quando adiada, um aviso logo abaixo do cabeçalho oferece Atualizar aplicativo, respeitando formulários, diálogos, operações e outras abas. Se já instalou enquanto a pessoa editava, oferecer Reabrir aplicativo depois de salvar; não recarregar ao liberar o bloqueio. O rodapé mantém apenas disponibilidade offline, sem duplicar a ação de atualização. A página desconhecida oferece Estante e backup, sem “Em construção”.
 
 ### Conexão global — primeira fatia da correção de paridade, issue #13
 

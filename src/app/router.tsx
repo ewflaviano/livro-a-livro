@@ -1,3 +1,8 @@
+import { useEffect } from 'react';
+import { armPwaStartup, reevaluatePwaStartup } from '../pwa/register';
+import { getUiOccupancy, subscribeUiOccupancy } from '../ui/interaction-guard';
+import { useLibrary } from './LibraryProvider';
+import { useSync } from './SyncProvider';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../ui/components/AppShell';
 import { NotFoundPage } from '../ui/pages/NotFoundPage';
@@ -14,7 +19,7 @@ import { SupportPage } from '../ui/pages/SupportPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
-    <LibraryProvider openService={openService}><SyncProvider>
+    <LibraryProvider openService={openService}><SyncProvider><PwaStartup />
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
@@ -37,4 +42,16 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
 
 export function AppRouter() {
   return <HashRouter><AppRoutes /></HashRouter>;
+}
+
+function PwaStartup() {
+  const { state } = useLibrary(); const { initializing } = useSync();
+  useEffect(() => {
+    if (state.status === 'loading' || initializing) return;
+    // A task after passive UI effects observes form/dialog occupancy, including deep links.
+    const timer = window.setTimeout(() => armPwaStartup(() => getUiOccupancy() === 0), 0);
+    const unsubscribe = subscribeUiOccupancy(reevaluatePwaStartup);
+    return () => { window.clearTimeout(timer); unsubscribe(); };
+  }, [state.status, initializing]);
+  return null;
 }

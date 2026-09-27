@@ -116,3 +116,23 @@ it('an older blocked read cannot erase a successful no-op preference intention',
   await write.mock.results[0].value; // Its service continuation clears the overlay before this read completes.
   release(old); await reading; expect(service.getSnapshot()).toMatchObject({status:'ready',preferenceError:false,preferences:{mode:'list'}});
 });
+
+it('holds reload across queued preferences and failed overlays until the exact intentions are persisted', async () => {
+  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+  const release = vi.fn(), hold = vi.fn(() => release);
+  const service = createShelfService(repository, undefined, hold); services.push(service); await service.refresh();
+  let finish!: () => void; const write = repository.updatePreferences.bind(repository);
+  vi.spyOn(repository, 'updatePreferences').mockImplementationOnce(patch => new Promise(resolve => { finish = () => { void write(patch).then(resolve); }; })).mockRejectedValueOnce(new Error('synthetic'));
+  service.updatePreferences({ mode: 'list' }); service.updatePreferences({ filter: 'reading' });
+  expect(hold).toHaveBeenCalledOnce(); expect(release).not.toHaveBeenCalled(); await Promise.resolve(); finish(); await service.refresh();
+  expect(service.getSnapshot()).toMatchObject({ preferenceError: true, preferences: { filter: 'reading' } }); expect(release).not.toHaveBeenCalled();
+  vi.mocked(repository.updatePreferences).mockImplementation(write);
+  service.updatePreferences({ filter: 'reading' }); await service.refresh();
+  expect(release).toHaveBeenCalledOnce(); expect(await repository.readPreferences()).toMatchObject({ filter: 'reading' });
+});
+it('refuses a new preference edit while reload application owns the gate', async () => {
+  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+  const service = createShelfService(repository, undefined, () => null); services.push(service); await service.refresh();
+  const write = vi.spyOn(repository, 'updatePreferences'); service.updatePreferences({ mode: 'list' }); await service.refresh();
+  expect(write).not.toHaveBeenCalled(); expect(service.getSnapshot()).toMatchObject({ preferences: { mode: 'grid' }, preferenceError: false });
+});
