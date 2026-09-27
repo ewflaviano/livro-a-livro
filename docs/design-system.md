@@ -212,14 +212,16 @@ Não afirmar “backup concluído” quando só foi possível observar o início
 
 Os estados abaixo orientam o conector implementado e seu simulador. O catálogo estático não oferece conexão real. Em produção, enquanto o gate de autorização não estiver concluído, informar indisponibilidade claramente, sem botão que prometa um serviço pronto.
 
-- Não conectado: “Seus dados estão apenas neste dispositivo.”
+- Não conectado: “Seus dados estão apenas neste dispositivo.” Ação inicial “Entrar com Google”, opcional.
+- Conta confirmada temporariamente: informar que o Drive ainda não foi autorizado e oferecer “Autorizar Google Drive” e “Cancelar autorização”. Retornar à tela entre as etapas; nunca abrir o segundo consentimento automaticamente.
+- Identidade expirada: oferecer entrar novamente, preservando a biblioteca e sem prometer uma conta permanente.
 - Conectando / Sincronizando: informar operação em andamento, sem antecipar sucesso.
 - Sincronizado: data/hora e confirmação do serviço, sem inferir a partir da presença de internet.
 - Sem conexão: “Alterações salvas aqui; aguardando conexão para sincronizar.”
 - Falha: “Seus dados locais continuam aqui. Não foi possível atualizar a cópia no Drive.”
 - Conflito: explicar versões, datas e quantidades; oferecer baixar cópias antes de escolher. Nunca substituir silenciosamente.
 
-Permissões, sessão, conflitos e retenção estão definidos em [API OAuth](auth-api.md) e [sincronização](drive-sync.md); a composição de produção continua pendente. Google Drive é opcional; criar conta no Livro a Livro não é requisito implícito.
+Permissões, sessão, conflitos e retenção estão definidos em [API OAuth](auth-api.md) e [sincronização](drive-sync.md); a ativação pública depende dos gates reais de produção. Google Drive é opcional; criar conta no Livro a Livro não é requisito implícito.
 
 ## 14. Responsividade e movimento
 

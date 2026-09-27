@@ -9,7 +9,7 @@ import { createSyncCoordinator } from './coordinator';
 import { createAuthClient } from './api';
 import { createDriveClient } from './drive-client';
 import { libraryHash, parseSnapshot, remoteHeads } from './snapshot';
-import { defaultSyncRecord, DRIVE_SCOPE, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot } from './contracts';
+import { defaultSyncRecord, syncStateSchema, DRIVE_SCOPE, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot } from './contracts';
 import type { LibraryExport } from '../backup/schema';
 import { localTransport } from './local-client';
 
@@ -28,7 +28,7 @@ async function setup() {
   const name = crypto.randomUUID(); const repository = await openLibraryRepository({ name, channelFactory: null, focusTarget: null });
   const media = await openCoverMediaRepository({ name });
   const store = await openSyncStore({ name }); const snapshots: SyncSnapshot[] = [];
-  const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), start: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), disconnect: vi.fn(async () => false) };
+  const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), startSignIn: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), identity: vi.fn(async () => ({ connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'identity-csrf' })), startDrive: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), cancelIdentity: vi.fn(async () => {}), disconnect: vi.fn(async () => false) };
   const drive: DriveClient = { list: vi.fn(async () => snapshots.map(file)), download: vi.fn(async head => snapshots.find(item => item.snapshotId === head.header.snapshotId)!), upload: vi.fn(async value => { snapshots.push(value); }) };
   const options = { repository, media, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
   const coordinator = createSyncCoordinator(options);
@@ -54,6 +54,109 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it('does not inspect an older identity while the new sign-in start request is pending', async () => {
+    const s = await setup();
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(s.auth.startSignIn).mockImplementationOnce(async () => { entered(); await wait; return 'https://accounts.google.com/o/oauth2/v2/auth'; });
+    vi.mocked(s.auth.identity).mockResolvedValue({ connectionId: 'older-account', expiresAt: Date.now() / 1000 + 600, csrfToken: 'older-csrf' });
+    const connecting = s.coordinator.connect(); const outcome = connecting.catch(() => {}); await ready;
+    const other = createSyncCoordinator(s.options); close.push(() => other.close());
+    const intent = (await s.store.read()).authorization;
+    expect(intent?.stage).toBe('identity-starting');
+    await other.runNow(); await other.runNow();
+    expect(other.getSnapshot().status).toBe('identifying');
+    expect((await s.store.read()).authorization).toEqual(intent);
+    expect(s.auth.identity).not.toHaveBeenCalled(); expect(s.auth.session).not.toHaveBeenCalled();
+    expect(s.remote.list).not.toHaveBeenCalled(); expect(s.navigate).not.toHaveBeenCalled();
+    await expect(other.authorizeDrive()).rejects.toMatchObject({ code: 'reconnect' });
+    await other.pause(); release(); await outcome;
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: null });
+    expect(s.navigate).not.toHaveBeenCalled();
+  });
+  it('returns to an explicit second step without reusing an existing Drive session', async () => {
+    const s = await setup();
+    await s.coordinator.connect();
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: { stage: 'identity' } });
+    await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('authorize-drive');
+    expect(s.auth.session).not.toHaveBeenCalled(); expect(s.remote.list).not.toHaveBeenCalled();
+    expect(s.navigate).toHaveBeenCalledTimes(1);
+    await s.coordinator.authorizeDrive();
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: { stage: 'drive', expectedConnection: binding.connectionId } });
+    expect(s.navigate).toHaveBeenCalledTimes(2);
+    await s.coordinator.runNow();
+    expect(await s.store.read()).toMatchObject({ enabled: true, authorization: null });
+    expect(s.remote.list).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a complete session for a different account and offers only explicit retry', async () => {
+    const s = await setup(); await s.coordinator.connect(); await s.coordinator.authorizeDrive();
+    vi.mocked(s.auth.session).mockResolvedValue({ connectionId: 'different', generation: 1 });
+    await s.coordinator.runNow();
+    expect((await s.store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
+    expect(s.coordinator.getSnapshot().status).toBe('authorization-error');
+    expect(s.navigate).toHaveBeenCalledTimes(2);
+  });
+  it('does not reset or redirect a Drive intent while another tab is still awaiting consent', async () => {
+    const s = await setup(); await s.coordinator.connect(); await s.coordinator.authorizeDrive();
+    const intent = (await s.store.read()).authorization;
+    vi.mocked(s.auth.session).mockRejectedValue(new SyncError('reconnect'));
+    vi.mocked(s.auth.identity).mockClear();
+    const other = createSyncCoordinator(s.options); close.push(() => other.close());
+    await other.runNow(); await other.runNow();
+    expect((await s.store.read()).authorization).toEqual(intent);
+    expect(s.auth.identity).not.toHaveBeenCalled(); expect(s.navigate).toHaveBeenCalledTimes(2);
+    expect(other.getSnapshot()).toMatchObject({ status: 'authorization-waiting', authorizationStage: 'drive' });
+    await other.retryDriveAuthorization();
+    expect((await s.store.read()).authorization?.id).not.toBe(intent?.id);
+    expect((await s.store.read()).enabled).toBe(false);
+    expect(s.navigate).toHaveBeenCalledTimes(3); expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('preserves the incomplete intent offline and does not label temporary network failure as expiry', async () => {
+    const s = await setup(); await s.coordinator.connect();
+    s.options.online = () => false; await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('authorization-waiting'); expect(s.auth.identity).not.toHaveBeenCalled();
+    s.options.online = () => true; vi.mocked(s.auth.identity).mockRejectedValue(new SyncError('retry'));
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('authorization-waiting');
+    expect((await s.store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it.each(['startSignIn', 'identity', 'startDrive', 'session'] as const)('fences late %s after pause, logout or a new attempt in another tab', async boundary => {
+    for (const action of ['pause', 'logout', 'new-attempt'] as const) {
+      const s = await setup();
+      if (boundary !== 'startSignIn') await s.coordinator.connect();
+      if (boundary === 'session') await s.coordinator.authorizeDrive();
+      vi.mocked(s.navigate).mockClear();
+      let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+      let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; });
+      if (boundary === 'startSignIn' || boundary === 'startDrive') vi.mocked(s.auth[boundary]).mockImplementationOnce(async () => { entered(); await wait; return 'https://accounts.google.com/o/oauth2/v2/auth'; });
+      else if (boundary === 'identity') vi.mocked(s.auth.identity).mockImplementationOnce(async () => { entered(); await wait; return { connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'synthetic' }; });
+      else vi.mocked(s.auth.session).mockImplementationOnce(async () => { entered(); await wait; return binding; });
+      const operation = boundary === 'startSignIn' ? s.coordinator.connect() : boundary === 'startDrive' ? s.coordinator.authorizeDrive() : s.coordinator.runNow();
+      const outcome = operation.catch(() => {}); await ready;
+      const other = createSyncCoordinator(s.options); close.push(() => other.close());
+      if (action === 'pause') await other.pause(); else if (action === 'logout') await other.disconnect(false); else await other.connect();
+      const expected = (await s.store.read()).authorization;
+      release(); await outcome;
+      expect(await s.store.read()).toMatchObject({ enabled: false, authorization: expected });
+      expect(s.navigate).toHaveBeenCalledTimes(action === 'new-attempt' ? 1 : 0);
+      expect(s.remote.list).not.toHaveBeenCalled(); expect(s.remote.upload).not.toHaveBeenCalled();
+    }
+  });
+  it('parses earlier control records without clearing bindings, base or outbox state', () => {
+    const { authorization: _, ...previous } = { ...defaultSyncRecord, enabled: true, binding };
+    expect(syncStateSchema.parse(previous)).toEqual({ ...previous, authorization: null });
+  });
+  it('cancels the first authorization into the optional disconnected state', async () => {
+    const s = await setup(); await s.coordinator.connect(); await s.coordinator.cancelAuthorization();
+    expect(s.coordinator.getSnapshot().status).toBe('disabled');
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: null });
+  });
+  it('rejects resume against an incomplete intent atomically', async () => {
+    const s = await setup(); await s.coordinator.connect();
+    await expect(s.store.update({ enabled: true })).rejects.toMatchObject({ code: 'cancelled' });
+    expect((await s.store.read()).enabled).toBe(false);
+  });
+
   it.each(['pending', 'failed'] as const)('keeps an honest revocation warning after reload when Google is %s', async result => {
     const s = await setup();
     const before = await s.repository.readAll();
@@ -70,11 +173,11 @@ describe('durable local first coordinator', () => {
     await reopened.runNow();
     expect(s.remote.list).not.toHaveBeenCalled();
     expect((await s.store.read()).revocationPending).toBe(true);
-    vi.mocked(s.auth.start).mockRejectedValueOnce(new SyncError('retry'));
+    vi.mocked(s.auth.startSignIn).mockRejectedValueOnce(new SyncError('retry'));
     await expect(reopened.connect()).rejects.toMatchObject({ code: 'retry' });
     expect(await s.store.read()).toMatchObject({ enabled: false, revocationPending: true });
     await reopened.connect();
-    expect(await s.store.read()).toMatchObject({ enabled: true, revocationPending: false });
+    expect(await s.store.read()).toMatchObject({ enabled: false, revocationPending: true, authorization: { stage: 'identity' } });
     expect(s.navigate).toHaveBeenCalledWith('https://accounts.google.com/o/oauth2/v2/auth');
   });
 
@@ -316,6 +419,19 @@ describe('network boundary', () => {
     expect(fetcher.mock.calls[0][0]).toBe('http://127.0.0.1:8788/drive/v3/files');
     await expect(transport('https://evil.example')).rejects.toThrow('LocalHostRefused');
     vi.stubEnv('DEV', false); expect(() => localTransport()).toThrow('LocalModeUnavailable');
+  });
+  it('uses separate identity CSRF and never discovers a newer identity while cancelling', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(String(url).endsWith('/identity') ?
+      { connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'identity-only' } :
+      { authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth' })));
+    const auth = createAuthClient(fetcher); await auth.cancelIdentity(); expect(fetcher).not.toHaveBeenCalled();
+    await auth.startSignIn(); const identity = await auth.identity(); await auth.startDrive(identity.csrfToken); await auth.cancelIdentity();
+    const calls = fetcher.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([url]) => new URL(url).pathname)).toEqual(['/v1/auth/google/start', '/v1/auth/google/identity', '/v1/auth/google/drive/start', '/v1/auth/google/identity']);
+    expect(calls.every(([, init]) => init.body === undefined && init.credentials === 'include')).toBe(true);
+    expect(calls[2][1].headers).toMatchObject({ 'x-lal-csrf': 'identity-only' });
+    expect(calls[3][1]).toMatchObject({ method: 'DELETE', headers: { 'x-lal-csrf': 'identity-only' } });
+    await auth.cancelIdentity(); expect(fetcher).toHaveBeenCalledTimes(4);
   });
   it('sends only empty control requests to auth, retaining access token in memory', async () => {
     const fetcher = vi.fn<typeof fetch>(async url => new Response(JSON.stringify(String(url).endsWith('/v1/session') ?

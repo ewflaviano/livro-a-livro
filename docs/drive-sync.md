@@ -2,7 +2,13 @@
 
 A biblioteca permanece local. Em produção, `sync/api.ts` só faz chamadas sem body às rotas fixas de sessão/OAuth. Access token e CSRF permanecem em memória. `sync/drive-client.ts` faz listagem paginada, download limitado e upload resumable exclusivamente em `https://www.googleapis.com/drive/v3/files` e `/upload/drive/v3/files`, com `credentials: omit`, redirects proibidos e `appDataFolder`. O callback é navegação completa gerenciada pela API; nenhum código/token passa pela URL da PWA.
 
-Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VITE_DRIVE_ENABLED=true` depois da implantação/configuração da issue #13. Firebase não é necessário ao protocolo. Não há configuração de infraestrutura nem credenciais nesta entrega.
+Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VITE_DRIVE_ENABLED=true` depois da implantação/configuração da issue #13. Firebase não é necessário ao protocolo. A API de produção tem infraestrutura independente; credenciais não entram na PWA.
+
+## Identificação e permissão em etapas
+
+**Entrar com Google** confirma apenas a conta por dez minutos e retorna à tela Dados. O aplicativo permanece pausado e não lista, baixa ou envia arquivos. A pessoa escolhe **Autorizar Google Drive** em uma segunda ação, depois de ler a finalidade e o envio direto da biblioteca. Não há login obrigatório para a biblioteca local nem conta permanente criada nessa primeira etapa.
+
+A intenção temporária de autorização fica no controle local, com ID aleatório, etapa e vínculo HMAC esperado, sem tokens/CSRF/URLs. A sincronização só é habilitada depois de receber uma sessão Drive completa da conta esperada e de confirmar atomicamente que a intenção continua atual. Pausa, cancelamento, logout ou nova tentativa invalidam a intenção e o lease; respostas atrasadas, inclusive de outra aba, não reativam o envio. O cancelamento remoto usa apenas o CSRF da identidade já conhecida, evitando cancelar uma nova identificação iniciada por outra aba. Uma pendência não cancelada remotamente expira em dez minutos.
 
 ## Estado local e gates — 27 set 2026
 
@@ -19,7 +25,7 @@ A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebid
 - A última biblioteca local substituída fica preservada em `syncState/recovery` para download. As versões remotas ficam preservadas, sem limpeza automática. O aplicativo limita listagem a 10.000 snapshots e cada backup a 50 MiB (+64 KiB para envelope); exceder exige intervenção, nunca apagamento.
 - Apenas um coordenador por origem envia, com lease IndexedDB renovado a cada 10 s e validade de 45 s. Pausa/logout revogam o lease na mesma transação que desabilita o envio; o heartbeat apenas renova um lease existente. A confirmação atualiza a base, reconhece a revisão pendente e limpa a operação numa transação que verifica envio habilitado e posse do lease. Respostas antigas não reativam o envio. Escritas na biblioteca continuam condicionadas à revisão.
 - Alteração de conta ou geração congela base/outbox antigos e pede escolha explícita. Pausar, logout e revogar não removem livros nem arquivos do Drive.
-- Uma revogação não confirmada mantém aviso local persistente e bloqueia retomada automática, mesmo se a sessão antiga ainda for válida. A interface orienta verificar permissões Google e suporte. Somente uma confirmação de revogação ou a escolha explícita de iniciar nova autorização substitui esse aviso; uma sessão válida, isoladamente, não comprova revogação.
+- Uma revogação não confirmada mantém aviso local persistente e bloqueia retomada automática, mesmo se a sessão antiga ainda for válida. A interface orienta verificar permissões Google e suporte. Somente uma confirmação de revogação ou a conclusão explícita de nova autorização Drive substitui esse aviso; a identificação inicial não o remove e uma sessão válida, isoladamente, não comprova revogação.
 
 ## Agendamento e falhas
 

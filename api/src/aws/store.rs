@@ -216,6 +216,67 @@ impl DynamoStore {
             .put(put.build().map_err(|_| Error::Unavailable)?)
             .build())
     }
+    fn identity_check(
+        &self,
+        hash: &str,
+        identity: &PendingIdentity,
+        now: u64,
+        consume: bool,
+    ) -> Result<TransactWriteItem, Error> {
+        if identity.expires_at <= now {
+            return Err(Error::IdentityExpired);
+        }
+        let value = s(serde_json::to_string(identity).map_err(|_| Error::Unavailable)?);
+        if consume {
+            Ok(TransactWriteItem::builder()
+                .delete(
+                    Delete::builder()
+                        .table_name(&self.table)
+                        .key("pk", s(format!("IDENTITY#{hash}")))
+                        .condition_expression("#d = :d AND deleteAfter > :now")
+                        .expression_attribute_names("#d", "data")
+                        .expression_attribute_values(":d", value)
+                        .expression_attribute_values(":now", n(now))
+                        .build()
+                        .map_err(|_| Error::Unavailable)?,
+                )
+                .build())
+        } else {
+            Ok(TransactWriteItem::builder()
+                .condition_check(
+                    ConditionCheck::builder()
+                        .table_name(&self.table)
+                        .key("pk", s(format!("IDENTITY#{hash}")))
+                        .condition_expression("#d = :d AND deleteAfter > :now")
+                        .expression_attribute_names("#d", "data")
+                        .expression_attribute_values(":d", value)
+                        .expression_attribute_values(":now", n(now))
+                        .build()
+                        .map_err(|_| Error::Unavailable)?,
+                )
+                .build())
+        }
+    }
+    fn oauth_put(&self, hash: &str, transaction: Transaction) -> Result<TransactWriteItem, Error> {
+        let purpose =
+            serde_json::to_string(&transaction.purpose).map_err(|_| Error::Unavailable)?;
+        Ok(TransactWriteItem::builder()
+            .put(
+                Put::builder()
+                    .table_name(&self.table)
+                    .item("pk", s(format!("OAUTH#{hash}")))
+                    .item("purpose", s(purpose))
+                    .item("cookieHash", s(transaction.cookie_hash))
+                    .item("nonce", s(transaction.nonce.0.clone()))
+                    .item("verifier", s(transaction.verifier.0.clone()))
+                    .item("expiresAt", n(transaction.expires_at))
+                    .item("deleteAfter", n(transaction.expires_at))
+                    .condition_expression("attribute_not_exists(pk)")
+                    .build()
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .build())
+    }
     fn put_session(&self, hash: &str, session: &Session) -> Result<TransactWriteItem, Error> {
         let mut item = data(format!("SESSION#{hash}"), session)?;
         item.insert("deleteAfter".into(), n(session.expires_at));
@@ -415,21 +476,69 @@ impl Store for DynamoStore {
             "epoch",
         )
     }
-    async fn put_oauth(&self, hash: &str, transaction: Transaction) -> Result<(), Error> {
+    async fn put_identity(&self, hash: &str, identity: PendingIdentity) -> Result<(), Error> {
+        let mut item = data(format!("IDENTITY#{hash}"), &identity)?;
+        item.insert("deleteAfter".into(), n(identity.expires_at));
         self.client
             .put_item()
             .table_name(&self.table)
-            .item("pk", s(format!("OAUTH#{hash}")))
-            .item("cookieHash", s(transaction.cookie_hash))
-            .item("nonce", s(transaction.nonce.0.clone()))
-            .item("verifier", s(transaction.verifier.0.clone()))
-            .item("expiresAt", n(transaction.expires_at))
-            .item("deleteAfter", n(transaction.expires_at))
+            .set_item(Some(item))
             .condition_expression("attribute_not_exists(pk)")
             .send()
             .await
             .map(|_| ())
             .map_err(|_| Error::Unavailable)
+    }
+    async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error> {
+        let item = self
+            .get(&format!("IDENTITY#{hash}"))
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        let identity: PendingIdentity = decode(&item)?;
+        if identity.expires_at <= now {
+            return Err(Error::Unauthorized);
+        }
+        Ok(identity)
+    }
+    async fn delete_identity(&self, hash: &str) -> Result<(), Error> {
+        self.client
+            .delete_item()
+            .table_name(&self.table)
+            .key("pk", s(format!("IDENTITY#{hash}")))
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|_| Error::Unavailable)
+    }
+    async fn put_oauth(&self, hash: &str, transaction: Transaction) -> Result<(), Error> {
+        if !matches!(transaction.purpose, OAuthPurpose::SignIn) {
+            return Err(Error::InvalidRequest);
+        }
+        self.write(vec![self.oauth_put(hash, transaction)?]).await
+    }
+    async fn put_drive_oauth(
+        &self,
+        hash: &str,
+        transaction: Transaction,
+        expected: &PendingIdentity,
+        now: u64,
+    ) -> Result<(), Error> {
+        let OAuthPurpose::Drive {
+            identity_hash,
+            expected_connection,
+        } = &transaction.purpose
+        else {
+            return Err(Error::InvalidRequest);
+        };
+        if expected_connection != &expected.connection_id
+            || transaction.expires_at > expected.expires_at
+            || transaction.expires_at <= now
+        {
+            return Err(Error::IdentityExpired);
+        }
+        let check = self.identity_check(identity_hash, expected, now, false)?;
+        self.write(vec![check, self.oauth_put(hash, transaction)?])
+            .await
     }
     async fn take_oauth(&self, hash: &str, cookie: &str, now: u64) -> Result<Transaction, Error> {
         let result = self
@@ -442,18 +551,30 @@ impl Store for DynamoStore {
             .expression_attribute_values(":now", n(now))
             .return_values(aws_sdk_dynamodb::types::ReturnValue::AllOld)
             .send()
-            .await
-            .map_err(|e| {
-                if e.as_service_error()
-                    .is_some_and(|e| e.is_conditional_check_failed_exception())
+            .await;
+        let result = match result {
+            Ok(value) => value,
+            Err(error)
+                if error
+                    .as_service_error()
+                    .is_some_and(|e| e.is_conditional_check_failed_exception()) =>
+            {
+                if let Some(item) = self.get(&format!("OAUTH#{hash}")).await?
+                    && string(&item, "cookieHash").is_ok_and(|v| crate::service::equal(&v, cookie))
+                    && number(&item, "expiresAt").is_ok_and(|v| v <= now)
                 {
-                    Error::Unauthorized
-                } else {
-                    Error::Unavailable
+                    return Err(Error::IdentityExpired);
                 }
-            })?;
+                return Err(Error::Unauthorized);
+            }
+            Err(_) => return Err(Error::Unavailable),
+        };
         let item = result.attributes.ok_or(Error::Unauthorized)?;
         Ok(Transaction {
+            purpose: serde_json::from_str(
+                &string(&item, "purpose").map_err(|_| Error::Unauthorized)?,
+            )
+            .map_err(|_| Error::Unauthorized)?,
             cookie_hash: string(&item, "cookieHash")?,
             nonce: Secret(string(&item, "nonce")?),
             verifier: Secret(string(&item, "verifier")?),
@@ -466,8 +587,13 @@ impl Store for DynamoStore {
         encrypted: Vec<u8>,
         hash: &str,
         epoch: u64,
+        identity: IdentityConsumption<'_>,
         now: u64,
     ) -> Result<Session, Error> {
+        if identity.expected.connection_id != id {
+            return Err(Error::AccountMismatch);
+        }
+        let consume = self.identity_check(identity.hash, identity.expected, now, true)?;
         let old = self.connection(id).await?;
         if old.as_ref().is_some_and(|c| {
             !matches!(c.status, Status::Active | Status::Revoked) || c.lease_until > now
@@ -498,6 +624,7 @@ impl Store for DynamoStore {
         };
         self.write(vec![
             self.epoch_check(epoch)?,
+            consume,
             self.put_connection(id, &connection, old.map(|c| c.version))?,
             self.put_session(hash, &session)?,
         ])

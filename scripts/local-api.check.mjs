@@ -15,6 +15,18 @@ test('simulator stays loopback-only, rejects auth payloads and persists appData 
     assert.equal(server.address().address, '127.0.0.1');
     assert.equal((await outbound(base + '/v1/session', { headers: { Origin: 'https://evil.example' } })).status, 403);
     assert.equal((await outbound(base + '/v1/auth/drive-token', { method: 'POST', body: JSON.stringify({ books: [] }) })).status, 400);
+    assert.equal((await outbound(base + '/v1/session')).status, 401);
+    assert.equal((await outbound(base + '/v1/auth/google/drive/start', { method: 'POST' })).status, 401);
+    const signIn = await (await outbound(base + '/v1/auth/google/start', { method: 'POST' })).json();
+    assert.equal(new URL(signIn.authorizationUrl).searchParams.get('scope'), 'openid');
+    const identity = await (await outbound(base + '/v1/auth/google/identity')).json();
+    assert.equal(identity.connectionId, 'local-test-connection');
+    assert.equal((await outbound(base + '/v1/session')).status, 401);
+    assert.equal((await outbound(base + '/v1/auth/drive-token', { method: 'POST' })).status, 401);
+    assert.equal((await outbound(base + '/v1/auth/google/drive/start', { method: 'POST' })).status, 403);
+    const drive = await (await outbound(base + '/v1/auth/google/drive/start', { method: 'POST', headers: { 'x-lal-csrf': identity.csrfToken } })).json();
+    assert.equal(new URL(drive.authorizationUrl).searchParams.get('scope'), 'openid https://www.googleapis.com/auth/drive.appdata');
+    assert.equal((await outbound(base + '/v1/auth/google/identity')).status, 401);
     const session = await (await outbound(base + '/v1/session')).json(); assert.equal(session.connectionId, 'local-test-connection');
     const headers = { Authorization: 'Bearer local-simulated-token', 'Content-Type': 'application/json' };
     const start = await outbound(base + '/upload/drive/v3/files', { method: 'POST', headers, body: JSON.stringify({ parents: ['appDataFolder'], appProperties: { protocolVersion: '1' } }) });
@@ -25,5 +37,10 @@ test('simulator stays loopback-only, rejects auth payloads and persists appData 
     const data = await (await outbound(base + '/drive/v3/files/' + listing.files[0].id + '?alt=media', { headers })).json();
     assert.deepEqual(data, { synthetic: true });
     assert.equal(JSON.parse(await readFile(file, 'utf8')).snapshots.length, 1);
+    assert.equal((await outbound(base + '/v1/session', { method: 'DELETE', headers: { 'x-lal-csrf': 'local-csrf' } })).status, 204);
+    assert.equal((await outbound(base + '/v1/session')).status, 401);
+    await outbound(base + '/v1/auth/google/start', { method: 'POST' });
+    assert.equal((await outbound(base + '/v1/auth/google/identity', { method: 'DELETE', headers: { 'x-lal-csrf': 'local-identity-csrf' } })).status, 204);
+    assert.equal((await outbound(base + '/v1/auth/google/drive/start', { method: 'POST', headers: { 'x-lal-csrf': 'local-identity-csrf' } })).status, 401);
   } finally { globalThis.fetch = outbound; await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true }); }
 });

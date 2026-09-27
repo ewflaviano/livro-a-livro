@@ -46,29 +46,89 @@ pub fn opaque(value: &str) -> bool {
 }
 
 impl Auth {
-    pub async fn start(&self) -> Result<(String, String), Error> {
+    pub async fn start_sign_in(
+        &self,
+        identity: Option<&str>,
+        session: Option<&str>,
+    ) -> Result<(String, String), Error> {
+        if let Some(raw) = identity.filter(|v| opaque(v)) {
+            self.store.delete_identity(&digest(raw)).await?;
+        }
+        if let Some(raw) = session.filter(|v| opaque(v)) {
+            self.store.logout(&digest(raw)).await?;
+        }
+        self.start_oauth(OAuthPurpose::SignIn, None).await
+    }
+    async fn start_oauth(
+        &self,
+        purpose: OAuthPurpose,
+        identity: Option<&PendingIdentity>,
+    ) -> Result<(String, String), Error> {
         let state = random()?;
         let cookie = random()?;
         let nonce = random()?;
         let verifier = random()?;
+        let now = self.clock.now();
         let url = self
             .config
-            .authorization_url(&state, &nonce, &digest(&verifier));
-        self.store
-            .put_oauth(
-                &digest(&state),
-                Transaction {
-                    cookie_hash: digest(&cookie),
-                    nonce: Secret(nonce),
-                    verifier: Secret(verifier),
-                    expires_at: self.clock.now() + OAUTH_TTL,
-                },
-            )
-            .await?;
+            .authorization_url(&state, &nonce, &digest(&verifier), &purpose);
+        let transaction = Transaction {
+            purpose,
+            cookie_hash: digest(&cookie),
+            nonce: Secret(nonce),
+            verifier: Secret(verifier),
+            expires_at: identity.map_or(now + OAUTH_TTL, |i| (now + OAUTH_TTL).min(i.expires_at)),
+        };
+        if let Some(expected) = identity {
+            self.store
+                .put_drive_oauth(&digest(&state), transaction, expected, now)
+                .await?;
+        } else {
+            self.store.put_oauth(&digest(&state), transaction).await?;
+        }
         Ok((url, cookie))
     }
-
-    pub async fn callback(&self, state: &str, cookie: &str, code: &str) -> Result<String, Error> {
+    pub async fn identity(&self, raw: &str) -> Result<PendingIdentity, Error> {
+        if !opaque(raw) {
+            return Err(Error::Unauthorized);
+        }
+        self.store.identity(&digest(raw), self.clock.now()).await
+    }
+    pub fn identity_csrf(&self, raw: &str) -> Result<String, Error> {
+        self.crypto.mac("identity-csrf", raw)
+    }
+    pub async fn authorize_identity(
+        &self,
+        raw: &str,
+        csrf: &str,
+    ) -> Result<PendingIdentity, Error> {
+        let identity = self.identity(raw).await?;
+        if !equal(&self.identity_csrf(raw)?, csrf) {
+            return Err(Error::Forbidden);
+        }
+        Ok(identity)
+    }
+    pub async fn start_drive(&self, raw: &str, csrf: &str) -> Result<(String, String), Error> {
+        let identity = self.authorize_identity(raw, csrf).await?;
+        self.start_oauth(
+            OAuthPurpose::Drive {
+                identity_hash: digest(raw),
+                expected_connection: identity.connection_id.clone(),
+            },
+            Some(&identity),
+        )
+        .await
+    }
+    pub async fn cancel_identity(&self, raw: &str, csrf: &str) -> Result<(), Error> {
+        self.authorize_identity(raw, csrf).await?;
+        self.store.delete_identity(&digest(raw)).await
+    }
+    pub async fn callback(
+        &self,
+        state: &str,
+        cookie: &str,
+        code: &str,
+    ) -> Result<CallbackResult, Error> {
         if !opaque(state) || !opaque(cookie) || code.is_empty() || code.len() > 4096 {
             return Err(Error::InvalidRequest);
         }
@@ -76,35 +136,103 @@ impl Auth {
             .store
             .take_oauth(&digest(state), &digest(cookie), self.clock.now())
             .await?;
-        let epoch = self.store.grant_epoch().await?;
+        let pending = match &transaction.purpose {
+            OAuthPurpose::SignIn => None,
+            OAuthPurpose::Drive {
+                identity_hash,
+                expected_connection,
+            } => {
+                let identity = self
+                    .store
+                    .identity(identity_hash, self.clock.now())
+                    .await
+                    .map_err(identity_error)?;
+                if !equal(&identity.connection_id, expected_connection) {
+                    return Err(Error::IdentityExpired);
+                }
+                Some((identity, self.store.grant_epoch().await?))
+            }
+        };
+        if self.clock.now() >= transaction.expires_at {
+            return Err(Error::IdentityExpired);
+        }
         let grant = self
             .provider
-            .exchange(code, &transaction.verifier.0, &transaction.nonce.0)
-            .await?;
-        if !valid_scopes(&grant.scope) {
-            return Err(Error::Forbidden);
-        }
-        // Require a fresh refresh credential; never reuse a token from an unverified older consent.
-        let refresh = grant.refresh_token.ok_or(Error::IncompleteConsent)?;
-        if refresh.0.is_empty() {
-            return Err(Error::IncompleteConsent);
-        }
-        let connection = self.crypto.mac("connection", &grant.subject.0)?;
-        let encrypted = self
-            .crypto
-            .seal(&self.context(&connection), &refresh.0)
-            .await?;
-        let raw = random()?;
-        self.store
-            .connect(
-                &connection,
-                encrypted,
-                &digest(&raw),
-                epoch,
-                self.clock.now(),
+            .exchange(
+                code,
+                &transaction.verifier.0,
+                &transaction.nonce.0,
+                &transaction.purpose,
             )
             .await?;
-        Ok(raw)
+        if self.clock.now() >= transaction.expires_at {
+            return Err(Error::IdentityExpired);
+        }
+        let connection = self.crypto.mac("connection", &grant.subject.0)?;
+        match (&transaction.purpose, pending) {
+            (OAuthPurpose::SignIn, None) => {
+                let raw_cookie = random()?;
+                let expires_at = self.clock.now() + OAUTH_TTL;
+                self.store
+                    .put_identity(
+                        &digest(&raw_cookie),
+                        PendingIdentity {
+                            connection_id: connection,
+                            expires_at,
+                        },
+                    )
+                    .await?;
+                Ok(CallbackResult::Identity {
+                    raw_cookie,
+                    expires_at,
+                })
+            }
+            (
+                OAuthPurpose::Drive {
+                    identity_hash,
+                    expected_connection,
+                },
+                Some((identity, epoch)),
+            ) => {
+                if !equal(&connection, expected_connection) {
+                    return Err(Error::AccountMismatch);
+                }
+                if !valid_scopes(&grant.scope) {
+                    return Err(Error::IncompleteConsent);
+                }
+                let refresh = grant.refresh_token.ok_or(Error::IncompleteConsent)?;
+                if refresh.0.is_empty() {
+                    return Err(Error::IncompleteConsent);
+                }
+                if self.clock.now() >= identity.expires_at {
+                    return Err(Error::IdentityExpired);
+                }
+                let encrypted = self
+                    .crypto
+                    .seal(&self.context(&connection), &refresh.0)
+                    .await?;
+                let raw_session = random()?;
+                self.store
+                    .connect(
+                        &connection,
+                        encrypted,
+                        &digest(&raw_session),
+                        epoch,
+                        IdentityConsumption {
+                            hash: identity_hash,
+                            expected: &identity,
+                        },
+                        self.clock.now(),
+                    )
+                    .await?;
+                if self.clock.now() >= identity.expires_at {
+                    self.store.logout(&digest(&raw_session)).await?;
+                    return Err(Error::IdentityExpired);
+                }
+                Ok(CallbackResult::Drive { raw_session })
+            }
+            _ => Err(Error::Unauthorized),
+        }
     }
 
     pub async fn session(&self, raw: &str) -> Result<Session, Error> {
@@ -236,5 +364,13 @@ impl Auth {
     }
     fn context(&self, connection: &str) -> String {
         format!("{}:{connection}", self.config.environment)
+    }
+}
+
+fn identity_error(error: Error) -> Error {
+    if error == Error::Unauthorized {
+        Error::IdentityExpired
+    } else {
+        error
     }
 }

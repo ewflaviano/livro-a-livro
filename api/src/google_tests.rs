@@ -51,3 +51,27 @@ fn jwt_verification_rejects_bad_signature_issuer_audience_expiry_and_nonce() {
     .unwrap();
     assert!(verify(&bad_alg, &decoding, "synthetic-client", "synthetic-nonce").is_err());
 }
+
+#[test]
+fn sign_in_does_not_require_or_confer_access_token_authority() {
+    let mut identity_only: Tokens =
+        serde_json::from_value(json!({"id_token":"synthetic-id-token"})).unwrap();
+    assert_eq!(
+        identity_only
+            .authorization_scope(&OAuthPurpose::SignIn)
+            .unwrap(),
+        ""
+    );
+    let drive = OAuthPurpose::Drive {
+        identity_hash: "synthetic".into(),
+        expected_connection: "synthetic".into(),
+    };
+    assert!(identity_only.authorization_scope(&drive).is_err());
+    let mut partial: Tokens = serde_json::from_value(json!({"access_token":"synthetic","token_type":"Bearer","expires_in":3600,"scope":"openid"})).unwrap();
+    assert_eq!(
+        partial.authorization_scope(&drive).err(),
+        Some(Error::IncompleteConsent)
+    );
+    let mut complete: Tokens = serde_json::from_value(json!({"access_token":"synthetic","token_type":"Bearer","expires_in":3600,"scope":crate::config::SCOPES.join(" ")})).unwrap();
+    assert!(complete.authorization_scope(&drive).is_ok());
+}

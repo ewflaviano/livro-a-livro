@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { openDatabase } from '../adapters/indexeddb/database';
 import type { DatabaseOptions } from '../adapters/indexeddb/database';
 import { revisionSchema, sameRevision } from '../adapters/indexeddb/schema';
-import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncError, type Operation, type SyncRecord } from './contracts';
+import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncError, type Operation, type SyncRecord, type AuthorizationIntent } from './contracts';
 import { parseSnapshot } from './snapshot';
 import type { LocalRevision } from '../ports/library-repository';
 
@@ -20,6 +20,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const control = tx.objectStore('syncState');
       const raw = await control.get('control');
       const current = raw === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(raw);
+      if (patch.enabled === true && current.authorization) { await tx.done; throw new SyncError('cancelled'); }
       if (owner) {
         const lease = await control.get('lease') as { owner: string; until: number } | undefined;
         if (!current.enabled || lease?.owner !== owner || lease.until <= Date.now()) {
@@ -37,6 +38,17 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       }
       await tx.done;
       return next;
+    },
+    /** Authorization responses may commit only while the exact persisted intent still exists. */
+    async compareAuthorization(expected: AuthorizationIntent, patch: Partial<SyncRecord>) {
+      const tx = db.transaction('syncState', 'readwrite');
+      const raw = await tx.store.get('control');
+      const current = raw === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(raw);
+      if (JSON.stringify(current.authorization) !== JSON.stringify(expected) || current.enabled) {
+        await tx.done; throw new SyncError('cancelled');
+      }
+      const next = syncStateSchema.parse({ ...current, ...patch });
+      await tx.store.put(next, 'control'); await tx.done; return next;
     },
     async pending() {
       const value = await db.get('syncOutbox', 'pending');

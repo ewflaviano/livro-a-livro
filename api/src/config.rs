@@ -1,4 +1,4 @@
-use crate::ports::Error;
+use crate::ports::{Error, OAuthPurpose};
 use url::Url;
 
 pub const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.appdata";
@@ -32,19 +32,31 @@ impl Config {
         })
     }
 
-    pub fn authorization_url(&self, state: &str, nonce: &str, challenge: &str) -> String {
+    pub fn authorization_url(
+        &self,
+        state: &str,
+        nonce: &str,
+        challenge: &str,
+        purpose: &OAuthPurpose,
+    ) -> String {
+        let drive = matches!(purpose, OAuthPurpose::Drive { .. });
+        let scopes = if drive {
+            SCOPES.join(" ")
+        } else {
+            "openid".into()
+        };
         let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
         url.query_pairs_mut().extend_pairs([
             ("client_id", self.client_id.as_str()),
             ("redirect_uri", self.callback.as_str()),
             ("response_type", "code"),
-            ("scope", &SCOPES.join(" ")),
+            ("scope", scopes.as_str()),
             ("state", state),
             ("nonce", nonce),
             ("code_challenge", challenge),
             ("code_challenge_method", "S256"),
-            ("access_type", "offline"),
-            ("prompt", "consent select_account"),
+            ("access_type", if drive { "offline" } else { "online" }),
+            ("prompt", if drive { "consent" } else { "select_account" }),
             ("include_granted_scopes", "false"),
         ]);
         url.into()

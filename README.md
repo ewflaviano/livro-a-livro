@@ -19,7 +19,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
 | PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
-| Google Drive | Cliente e simulador implementados; API de produção e habilitação pendentes na issue #13 |
+| Google Drive | Cliente e API de produção implementados; autorização em duas etapas e gates reais de ativação na issue #13 |
 | Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 
 Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. Exportação e restauração locais estão disponíveis; a validação do ciclo completo de instalação/atualização PWA permanece um gate separado. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
@@ -41,7 +41,7 @@ Abra `http://127.0.0.1:5173`. Para busca real na Open Library, use esse modo com
 make local
 ```
 
-O comando inicia app e simulador em loopback (`5173` e `8788`), exibe uma faixa de teste e usa o banco separado `livro-a-livro-local`. Abra **Seus dados → Conectar Google Drive**. Open Library e capas externas ficam desativadas nesse modo. Somente dados descartáveis: o simulador não valida OAuth real.
+O comando inicia app e simulador em loopback (`5173` e `8788`), exibe uma faixa de teste e usa o banco separado `livro-a-livro-local`. Abra **Seus dados → Entrar com Google** e, ao voltar à tela, escolha **Autorizar Google Drive** em uma segunda ação. Open Library e capas externas ficam desativadas nesse modo. Somente dados descartáveis: o simulador não valida OAuth real.
 
 - Outra porta: `LIVRO_LOCAL_APP_PORT=5174 make local`.
 - Somente simulador: `make local-api`; porta configurável por `LIVRO_LOCAL_API_PORT`.
