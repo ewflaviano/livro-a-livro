@@ -7,7 +7,7 @@ import { LIBRARY_LIMITS } from '../../domain/library';
 import type { LibraryPreferences, LocalRevision } from '../../ports/library-repository';
 
 export const DATABASE_NAME = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' ? 'livro-a-livro-local' : 'livro-a-livro';
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 export const RECORD_VERSION = 1;
 export const revisionSchema = z.strictObject({
   generation: z.uuid(), revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -57,4 +57,6 @@ export interface LibraryDatabase extends DBSchema {
   syncOutbox: { key: string; value: unknown };
   experimentState: { key: string; value: unknown };
   searchCache: { key: string; value: unknown; indexes: { byAccess: number } };
+  // Media never shares the book store, sync outbox, cache or server boundary.
+  coverMedia: { key: string; value: unknown };
 }

@@ -8,7 +8,7 @@ export const MAX_SYNC_BYTES = LIBRARY_LIMITS.jsonBytes + 64 * 1024;
 export async function libraryHash(library: LibraryExport) {
   const data = parseExportV1(library);
   data.books.sort((a, b) => a.id.localeCompare(b.id));
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(data.books)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ books: data.books, coverMedia: data.coverMedia })));
   return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
 }
 export async function parseSnapshot(input: unknown): Promise<SyncSnapshot> {

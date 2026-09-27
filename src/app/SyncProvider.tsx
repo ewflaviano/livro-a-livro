@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
+import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
 import { openSyncStore } from '../sync/outbox';
 import { createAuthClient } from '../sync/api';
 import { createDriveClient } from '../sync/drive-client';
@@ -20,21 +21,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     let active = true; let cleanup = () => {};
     void (async () => {
       const repository = await openLibraryRepository();
+      let media: Awaited<ReturnType<typeof openCoverMediaRepository>> | undefined;
       try {
+        media = await openCoverMediaRepository();
         const store = await openSyncStore();
         const fetcher = local ? (await import('../sync/local-client')).localTransport() : fetch;
         const auth = createAuthClient(fetcher);
-        const next = createSyncCoordinator({ repository, store, auth, drive: binding => createDriveClient(auth, binding, fetcher),
+        const next = createSyncCoordinator({ repository, media, store, auth, drive: binding => createDriveClient(auth, binding, fetcher),
           online: () => navigator.onLine, visible: () => document.visibilityState !== 'hidden',
           hasDraft: () => getPwaState().blocked, navigate: url => { if (local) { window.location.hash = '/dados'; window.location.reload(); } else window.location.assign(url); },
         });
         const wake = () => { void next.wake().catch(() => {}); };
-        cleanup = () => { next.close(); repository.close(); store.close();
+        cleanup = () => { next.close(); repository.close(); media?.close(); store.close();
           window.removeEventListener('online', wake); window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake); };
         if (!active) { cleanup(); return; }
         window.addEventListener('online', wake); window.addEventListener('focus', wake); document.addEventListener('visibilitychange', wake);
         setCoordinator(next); await next.start();
-      } catch { repository.close(); /* Optional sync cannot prevent local startup. */ }
+      } catch { repository.close(); media?.close(); /* Optional sync cannot prevent local startup. */ }
     })();
     return () => { active = false; cleanup(); };
   }, []);

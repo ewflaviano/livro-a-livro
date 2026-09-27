@@ -11,6 +11,7 @@ import { BookForm, storageMessage } from '../components/BookForm';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LibraryState } from '../components/LibraryState';
 import { blockPwaUpdate } from '../../pwa/register';
+import { openCoverMediaRepository } from '../../adapters/indexeddb/cover-media';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
@@ -66,6 +67,7 @@ function BookDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
+  const [localCoverUrl, setLocalCoverUrl] = useState<string | null>(null);
   useEffect(() => { if (busy || removing) return blockPwaUpdate(); }, [busy, removing]);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
@@ -80,6 +82,16 @@ function BookDetail({ id }: { id: string }) {
       .catch(() => { if (active) setLoadError(true); });
     return () => { active = false; };
   }, [books, id, editing, removing, attempt, revision]);
+  useEffect(() => {
+    const cover = loaded?.book?.cover;
+    if (!cover || cover.provider !== 'local') { setLocalCoverUrl(null); return; }
+    let active = true; let url: string | null = null;
+    void openCoverMediaRepository().then(async media => {
+      try { const stored = await media.read(cover.mediaId); if (stored && active) { url = URL.createObjectURL(stored.bytes); setLocalCoverUrl(url); } }
+      finally { media.close(); }
+    }).catch(() => { if (active) setLocalCoverUrl(null); });
+    return () => { active = false; if (url) URL.revokeObjectURL(url); };
+  }, [loaded?.book?.cover]);
   const reload = () => { setEditing(false); setLoaded(null); setError(''); setSaved(false); setAttempt((value) => value + 1); };
   async function remove() {
     if (!books || !loaded || busy) return;
@@ -92,7 +104,7 @@ function BookDetail({ id }: { id: string }) {
   return <section className="page-content"><BackLink returnTo={returnTo} />
     {!loaded || loadError ? <><h1>Livro</h1><LibraryState state={loadError || state.status === 'error' ? 'error' : 'loading'} onRetry={() => { if (!books) retry(); else setAttempt((value) => value + 1); }} /></> :
       !book ? <><h1>Livro não encontrado</h1><p>Este registro não está mais nesta biblioteca. Volte à estante para continuar.</p></> : <>
-        <div className="book-detail-heading"><div className="book-cover" aria-hidden="true"><BookOpen /><span>{book.title}</span></div>
+        <div className="book-detail-heading">{localCoverUrl ? <img className="book-cover-image" src={localCoverUrl} alt={`Capa de ${book.title}`} /> : <div className="book-cover" aria-hidden="true"><BookOpen /><span>{book.title}</span></div>}
           <div><p className="eyebrow">Estante {formatShelfYear(book.shelfYear)}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || 'Autoria não informada'}</p>
             <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span></div>
         </div>

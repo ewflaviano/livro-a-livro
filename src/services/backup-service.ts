@@ -6,18 +6,21 @@ import type { LibraryRepository, LocalRevision } from '../ports/library-reposito
 import type { LibraryExport } from '../backup/schema';
 import { parseExportV1 } from '../backup/schema';
 import { parseBackupText, serializeBackup } from '../backup/serialize';
+import { decodeCover, encodeCover } from '../adapters/indexeddb/cover-media';
+import type { CoverMedia } from '../media/cover';
 
 export type ImportPreview = Readonly<{
   incoming: Readonly<{ count: number; years: readonly number[] }>;
   current: Readonly<{ count: number; years: readonly number[] }>;
 }>;
 export type BackupFile = { size: number; text(): Promise<string> };
+type MediaRepository = { all(): Promise<CoverMedia[]>; replace(values: CoverMedia[]): Promise<void> };
 const summary = (books: LibraryExport['books']) => Object.freeze({
   count: books.length, years: Object.freeze([...new Set(books.map(book => book.shelfYear))].sort((a, b) => a - b)),
 });
 
 export function createBackupService(repository: LibraryRepository,
-  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text)) {
+  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text), media?: MediaRepository) {
   const pending = new WeakMap<ImportPreview, { data: LibraryExport; version: LocalRevision }>();
   let active: ImportPreview | undefined;
   let selection = 0;
@@ -25,8 +28,9 @@ export function createBackupService(repository: LibraryRepository,
     async exportBackup(exportedAt: string) {
       parseDomain(instantSchema, exportedAt, 'InvalidBackup');
       const snapshot = await repository.readBackupSnapshot();
+      const coverMedia = media ? await Promise.all((await media.all()).map(encodeCover)) : [];
       const text = serializeBackup({ format: 'livro-a-livro', schemaVersion: 1, exportedAt,
-        books: snapshot.books, preferences: snapshot.preferences });
+        books: snapshot.books, preferences: snapshot.preferences, coverMedia });
       return { text, filename: `livro-a-livro-${exportedAt.slice(0, 10)}.json`,
         blob: new Blob([text], { type: 'application/json;charset=utf-8' }), version: snapshot.version };
     },
@@ -58,6 +62,9 @@ export function createBackupService(repository: LibraryRepository,
       if (!prepared) throw new DomainError('InvalidBackup');
       pending.delete(preview);
       active = undefined;
+      // Persist media first. A later stale library write can leave only unreferenced local bytes;
+      // it can never leave a restored book pointing to absent media.
+      if (media) await media.replace(prepared.data.coverMedia.map(decodeCover));
       return repository.commit({ kind: 'replace', books: prepared.data.books,
         preferences: prepared.data.preferences }, prepared.version);
     },

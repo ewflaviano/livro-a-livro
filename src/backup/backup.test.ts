@@ -3,6 +3,7 @@ import { deleteDB } from 'idb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../../test/fixtures/backups/v1.json';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
+import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
 import { LIBRARY_LIMITS } from '../domain/library';
 import { createBook } from '../domain/book';
 import type { LibraryRepository } from '../ports/library-repository';
@@ -11,16 +12,27 @@ import { parseBackupText, serializeBackup } from './serialize';
 
 const text = JSON.stringify(fixture);
 const file = (value = text) => ({ size: new Blob([value]).size, text: async () => value });
-const opened: { repo: LibraryRepository; name: string }[] = [];
+const opened: { repo: LibraryRepository; media: { close(): void }; name: string }[] = [];
 async function setup() {
   const name = `backup-synthetic-${crypto.randomUUID()}`;
   const repo = await openLibraryRepository({ name, channelFactory: null });
-  opened.push({ repo, name });
-  return { repo, service: createBackupService(repo) };
+  const media = await openCoverMediaRepository({ name });
+  opened.push({ repo, media, name });
+  return { repo, media, service: createBackupService(repo, undefined, media) };
 }
-afterEach(async () => { for (const { repo, name } of opened.splice(0)) { repo.close(); await deleteDB(name); } });
+afterEach(async () => { for (const { repo, media, name } of opened.splice(0)) { repo.close(); media.close(); await deleteDB(name); } });
 
 describe('portable V1 backup', () => {
+  it('round-trips local cover bytes separately from the book record', async () => {
+    const a = await setup(); const id = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
+    await a.media.put({ id, mimeType: 'image/png', bytes: new Blob(['cover'], { type: 'image/png' }), width: 320, height: 480, createdAt: fixture.exportedAt });
+    const book = createBook({ title: 'Com capa', cover: { provider: 'local', mediaId: id } }, { id: crypto.randomUUID(), now: fixture.exportedAt, shelfYear: 2026 });
+    await a.repo.commit({ kind: 'put', book }, await a.repo.readRevision());
+    const exported = await a.service.exportBackup(fixture.exportedAt);
+    const b = await setup(); await b.service.confirmImport(await b.service.prepareImport(file(exported.text)));
+    expect((await b.repo.readAll()).books[0].cover).toEqual({ provider: 'local', mediaId: id });
+    expect(await (await b.media.read(id))?.bytes.text()).toBe('cover');
+  });
   it('restores every book field and portable preference into a fresh profile', async () => {
     const a = await setup();
     await a.service.confirmImport(await a.service.prepareImport(file()));
