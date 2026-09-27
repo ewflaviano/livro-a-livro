@@ -12,6 +12,7 @@ const sync = vi.hoisted(() => ({ state: { status: 'conflict', localCount: 0, rem
   coordinator: { prepareResolution: vi.fn<() => Promise<ResolutionPreview>>(), cancelResolution: vi.fn(), confirmResolution: vi.fn(async () => 'localCommittedPending'), resolve: vi.fn() } }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 vi.mock('../components/BackupPanel', () => ({ BackupPanel: () => <section><h2>Backup local</h2></section> }));
+vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => ({ choice: null, loading: false, error: false, review: vi.fn() }) }));
 vi.mock('../../experiments/store', () => ({ openExperimentStore: async () => ({ read: async () => ({ experimentsConsent: false, telemetryConsent: false }), close() {} }) }));
 const data: LibraryExport = { format: 'livro-a-livro', schemaVersion: 1, exportedAt: '2026-09-26T12:00:00Z', books: [], coverMedia: [], preferences: { shelfYear: null, mode: 'grid', filter: 'all' } };
 const preview = () => unionPolicy(prepareMerge({ id: 'preview', sources: [{ id: 'local', library: data }, { id: 'remote', library: data }] })).preview;

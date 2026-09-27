@@ -14,7 +14,7 @@ describe('application shell', () => {
     vi.stubGlobal('fetch', fetch);
     render(<MemoryRouter><AppRoutes /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Minha estante', level: 1 })).toBeTruthy();
-    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(await within(screen.getByRole('main')).findByRole('alert')).toBeTruthy();
     expect(screen.queryByText(/0 livros/)).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });

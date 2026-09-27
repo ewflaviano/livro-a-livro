@@ -259,7 +259,7 @@ Consumo: importar `tokens.css`, aplicar tokens semânticos nos componentes e man
 }
 ```
 
-Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. Os consentimentos atuais em Seus dados ainda não acionam consumidores runtime; ver [estado da integração](experiments.md).
+Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. O consentimento separado de Analytics da issue #63 usa aviso compacto após o cabeçalho, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Seus dados. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
 
 Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semântica, comportamento de teclado, variante estreita e contraste revisados. Mudar uma cor primitiva requer conferir todos os papéis que a usam. A documentação é referência de projeto, não declaração de que armazenamento, busca, compartilhamento ou sincronização já existem.
 

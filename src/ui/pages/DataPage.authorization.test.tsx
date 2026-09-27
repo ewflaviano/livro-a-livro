@@ -12,6 +12,7 @@ const sync = vi.hoisted(() => ({
 }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 vi.mock('../components/BackupPanel', () => ({ BackupPanel: () => <section><h2>Backup local</h2><button>Exportar JSON</button></section> }));
+vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => ({ choice: null, loading: false, error: false, review: vi.fn() }) }));
 vi.mock('../../experiments/store', () => ({ openExperimentStore: async () => ({ read: async () => ({ experimentsConsent: false, telemetryConsent: false }), close() {} }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); sync.state = { status: 'disabled' }; });
 describe('optional two-step Google authorization', () => {
