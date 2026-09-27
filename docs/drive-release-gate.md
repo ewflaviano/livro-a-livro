@@ -98,3 +98,23 @@ O fluxo sintético passou recebimento automático em B novo, edição offline em
 Checks da fatia: 502 testes frontend em 39 arquivos com concorrência padrão, typecheck/build e teste do simulador aprovados. A suíte completa identificou e a entrega corrigiu a preservação de preferências não salvas durante refresh; regressões cobrem falha, retry, importação e conclusão fora de ordem. Revisão de arquitetura e revisão independente sem achados pendentes.
 
 Esses resultados são do Drive simulado e não substituem os gates Google reais. No cenário de duas bibliotecas genuinamente vazias, o estado “Drive conectado” informa que nenhum backup foi enviado, em vez de anunciar uma cópia inexistente.
+
+## Evidência Google real — PR #57, 27 set 2026
+
+Produção `206627e94783`, workflow `36345922729`, com frontend/API publicados e smoke de controles aprovado. O build QA `6d21da790fd1` corresponde à mesma árvore da integração, com bancos A/B separados e Drive habilitado apenas no build temporário. A distribuição pública continua com `VITE_DRIVE_ENABLED=false`.
+
+No Chromium normal, com a conta e a pasta privada já autorizadas para o ensaio sintético:
+
+- Login seguido de autorização Drive em outra ação explícita. A/B novos receberam automaticamente os snapshots V1 do ensaio anterior, sem conflito artificial. Comparação em memória confirmou livros, preferências e bytes PNG exatos. Somente quatro operações sintéticas conhecidas do ensaio anterior foram admitidas pela allowlist técnica.
+- Importação de duas variantes sintéticas enquanto pausadas, seguida de edição divergente das notas pela interface sem rede. A publicou V2; B apresentou conflito e preservou sua biblioteca. Cancelar a primeira prévia não alterou os dados. A segunda prévia escolheu explicitamente a versão B do livro comum e suas preferências, incluindo os livros exclusivos de ambos os lados.
+- União confirmada no Drive: três registros esperados, preferências escolhidas e PNG exato. A recuperação de B correspondeu à biblioteca anterior. Ao recarregar A, o recebimento automático convergiu para o resultado integral, sem operação pendente.
+- Falha injetada somente no transporte da página QA, após um PUT receber HTTP 200 real do Google: a resposta foi negada ao cliente. A reconciliação automática confirmou o envio sem novo PUT e preservou a biblioteca.
+- Segundo ensaio de falha: após HTTP 200, a página foi recarregada antes de entregar qualquer resposta ao aplicativo. O estado pendente persistiu; após a proteção de concorrência e a verificação automática, a operação foi confirmada. A listagem real completa continha exatamente um arquivo para essa operação; a captura sem truncamento registrou um PUT e nenhum adicional. A biblioteca permaneceu exata. A recarga removeu a injeção e o marcador técnico temporário foi excluído.
+- Pausa pela interface seguida de recarga preservou a biblioteca. Renovação real pelo navegador retornou 200, alterou CSRF, manteve o vínculo e permitiu novo GET de sessão 200. Este ensaio não copiou cookies nem comprovou a rejeição do cookie anterior em outro contexto.
+- Durante prévia/união, a captura completa do documento registrou quatro chamadas de controle à API, sem corpo ou query. Essa evidência não cobre integralmente as navegações OAuth nem substitui o auditor do harness.
+
+Limites: A/B usaram o mesmo perfil e compartilham cookies. Continuam pendentes a segunda sessão independente, a rejeição do cookie SESSION antigo com LOGIN válido, saída isolada e revogação global entre sessões reais. Não ativar a flag pública com essas pendências. Os testes unitários, AWS isolados e herméticos permanecem evidências distintas.
+
+A primeira tentativa de importar JSON sem rede na página QA foi recusada porque o Worker ainda não estava carregado: esse build deliberadamente não instala SW e usa `no-store`. A importação foi repetida online, com sincronização pausada; somente a edição posterior ocorreu offline. Isso não comprova nem invalida o gate próprio de importação offline da PWA pública.
+
+Ao encerrar esta janela, A/B ficaram pausadas e suas abas foram fechadas. O prefixo temporário `/validacao-drive/6d21da790fd1/` foi removido do S3 (zero objetos restantes); a invalidação específica do CDN foi solicitada. Bancos e registros técnicos de operações sintéticas permanecem locais para retomar o ensaio conhecido. A biblioteca habitual, o SW público e os arquivos do Drive não foram removidos.
