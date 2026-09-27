@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Livro a Livro">
+  <rect width="512" height="512" rx="80" fill="#60456e"/>
+  <g transform="translate(56 -12) scale(.78)">
+    <g fill="#faf9f6">
+      <rect x="128" y="160" width="64" height="224" rx="10"/>
+      <rect x="220" y="128" width="64" height="256" rx="10"/>
+    </g>
+    <path d="M312 160h64v224l-32-24-32 24z" fill="#dfd580"/>
+  </g>
+  <text x="256" y="393" text-anchor="middle" fill="#faf9f6" font-family="Georgia, 'Times New Roman', serif" font-size="58" letter-spacing="-1">Livro a Livro</text>
+</svg>

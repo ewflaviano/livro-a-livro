@@ -20,6 +20,12 @@ Os CNAMEs de validação DNS do ACM já existem na zona. Após a delegação se 
 
 Os certificados devem estar com status `ISSUED` antes de serem associados aos recursos de produção.
 
+### Propriedade do domínio no Google
+
+Em 27/09/2026, `livroalivro.app.br` foi verificado como propriedade de domínio no Google Search Console, na conta responsável pelo projeto `livro-a-livro`, via registro TXT no ápice da zona Route 53. Preserve o registro `google-site-verification`: removê-lo pode invalidar a propriedade exigida pelo Branding OAuth. Ele é separado dos CNAMEs de validação dos certificados ACM.
+
+O consentimento Google está em produção, com escopos `openid` e `drive.appdata`; os links públicos apontam para a raiz do site e `/privacidade.html`. O ícone de Branding está em [`docs/branding`](branding/README.md). Após a comprovação do domínio, a marca foi verificada e publicada pelo Google em 27/09/2026. Publicação do consentimento, aprovação visual da marca pelo Google e ativação da flag Drive no frontend são estados separados. Os gates e o estado de ativação devem ser conferidos antes de anunciar disponibilidade.
+
 ## Publicação do site
 
 `infra/frontend.yml` cria uma distribuição CloudFront com origem S3 privada/OAC, o alias `A`/`AAAA` da raiz e os cabeçalhos de segurança. O bucket recebe somente o build estático; não recebe bibliotecas, backups, capas enviadas ou arquivos de Drive.
@@ -51,6 +57,8 @@ O operador provisiona/atualiza a infraestrutura com perfil AWS autorizado e revi
 Para a primeira instalação, baixe o artefato `api-release` do run validado e use `bash scripts/provision-api.sh`, na raiz do repositório. O script exige diretório do artefato, bucket, commit completo, ARN do segredo/certificado e zona DNS em variáveis `API_*` documentadas no próprio arquivo. A autenticação usa o perfil/role AWS do operador; não recebe chaves ou conteúdo do segredo. Depois execute `node scripts/check-auth-production.mjs`: o smoke verifica controles sem sessão, CORS/cookies/PKCE e recuperação de callback cancelado, sem seguir a URL Google nem registrar valores OAuth.
 
 O job da API produz os ZIPs com Cargo Lambda e publica exatamente o artefato daquele run, após fmt, clippy e testes. Os ZIPs ficam identificados pelo commit. Para reverter código, um operador republica os dois ZIPs do commit aprovado anterior e aguarda `function-updated` (usa a permissão limitada GetFunctionConfiguration). Confirmar compatibilidade do esquema antes: uma reversão nunca deve restaurar credenciais antigas ou remover tombstones. A rotina e a API podem executar versões diferentes durante a atualização; alterações no contrato exigem uma transição compatível.
+
+A publicação direta de código não atualiza os parâmetros de artefato guardados pelo CloudFormation. Em uma atualização posterior de infraestrutura, execute o script de provisionamento com os ZIPs e o commit da versão aprovada atual; não reaplique um template com chaves de artefatos antigos, pois isso pode reverter o código das funções.
 
 ### Limites e operação
 
