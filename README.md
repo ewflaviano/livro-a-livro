@@ -21,6 +21,8 @@ A busca explícita usa a Open Library somente para sugerir um rascunho revisáve
 
 O núcleo opcional da [API de autorização do Drive](docs/auth-api.md) está em `api/` (Rust/Axum), com provider Google e testes de sessão. O [conector do frontend](docs/drive-sync.md) tem outbox local, transferência direta, conflitos e recuperação. A composição persistente AWS e a configuração Google são gates de entrega; nenhum serviço foi publicado nesta etapa. O conector de produção só aparece com `VITE_DRIVE_ENABLED=true`, após esses gates.
 
+Experimentos de interface e métricas técnicas são escolhas independentes, desligadas por padrão e descritas em [Experimentos e métricas](docs/experiments.md). A API só aceita catálogos versionados e contadores allowlisted; livros, notas, backups e identificadores continuam fora dela.
+
 Use `npm install` e `npm run dev` para abrir o aplicativo localmente. `npm test`, `npm run typecheck` e `npm run build` verificam testes, tipos e produção. O build é estático e fica em `dist/`.
 
 ### Mesmo fluxo local do BioRotina

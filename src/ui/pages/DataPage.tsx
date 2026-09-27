@@ -3,6 +3,7 @@ import { useSync } from '../../app/SyncProvider';
 import { serializeBackup } from '../../backup/serialize';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { LibraryExport } from '../../backup/schema';
+import { openExperimentStore } from '../../experiments/store';
 
 const labels = {
   disabled: 'Seus dados estão apenas neste dispositivo.', paused: 'Sincronização pausada neste dispositivo.',
@@ -21,7 +22,25 @@ export function downloadLibrary(data: LibraryExport, suffix: string) {
 export function DataPage() {
   const { coordinator, state, available, local } = useSync();
   const [confirm, setConfirm] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [preferences, setPreferences] = useState<{ experiments: boolean; telemetry: boolean } | null>(null);
   useEffect(() => { document.title = 'Seus dados · Livro a Livro'; }, []);
+  useEffect(() => {
+    let active = true; let close = () => {};
+    void openExperimentStore().then(async (store) => {
+      close = store.close;
+      const current = await store.read();
+      if (active) setPreferences({ experiments: current.experimentsConsent, telemetry: current.telemetryConsent });
+    }).catch(() => { if (active) setPreferences(null); });
+    return () => { active = false; close(); };
+  }, []);
+  async function changePreference(kind: 'experiments' | 'telemetry', value: boolean) {
+    try {
+      const store = await openExperimentStore();
+      const next = await store.patch(kind === 'experiments' ? { experimentsConsent: value } : { telemetryConsent: value });
+      store.close();
+      setPreferences({ experiments: next.experimentsConsent, telemetry: next.telemetryConsent });
+    } catch { setError('Não foi possível salvar essa escolha neste dispositivo.'); }
+  }
   async function act(action: () => Promise<unknown>) {
     setBusy(true); setError('');
     try { await action(); } catch { setError('Não foi possível concluir. Sua biblioteca local foi preservada. Tente novamente.'); }
@@ -59,6 +78,18 @@ export function DataPage() {
         <p>Guarde as cópias JSON em um lugar de confiança: elas contêm suas notas e avaliações. As versões do Drive são mantidas; o aplicativo não limpa seu histórico automaticamente.</p>
       </div>}
     </>}
+    <h2>Experimentos e métricas</h2>
+    <p>Essas escolhas não dependem do Google Drive e não mudam sua biblioteca. São desligadas por padrão.</p>
+    {preferences ? <fieldset className="privacy-choices">
+      <label><input type="checkbox" checked={preferences.experiments}
+        onChange={(event) => void changePreference('experiments', event.currentTarget.checked)} />
+        Participar de pequenos experimentos de interface</label>
+      <p>Experimentos só podem alterar fluxos reversíveis. Você pode sair quando quiser.</p>
+      <label><input type="checkbox" checked={preferences.telemetry}
+        onChange={(event) => void changePreference('telemetry', event.currentTarget.checked)} />
+        Enviar métricas técnicas agregadas</label>
+      <p>Quando houver métricas, elas registram apenas contadores de eventos pré-definidos — nunca livros, notas, conta ou identificadores.</p>
+    </fieldset> : <p>Preparando as escolhas de privacidade neste dispositivo…</p>}
     {error && <p role="alert">{error}</p>}
     {confirm && <ConfirmDialog title={confirm === 'connect' ? 'Conectar Google Drive?' : confirm === 'revoke' ? 'Desconectar em todos os dispositivos?' : confirm === 'logout' ? 'Encerrar esta sessão?' : 'Confirmar a versão escolhida?'}
       confirmLabel="Confirmar" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => void act(() => {

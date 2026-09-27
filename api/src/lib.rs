@@ -1,9 +1,11 @@
 //! OAuth control plane only. There are no library or media contracts here.
 pub mod config;
+pub mod experiments;
 pub mod google;
 pub mod http;
 pub mod ports;
 pub mod service;
+pub mod telemetry;
 
 pub use http::router;
 pub use service::Auth;
