@@ -11,6 +11,8 @@ import { createDriveClient } from './drive-client';
 import { libraryHash, parseSnapshot, remoteHeads } from './snapshot';
 import { defaultSyncRecord, syncStateSchema, DRIVE_SCOPE, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot } from './contracts';
 import type { LibraryExport } from '../backup/schema';
+import { assertAuthorizationNavigationSafe } from '../app/authorization-navigation';
+import { blockPwaUpdate } from '../pwa/register';
 import { localTransport } from './local-client';
 
 const binding: Binding = { connectionId: 'synthetic-connection', generation: 1 };
@@ -54,6 +56,28 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it.each(['connect', 'authorizeDrive'] as const)('preserves a new draft when %s finishes its request late', async action => {
+    const s = await setup();
+    if (action === 'authorizeDrive') await s.coordinator.connect();
+    const navigation = vi.fn();
+    s.navigate.mockImplementation(() => { assertAuthorizationNavigationSafe(); navigation(); });
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    let finish!: () => void; const wait = new Promise<void>(resolve => { finish = resolve; });
+    vi.mocked(s.auth[action === 'connect' ? 'startSignIn' : 'startDrive']).mockImplementationOnce(async () => {
+      entered(); await wait; return 'https://accounts.google.com/o/oauth2/v2/auth';
+    });
+    const request = s.coordinator[action]();
+    const rejected = expect(request).rejects.toMatchObject({ code: 'cancelled' });
+    await ready;
+    const release = blockPwaUpdate();
+    try {
+      finish(); await rejected;
+      expect(navigation).not.toHaveBeenCalled();
+      expect((await s.store.read()).enabled).toBe(false);
+      await s.coordinator.cancelAuthorization();
+      expect((await s.store.read()).authorization).toBeNull();
+    } finally { release(); }
+  });
   it('does not inspect an older identity while the new sign-in start request is pending', async () => {
     const s = await setup();
     let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });

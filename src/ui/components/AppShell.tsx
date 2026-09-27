@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { BookOpen, Bookmark, Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
+import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
 import { PwaStatus } from './PwaStatus';
 
 const navigation = [
@@ -13,6 +14,9 @@ const navigation = [
 ];
 
 export function AppShell() {
+  return <GlobalSyncControls><Shell /></GlobalSyncControls>;
+}
+function Shell() {
   const location = useLocation();
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
@@ -39,7 +43,9 @@ export function AppShell() {
         </Link>
         <Link className="button button-primary header-add" to="/adicionar" state={{ returnTo }}
           onClick={() => positions.set(returnTo, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>
+        <GlobalSyncHeader />
       </header>
+      <GlobalSyncAttention />
       {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
       <div className="app-layout">
         <aside className="sidebar">

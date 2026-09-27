@@ -15,7 +15,7 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 | Tema | Decisão V1 | Consequência |
 | --- | --- | --- |
 | Execução | SPA estática, sem SSR; API opcional separada | Leitura/escrita local não esperam servidor |
-| Identidade | Sem conta para uso local; identificação Google temporária e consentimento Drive em ações separadas | Vínculo técnico autenticado do conector, sem perfil social ou login obrigatório |
+| Identidade atual | Sem conta para uso local; identificação Google temporária e consentimento Drive em ações separadas | Vínculo técnico do conector; login persistente opcional planejado na correção de paridade abaixo |
 | Fonte de verdade | IndexedDB; React mantém apenas projeções e rascunhos | Sucesso de escrita somente depois do commit local |
 | Fronteiras | Domínio puro → serviços → portas; adaptadores no ponto de composição | UI não conhece IndexedDB, JSON bruto nem respostas da Open Library |
 | Dados portáveis | `LibraryExport`, `schemaVersion: 1`, validado com Zod | Exportar e restaurar todos os anos sem rede é critério de release |
@@ -28,6 +28,8 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 | Futuro | IA fora do escopo; Drive com fronteira concreta abaixo | Sem SDK de IA, chave de modelo ou cobrança antecipada |
 
 ## 2. Comparação com o BioRotina: repetir, adaptar, não trazer
+
+**Correção de direção em 27 set 2026:** o usuário definiu paridade da mecânica de uso com o BioRotina, mantendo o design e o domínio do Livro. O [plano de paridade](paridade-biorotina.md) passa a orientar cabeçalho/conexão global, login opcional persistente, união explícita de bibliotecas e consentimentos iniciais. A entrega ocorrerá em fatias revisadas nas issues #13, #47 e #46; estes requisitos ainda não devem ser confundidos com disponibilidade em produção. A identidade temporária atual e a resolução por biblioteca inteira serão revistas antes da liberação pública do Drive.
 
 A comparação foi feita no checkout `/home/eflaviano/code/biodrive`, consultando `docs/architecture.md`, `docs/deployment.md`, `package.json`, `src/main.tsx`, `src/domain/data.ts`, `src/storage/indexedDb.ts`, `src/observability/client.ts`, `public/sw.js`, `.github/workflows/ci.yml`, `push/Cargo.toml` e `serverless.yml`.
 

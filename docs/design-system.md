@@ -8,7 +8,7 @@ Este guia define a primeira direção visual do Livro a Livro. Os [tokens CSS](t
 
 ## 1. Escopo e princípios
 
-O Livro a Livro é privado, local-first, sem conta no app e sem componente social. A V1 reúne **Quero ler, Lendo e Lido**, estante anual em Grade/Lista, cadastro por busca ou manual, página do livro, avaliação e nota privadas, estatísticas mínimas, exportação/importação JSON e imagem anual em Story/Quadrado. A arquitetura posterior inclui Google Drive opcional; seu cliente e simulador existem, mas a habilitação de produção depende dos gates da API. Consulte o [estado atual](../README.md#estado-atual); o catálogo visual continua conceitual. Não introduzir feed, metas, sequências de dias, recomendações, IA, comentários, seguidores ou rankings.
+O Livro a Livro é privado, local-first, sem conta obrigatória e sem componente social. A V1 reúne **Quero ler, Lendo e Lido**, estante anual em Grade/Lista, cadastro por busca ou manual, página do livro, avaliação e nota privadas, estatísticas mínimas, exportação/importação JSON e imagem anual em Story/Quadrado. A arquitetura posterior inclui Google Drive opcional; seu cliente e simulador existem, mas a habilitação de produção depende dos gates da API. Consulte o [estado atual](../README.md#estado-atual); o catálogo visual continua conceitual. Não introduzir feed, metas, sequências de dias, recomendações, IA, comentários, seguidores ou rankings.
 
 1. **O livro é o centro.** Capa, título e autoria têm precedência. A interface organiza a estante e depois sai do caminho.
 2. **Calma com precisão.** Muito espaço em torno do conteúdo, pouco ornamento e rótulos que descrevem o efeito de cada ação.
@@ -17,7 +17,7 @@ O Livro a Livro é privado, local-first, sem conta no app e sem componente socia
 5. **Local não significa cópia de segurança.** Comunicar onde os registros estão, o que foi salvo e o que uma exportação realmente confirma.
 6. **O básico independe de catálogo externo.** A entrada manual continua disponível quando não há rede, capa ou resultado de busca.
 
-O BioRotina foi consultado apenas quanto ao formato documental e à abrangência dos estados. Esta identidade usa linguagem editorial, serifas, tinta ameixa e marcador amarelo próprios.
+O BioRotina é a referência funcional para conexão global, sincronização, resolução de divergências e escolhas iniciais de privacidade. A [correção de direção de 27 set 2026](paridade-biorotina.md) define a entrega sequencial dessas equivalências. Esta identidade usa linguagem editorial, serifas, tinta ameixa e marcador amarelo próprios. Os estados históricos abaixo não substituem essa decisão nem afirmam que toda a correção já foi entregue.
 
 ## 2. Identidade e tom de voz
 
@@ -293,3 +293,13 @@ Configurações oferece os controles existentes de ano (incluindo atual automát
 Instalar oferece instruções Chrome/Android e Safari/iPhone/iPad. Botão só aparece com evento nativo disponível. Cancelamento e falha mantêm instruções; pedido aceito não vira instalado até observação do navegador. Estado instalado deixa backup acessível. Instalação não promete cópia ou conservação garantida dos registros.
 
 A preparação offline inicial nunca usa a mensagem de atualização. Versão nova aguardando permite consentir, respeitando rascunhos/operações e outras abas. A página desconhecida oferece Estante e backup, sem “Em construção”.
+
+### Conexão global — primeira fatia da correção de paridade, issue #13
+
+O cabeçalho reúne Apoiar, conexão/estado do Drive e Configurações em todas as rotas. No celular, as ações podem ocupar uma segunda linha sem ocultar os rótulos. Adicionar continua na barra inferior; desktop mantém seu botão no cabeçalho. Preparando conexão e indisponibilidade real têm mensagens distintas.
+
+Entrar com Google abre a confirmação compartilhada com Seus dados. Após identificação, o convite Autorizar Drive oferece Agora não; não inicia a segunda autorização por conta própria. Nesta fatia, a identificação ainda é temporária e o texto informa esse limite. Login persistente e a lembrança de Agora não entre aberturas pertencem à próxima fatia.
+
+Formulário aberto, operação de backup, atualização em aplicação ou outro diálogo adiam o convite. Rascunho/backup/update também são conferidos imediatamente antes de sair para Google, depois da resposta de autorização. Fechar devolve o foco a um acionador disponível. Autorização usa o estilo de ação primária; ações destrutivas conservam seu estilo próprio.
+
+Erro, reconexão, revogação pendente e conflito exibem aviso global com detalhes e Decidir depois. Dispensar o aviso mantém o estado no cabeçalho; uma nova situação pode voltar a ser anunciada. A resolução continua em Seus dados até a fatia de união. Com a flag desligada, o cabeçalho informa indisponibilidade e leva aos detalhes, sem simular conexão.

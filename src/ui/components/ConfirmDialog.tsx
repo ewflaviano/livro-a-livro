@@ -1,9 +1,12 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
+import { occupyUi } from '../interaction-guard';
 import { createPortal } from 'react-dom';
 
-export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfirm, busy = false }: {
+const dialogs: symbol[] = [];
+
+export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfirm, busy = false, cancelLabel = 'Cancelar', variant = 'danger', returnFocus }: {
   title: string; children: ReactNode; confirmLabel: string; onCancel: () => void;
-  onConfirm: () => void; busy?: boolean;
+  onConfirm: () => void; busy?: boolean; cancelLabel?: string; variant?: 'primary' | 'danger'; returnFocus?: RefObject<HTMLElement | null>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -13,12 +16,16 @@ export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfi
   cancel.current = onCancel;
   pending.current = busy;
   useEffect(() => {
+    const token = Symbol(); dialogs.push(token);
+    const isTop = () => dialogs.at(-1) === token;
+    const release = occupyUi();
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLButtonElement>('button')?.focus();
     const containFocus = (event: FocusEvent) => {
-      if (!ref.current?.contains(event.target as Node)) ref.current?.focus();
+      if (isTop() && !ref.current?.contains(event.target as Node)) ref.current?.focus();
     };
     const handleKey = (event: KeyboardEvent) => {
+      if (!isTop()) return;
       if (event.key === 'Escape') { event.preventDefault(); if (!pending.current) cancel.current(); }
       if (event.key === 'Tab') {
         const buttons = ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
@@ -34,15 +41,21 @@ export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfi
     document.addEventListener('keydown', handleKey);
     document.addEventListener('focusin', containFocus);
     return () => {
+      dialogs.splice(dialogs.indexOf(token), 1);
+      release();
       document.removeEventListener('keydown', handleKey);
       document.removeEventListener('focusin', containFocus);
-      if (previous?.isConnected) previous.focus();
+      queueMicrotask(() => {
+        if (dialogs.length > 0) return;
+        if (previous?.isConnected && previous !== document.body && !(previous instanceof HTMLButtonElement && previous.disabled)) previous.focus();
+        else returnFocus?.current?.focus();
+      });
     };
   }, []);
   return createPortal(<div className="dialog-backdrop"><div className="confirm-dialog" ref={ref} tabIndex={-1}
     role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={busy}>
     <h2 id={titleId}>{title}</h2><div id={descriptionId}>{children}</div>
-    <div className="form-actions"><button className="button button-secondary" disabled={busy} onClick={onCancel}>Cancelar</button>
-      <button className="button button-danger" disabled={busy} onClick={onConfirm}>{busy ? 'Aguarde…' : confirmLabel}</button></div>
+    <div className="form-actions"><button className="button button-secondary" disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+      <button className={`button button-${variant}`} disabled={busy} onClick={onConfirm}>{busy ? 'Aguarde…' : confirmLabel}</button></div>
   </div></div>, document.body);
 }
