@@ -3,6 +3,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SyncView } from '../../sync/contracts';
+import { MemoryRouter } from 'react-router-dom';
+import { GlobalSyncControls } from '../components/GlobalSyncControls';
 import { DataPage } from './DataPage';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false,
@@ -14,21 +16,21 @@ vi.mock('../../experiments/store', () => ({ openExperimentStore: async () => ({ 
 afterEach(() => { cleanup(); vi.clearAllMocks(); sync.state = { status: 'disabled' }; });
 describe('optional two-step Google authorization', () => {
   it('requires a separate confirmed action after identity, keeping backup available', async () => {
-    const view = render(<DataPage />);
+    const view = render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
     await userEvent.click(screen.getByRole('button', { name: 'Entrar com Google' }));
     expect(screen.getByText(/Ela ainda não autoriza o Drive nem envia sua biblioteca/)).toBeTruthy();
-    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirmar' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Entrar com Google' }));
     expect(sync.coordinator.connect).toHaveBeenCalledOnce(); expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
-    sync.state = { status: 'authorize-drive' }; view.rerender(<DataPage />);
+    sync.state = { status: 'authorize-drive' }; view.rerender(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
     expect(screen.getByText(/Conta Google confirmada por alguns minutos. O Drive ainda não foi autorizado/)).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Exportar JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Autorizar Google Drive' }));
-    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirmar' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Autorizar Drive' }));
     expect(sync.coordinator.authorizeDrive).toHaveBeenCalledOnce();
   });
   it('offers cancellation and retry without making Google necessary for offline backup', async () => {
-    sync.state = { status: 'authorization-waiting' }; render(<DataPage />);
+    sync.state = { status: 'authorization-waiting' }; render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
     expect(screen.getByText(/backup continuam disponíveis offline/)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Verificar autorização novamente' }));
     expect(sync.coordinator.retryAuthorization).toHaveBeenCalledOnce();

@@ -1,3 +1,4 @@
+import { occupyUi } from '../interaction-guard';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BOOK_LIMITS, type Book, type NewBook, type ReadingStatus } from '../../domain/book';
 import { DomainError } from '../../domain/errors';
@@ -54,6 +55,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const coverSelection = useRef(0);
   useEffect(() => () => { coverSelection.current++; }, []);
   const form = useRef<HTMLFormElement>(null);
+  useEffect(occupyUi, []);
   const dirty = coverPreparing || localCover !== null || JSON.stringify(initial) !== JSON.stringify(draft);
   useEffect(() => { if (dirty || busy) return blockPwaUpdate(); }, [dirty, busy]);
   useEffect(() => { form.current?.querySelector('input')?.focus(); }, []);
