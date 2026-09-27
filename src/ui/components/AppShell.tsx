@@ -66,7 +66,7 @@ export function AppShell() {
         </Link>
       </nav>
       {location.pathname !== '/configuracoes' && <PwaStatus />}
-      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><Link to="/apoiar">Apoiar o projeto</Link></footer>
+      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><a href="/privacidade.html">Privacidade</a><Link to="/apoiar">Apoiar o projeto</Link></footer>
     </>
   );
 }

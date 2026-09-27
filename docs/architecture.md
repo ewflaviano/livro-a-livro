@@ -2,7 +2,7 @@
 
 **Decisão para V1 · 26 set 2026 · Estado revisto em 27 set 2026**
 
-O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com biblioteca em IndexedDB e contrato de backup JSON versionado. O núcleo local, busca, compartilhamento anual e app shell estão implementados. A API opcional Rust/Axum tem núcleo OAuth e contratos técnicos; composição durável e habilitação de produção continuam pendentes. IA permanece fora do escopo.
+O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com biblioteca em IndexedDB e contrato de backup JSON versionado. O núcleo local, busca, compartilhamento anual e app shell estão implementados. A API opcional Rust/Axum tem composição durável AWS na issue #13; a habilitação pública do Drive depende dos gates reais de autorização e transferência. IA permanece fora do escopo.
 
 Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
 

@@ -43,7 +43,13 @@ export function createAuthClient(fetcher: typeof fetch = fetch): AuthClient {
       return url.href;
     },
     async disconnect(all) {
-      try { await client.session(); await control(all ? '/v1/drive-connection' : '/v1/session', 'DELETE', true); }
+      try {
+        await client.session();
+        const response = await control(all ? '/v1/drive-connection' : '/v1/session', 'DELETE', true);
+        if (!all) return false;
+        return z.strictObject({ disconnected: z.literal(true), revocationPending: z.boolean() })
+          .parse(await limitedJson(response, 1024)).revocationPending;
+      }
       finally { access = null; session = null; }
     },
   };

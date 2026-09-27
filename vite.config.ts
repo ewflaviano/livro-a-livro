@@ -8,4 +8,8 @@ const version = JSON.parse(readFileSync(new URL('./package.json', import.meta.ur
 let build = 'local';
 try { build = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* Source archives have no Git metadata. */ }
 
-export default defineConfig({ define: { __APP_VERSION__: JSON.stringify(version), __BUILD_ID__: JSON.stringify(build) }, plugins: [react(), pwaPlugin()] });
+export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(version), __BUILD_ID__: JSON.stringify(build) },
+  build: { rollupOptions: { input: { app: 'index.html', privacy: 'privacidade.html' } } },
+  plugins: [react(), pwaPlugin()],
+});

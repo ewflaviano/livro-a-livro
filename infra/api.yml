@@ -1,0 +1,321 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Livro a Livro OAuth control plane. No library, notes, media or backup ingress.
+Parameters:
+  CertificateArn: { Type: String }
+  HostedZoneId: { Type: String }
+  SecretArn: { Type: String }
+  ArtifactBucket: { Type: String }
+  AuthCodeKey: { Type: String }
+  RevocationCodeKey: { Type: String }
+Resources:
+  AuthTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: livro-a-livro-auth
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: workType, AttributeType: S }
+        - { AttributeName: workAt, AttributeType: N }
+      KeySchema: [{ AttributeName: pk, KeyType: HASH }]
+      GlobalSecondaryIndexes:
+        - IndexName: work-due
+          KeySchema:
+            - { AttributeName: workType, KeyType: HASH }
+            - { AttributeName: workAt, KeyType: RANGE }
+          Projection: { ProjectionType: KEYS_ONLY }
+      TimeToLiveSpecification: { AttributeName: deleteAfter, Enabled: true }
+      SSESpecification: { SSEEnabled: true }
+      # Credentials are revocable. Historical credential backups are intentionally not enabled.
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: false }
+      DeletionProtectionEnabled: true
+  CredentialKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Encrypt Livro a Livro Google refresh credentials with authenticated context.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DelegateThroughIAM
+            Effect: Allow
+            Principal: { AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root' }
+            Action: kms:*
+            Resource: '*'
+  AuthLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/livro-a-livro-auth, RetentionInDays: 14 }
+  RevocationLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/livro-a-livro-revocation, RetentionInDays: 14 }
+  AuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: oauth-control-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:UpdateItem, dynamodb:ConditionCheckItem]
+                Resource: !GetAtt AuthTable.Arn
+              - Effect: Allow
+                Action: [kms:Encrypt, kms:Decrypt]
+                Resource: !GetAtt CredentialKey.Arn
+                Condition:
+                  StringEquals:
+                    kms:EncryptionContext:application: livro-a-livro
+                    kms:EncryptionContext:environment: production
+                  'Null': { 'kms:EncryptionContext:connection': false }
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SecretArn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt AuthLogs.Arn
+  RevocationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: revoke-and-expire-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:ConditionCheckItem]
+                Resource: !GetAtt AuthTable.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ['CONTROL#grants', 'CONNECTION#*']
+              - Effect: Allow
+                Action: dynamodb:Query
+                Resource: !Sub '${AuthTable.Arn}/index/work-due'
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !GetAtt CredentialKey.Arn
+                Condition:
+                  StringEquals:
+                    kms:EncryptionContext:application: livro-a-livro
+                    kms:EncryptionContext:environment: production
+                  'Null': { 'kms:EncryptionContext:connection': false }
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SecretArn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt RevocationLogs.Arn
+  AuthFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: livro-a-livro-auth
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures: [x86_64]
+      MemorySize: 256
+      Timeout: 25
+      Role: !GetAtt AuthRole.Arn
+      Code: { S3Bucket: !Ref ArtifactBucket, S3Key: !Ref AuthCodeKey }
+      Environment:
+        Variables:
+          AUTH_TABLE_NAME: !Ref AuthTable
+          AUTH_KMS_KEY_ID: !GetAtt CredentialKey.Arn
+          AUTH_SECRET_ARN: !Ref SecretArn
+          APP_ENVIRONMENT: production
+      # Only fixed EMF counters are emitted for uncertain immediate revocations.
+      LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref AuthLogs }
+  RevocationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: livro-a-livro-revocation
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures: [x86_64]
+      MemorySize: 256
+      Timeout: 25
+      Role: !GetAtt RevocationRole.Arn
+      Code: { S3Bucket: !Ref ArtifactBucket, S3Key: !Ref RevocationCodeKey }
+      Environment:
+        Variables:
+          AUTH_TABLE_NAME: !Ref AuthTable
+          AUTH_KMS_KEY_ID: !GetAtt CredentialKey.Arn
+          AUTH_SECRET_ARN: !Ref SecretArn
+          APP_ENVIRONMENT: production
+      # Worker writes only fixed EMF counters. No request, identifier or SDK debug output.
+      LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref RevocationLogs }
+  RevocationSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Id: revoke
+          Arn: !GetAtt RevocationFunction.Arn
+          Input: '{}'
+          RetryPolicy: { MaximumEventAgeInSeconds: 60, MaximumRetryAttempts: 0 }
+  RevocationAsyncPolicy:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref RevocationFunction
+      Qualifier: '$LATEST'
+      MaximumEventAgeInSeconds: 60
+      MaximumRetryAttempts: 0
+  SchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RevocationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt RevocationSchedule.Arn
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: livro-a-livro-auth
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: true
+  AuthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt AuthFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 26000
+  AuthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${AuthIntegration}'
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings: { ThrottlingBurstLimit: 5, ThrottlingRateLimit: 2 }
+      # No request/access logs: URL queries and auth headers must not be recorded.
+  ApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+  ApiDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties:
+      DomainName: api.livroalivro.app.br
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          EndpointType: REGIONAL
+          SecurityPolicy: TLS_1_2
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties: { ApiId: !Ref HttpApi, DomainName: !Ref ApiDomain, Stage: !Ref ApiStage }
+  ApiDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: api.livroalivro.app.br
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiDomain.RegionalDomainName
+        HostedZoneId: !GetAtt ApiDomain.RegionalHostedZoneId
+        EvaluateTargetHealth: false
+  WorkerFailures:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Inspect revocation backlog; requests and credentials must never be logged.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref RevocationFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  WorkerThrottles:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Shared regional concurrency may delay credential cleanup; investigate immediately.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref RevocationFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  WorkerAbsent:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: No cleanup invocation observed for five minutes; check schedule and shared concurrency.
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions: [{ Name: FunctionName, Value: !Ref RevocationFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+  RevocationUncertain:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Google revocation outcome uncertain; connection remains blocked. Follow the recovery runbook.
+      Namespace: LivroALivro/Auth
+      MetricName: RevocationUncertain
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  CleanupFailed:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Cleanup reported a retryable or infrastructure failure; inspect recurring failures without logging credentials.
+      Namespace: LivroALivro/Auth
+      MetricName: Failed
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  CleanupIncomplete:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Cleanup budget or provider failure interrupted processing; inspect recurring failures and deadlines.
+      Namespace: LivroALivro/Auth
+      MetricName: Incomplete
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+Outputs:
+  ApiUrl: { Value: 'https://api.livroalivro.app.br' }
+  AuthTableName: { Value: !Ref AuthTable }
+  CredentialKeyArn: { Value: !GetAtt CredentialKey.Arn }
+  AuthRoleArn: { Value: !GetAtt AuthRole.Arn }
+  RevocationRoleArn: { Value: !GetAtt RevocationRole.Arn }

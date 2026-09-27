@@ -77,7 +77,7 @@ impl Google {
                 if serde_json::from_slice::<Failure>(&bytes)
                     .is_ok_and(|e| e.error == "invalid_grant")
                 {
-                    Error::Reconnect
+                    Error::InvalidGrant
                 } else {
                     Error::Provider
                 },
@@ -207,18 +207,18 @@ impl Provider for Google {
             rotated_refresh: tokens.refresh_token.map(Secret),
         })
     }
-    async fn revoke(&self, refresh: &str) -> Result<(), Error> {
-        let response = self
+    async fn revoke(&self, refresh: &str) -> RevokeOutcome {
+        // Any response except success may have followed a dispatched revocation.
+        // Conservatively require assisted resolution instead of risking a newer grant.
+        match self
             .client
             .post(REVOKE_URL)
             .form(&[("token", refresh)])
             .send()
             .await
-            .map_err(|_| Error::Provider)?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Error::Provider)
+        {
+            Ok(response) if response.status().is_success() => RevokeOutcome::Confirmed,
+            _ => RevokeOutcome::Uncertain,
         }
     }
 }

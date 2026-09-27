@@ -1,12 +1,12 @@
 # API de autorização do Drive
 
-A issue #10 implementa o núcleo Rust/Axum, o cliente OAuth Google e a entrada reutilizável `run_lambda`, atrás da feature `lambda`. **Ainda não existe serviço publicado ou executável com persistência de produção.** A composição AWS da issue #13 precisa implementar as portas `Store` e `Crypto` com DynamoDB/KMS/Secrets Manager. O único store em memória está em testes, nunca no runtime. Nenhum recurso, segredo ou configuração GCP/AWS foi criado nesta issue.
+A issue #10 implementou o núcleo Rust/Axum. A issue #13 acrescenta os adaptadores oficiais AWS para DynamoDB, KMS e Secrets Manager, os executáveis `auth`/`revocation` e a infraestrutura separada da PWA. O único store em memória está em testes, nunca no runtime. A ativação pública do Drive depende dos gates reais descritos em [drive-release-gate.md](drive-release-gate.md), além dos testes de contrato.
 
 ## Fronteira
 
 O serviço recebe exclusivamente os controles de autorização. As rotas de controle exigem body vazio; queries são recusadas fora do callback. Um limite de 16 KiB também rejeita payloads grandes antes do handler. Não existem contratos de livro, nota, avaliação, backup, hash da biblioteca, imagem ou transferência de Drive. O provider conhece apenas endpoints fixos de token, JWKS e revogação Google.
 
-O cliente da issue #11 pede um access token e faz as transferências **diretamente entre PWA e Google Drive** ([conector e modo local](drive-sync.md)). A habilitação em produção depende da composição AWS e configuração GCP. Capas locais já têm implementação no cliente e seguem a mesma fronteira direta; nunca transitam por esta API. Sua recuperação ainda tem pendências registradas na [auditoria](audit-2026-09-27.md).
+O cliente pede um access token e faz as transferências **diretamente entre PWA e Google Drive** ([conector e modo local](drive-sync.md)). Capas locais seguem a mesma fronteira direta; nunca transitam por esta API. As issues #37/#39 implementaram validação, atomicidade e limites portáveis da recuperação com mídia.
 
 ## Contrato HTTP
 
@@ -32,32 +32,32 @@ O access token permanece somente em memória durante a execução do PWA. Não e
 - Troca confidencial no servidor. Solicita exatamente `openid` e `https://www.googleapis.com/auth/drive.appdata`, sem e-mail, perfil ou Drive completo. Rejeita concessão extra ou incompleta. Exige refresh token novo no consentimento; se ausente retorna `incomplete_consent` sem criar sessão.
 - ID token verificado localmente por assinatura RS256/JWKS, issuer, audience exata, expiração, nonce e `azp` quando presente. Cache de JWKS por cinco minutos, respostas limitadas a 64 KiB, timeout e redirects de rede desativados. Chave nova desconhecida pode requerer nova tentativa após expiração do cache.
 - Cookie `__Host-lal_session`, `Secure; HttpOnly; SameSite=Lax; Path=/`, sem Domain. O serviço persiste apenas hash do cookie; CSRF deriva de HMAC com propósito próprio. Sessão 30 dias, renovação explícita com rotação dentro de 180 dias absolutos.
-- Portas exigem lease distribuído/fencing e atualização atômica do refresh token rotacionado; uma operação expirada/revogada não pode liberar seu access token. `invalid_grant` ou escopos retirados invalidam a geração. Revogação bloqueia imediatamente e mantém apenas credencial cifrada para retry até 24h. Arquivos Drive e biblioteca local nunca são apagados.
+- DynamoDB exige lease distribuído/fencing e atualização atômica do refresh token rotacionado; uma operação expirada/revogada não pode liberar seu access token. `invalid_grant` ou escopos retirados invalidam a geração. Revogação bloqueia imediatamente; tentativas comprovadamente não enviadas podem ser repetidas por até 24h. Uma resposta incerta não permite repetição nem reconexão automática. Arquivos Drive e biblioteca local nunca são apagados.
 
 `Secret` não implementa Debug/Serialize e limpa sua String ao sair de escopo. Isso reduz exposição acidental, sem alegar eliminar todas as cópias que bibliotecas de HTTP/JSON podem produzir. O código não registra requisições, headers, códigos, identidades ou tokens.
 
-## Composição de produção: gate da issue #13
+## Composição durável — issue #13
 
-Implementar e testar, antes de habilitar o conector:
+Invariantes verificadas pelo adaptador, sem confiar na remoção eventual por TTL:
 
-1. Store DynamoDB com leitura consistente, transações condicionais, hashes de sessão, prazos verificados em cada operação, lease de 30s e fencing por owner. TTL é somente limpeza. Conexões sem atividade por 180 dias devem expirar; sessões respeitam o prazo absoluto. `connect` deve respeitar lease em andamento e nunca ressuscitar consentimento por uma operação antiga.
-2. Crypto KMS com contexto autenticado ambiente/conexão, HMAC com chave separada carregada de Secrets Manager (primitiva `keyed_digest`). OAuth client secret também vem de Secrets Manager. Sem plaintext de refresh token em DynamoDB, variáveis VITE ou logs.
-3. Job pequeno de retry de revogação e limpeza: retenção máxima 24h de credencial bloqueada; remoção condicional pela geração para não apagar reconexão mais recente. IAM exclusivo de auth, sem permissões S3 para dados privados.
-4. Binário de composição que carrega configuração e chama `run_lambda(Auth { ... })`. Não existe fallback em memória ou segredo de desenvolvimento.
-5. Rate limits de API Gateway para início/callback e tentativas inválidas; rate limit de token por conexão também no Store. Desativar logs de query string, headers e bodies em Gateway/Lambda/tracing. Métricas só por códigos agregados.
-6. Testes de integração reais do adaptador (corridas entre invocações, atomicidade, expiração, falha de KMS, rotação e revogação). Os testes em memória desta issue validam o contrato do núcleo, mas não substituem a prova de atomicidade do DynamoDB.
+1. Leituras consistentes, transações condicionais, hashes de sessão e prazos conferidos nas operações. A posse de refresh dura 30s e limita inclusive tentativas que falham. Renovação remove a sessão antiga e cria a nova atomicamente, sem estender os 180 dias absolutos.
+2. KMS autentica `application=livro-a-livro`, `environment=production` e conexão opaca. O contexto pode aparecer em registros administrativos AWS; nunca contém subject, e-mail, token ou biblioteca. A chave HMAC está no Secrets Manager com o segredo OAuth; não é derivada do client secret.
+3. O callback lê o epoch global antes de trocar o código no Google. A criação da sessão exige que ele permaneça igual e que a conexão não esteja bloqueada. Revogação avança esse epoch, impedindo um callback antigo de ressuscitar acesso. Pode ser necessário repetir consentimento quando outra revogação coincidir; nunca se revoga automaticamente o token descartado.
+4. O worker usa o índice apenas para encontrar candidatos; condições na tabela base autorizam cada alteração. Inatividade de 180 dias inicia o mesmo protocolo de bloqueio/revogação. Deadline de 24h impede uso da credencial mesmo se a limpeza atrasar.
+5. Antes de chamar o Google, a tentativa é marcada como enviada. Se o processo morrer ou o resultado for ambíguo, o estado passa a incerto: não se toma o lease para repetir a chamada. Conclusão e limpeza exigem geração, operação e proprietário corretos.
+6. Configuração ausente/inválida falha com código genérico. Não existe fallback em memória, segredo de desenvolvimento ou logging de erro bruto do SDK. Roles de execução não têm acesso a S3.
 
-Configuração prevista para o binário de composição:
+Configuração dos executáveis:
 
 | Nome | Fonte / conteúdo |
 | --- | --- |
-| `GOOGLE_CLIENT_ID` | identificador público do cliente Web do projeto próprio |
-| `GOOGLE_OAUTH_SECRET_ARN` | ARN Secrets Manager, nunca o segredo no repositório |
-| `AUTH_HMAC_SECRET_ARN` | ARN de chave aleatória de pelo menos 32 bytes |
-| `AUTH_KMS_KEY_ARN` | chave KMS restrita à role de auth |
+| `APP_ENVIRONMENT` | `production`; outro valor falha fechado |
+| `AUTH_SECRET_ARN` | segredo JSON estrito com `client_id`, `client_secret` e `hmac_key` (mínimo 32 bytes literais) |
+| `AUTH_KMS_KEY_ID` | ARN da chave KMS do projeto |
 | `AUTH_TABLE_NAME` | tabela exclusiva para OAuth, conexões e sessões |
+| `AWS_REGION` | `sa-east-1`, fornecida pelo Lambda |
 
-Origem e callback são allowlist literal na configuração compilada de produção. Alterações para outro ambiente exigem configuração revisada, cliente e tabela distintos. Os nomes acima são contrato de implantação, ainda não lidos automaticamente por um binário.
+Origem e callback são allowlist literal na configuração compilada de produção. Alterações para outro ambiente exigem configuração revisada, cliente e tabela distintos. O [runbook](deployment.md#revogação-incerta) descreve retenção, alarmes e resolução assistida do bloqueio; expiração e limpeza nunca substituem confirmação do resultado externo.
 
 ## Preparação GCP já autorizada pelo usuário, em etapa posterior
 
@@ -75,4 +75,4 @@ cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D w
 cargo test --manifest-path api/Cargo.toml --all-features
 ```
 
-Fixtures são sintéticas. Testes não acessam Google/AWS e não geram credenciais reais.
+Fixtures são sintéticas. A suíte padrão não acessa Google/AWS. Os testes ignorados de `api/tests/aws.rs` exigem recursos AWS isolados e variáveis explícitas, conforme [api/README.md](../api/README.md#checks-e-gates-reais); não usam conta Google nem segredo real. OAuth/Drive reais são um gate separado com autorização humana em perfis descartáveis.

@@ -151,7 +151,19 @@ struct Callback {
     authuser: Option<String>,
     prompt: Option<String>,
 }
-async fn callback(
+async fn callback(state: State<Auth>, headers: HeaderMap, request: Request) -> Response {
+    match callback_inner(state, headers, request).await {
+        Ok(response) => response,
+        Err(error) => {
+            let status = error.into_response().status();
+            let mut response = (status, axum::response::Html("<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Conexão com Google Drive</title><h1>Não foi possível conectar ao Google Drive.</h1><p>Sua biblioteca continua neste dispositivo.</p><a href=\"https://livroalivro.app.br/#/dados\">Voltar ao aplicativo</a></html>")).into_response();
+            set_cookie(&mut response, OAUTH_COOKIE, "", 0);
+            response
+        }
+    }
+}
+
+async fn callback_inner(
     State(auth): State<Auth>,
     headers: HeaderMap,
     request: Request,
@@ -233,7 +245,9 @@ impl IntoResponse for Error {
             Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid_request"),
             Error::IncompleteConsent => (StatusCode::CONFLICT, "incomplete_consent"),
             Error::Busy => (StatusCode::TOO_MANY_REQUESTS, "retry_later"),
-            Error::Reconnect => (StatusCode::UNAUTHORIZED, "reconnect_required"),
+            Error::Reconnect | Error::InvalidGrant => {
+                (StatusCode::UNAUTHORIZED, "reconnect_required")
+            }
             Error::Provider => (StatusCode::BAD_GATEWAY, "provider_unavailable"),
             Error::Unavailable | Error::Configuration => {
                 (StatusCode::SERVICE_UNAVAILABLE, "unavailable")

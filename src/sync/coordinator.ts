@@ -2,7 +2,7 @@ import { utf8ByteLength } from '../domain/library';
 import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
-import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncRecord, type SyncSnapshot, type SyncView } from './contracts';
+import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SyncView } from './contracts';
 import { libraryHash, remoteHeads } from './snapshot';
 import type { SyncStore } from './outbox';
 import type { LibraryExport } from '../backup/schema';
@@ -20,8 +20,8 @@ export function createSyncCoordinator(options: Options) {
   let closed = false; let running = false; let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined; let polling: ReturnType<typeof setTimeout> | undefined;
   let firstEdit = 0; let lastPoll = 0;
-  const publish = (next: SyncView) => { if (!closed) { view = next; listeners.forEach(listener => listener()); } };
-  const guard = async () => { if (closed || controller?.signal.aborted || !(await store.read()).enabled) throw new SyncError('cancelled'); await store.assertLease(owner); };
+  const publish = (next: SyncView) => { if (!closed) { view = { ...next, revocationPending: next.revocationPending ?? view.revocationPending }; listeners.forEach(listener => listener()); } };
+  const guard = async () => { if (!(await store.read()).enabled || closed || controller?.signal.aborted) throw new SyncError('cancelled'); await store.assertLease(owner); };
   async function library(): Promise<{ library: LibraryExport; version: LocalRevision }> {
     const snapshot = await repository.readBackupSnapshot();
     validateMediaCollection(snapshot.books, snapshot.coverMedia);
@@ -42,22 +42,21 @@ export function createSyncCoordinator(options: Options) {
     conflict = { binding, heads, version, accountChanged };
     publish({ status: 'conflict', localCount: (await repository.readAll()).books.length, remote, accountChanged });
   }
-  async function accepted(record: SyncRecord, head: DriveFile, version: LocalRevision) {
+  async function accepted(head: DriveFile, version: LocalRevision) {
     await guard();
     conflict = null;
-    await store.write({ ...record, base: { snapshotId: head.header.snapshotId, hash: head.header.hash }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() });
-    await store.acknowledge(version);
-    await store.clearOperation();
+    await store.update({ base: { snapshotId: head.header.snapshotId, hash: head.header.hash }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }, owner, false, version);
     const current = await repository.readRevision();
+    await guard();
     publish(sameRevision(current, version) ? { status: 'synced', lastSyncedAt: new Date().toISOString() } : { status: 'pending' });
     if (!sameRevision(current, version)) schedule(1500);
   }
-  async function transfer(record: SyncRecord, binding: Binding, drive: DriveClient, heads: DriveFile[], local: Awaited<ReturnType<typeof library>>, signal: AbortSignal) {
+  async function transfer(binding: Binding, drive: DriveClient, heads: DriveFile[], local: Awaited<ReturnType<typeof library>>, signal: AbortSignal) {
     let operation = await store.operation();
     if (operation && !sameBinding(operation.binding, binding)) throw new SyncError('conflict');
     if (!operation) {
       operation = { binding, version: local.version, snapshot: await snapshot(local.library, heads[0]?.header.snapshotId ?? null) };
-      await guard(); await store.saveOperation(operation);
+      await guard(); await store.saveOperation(operation, owner);
     }
     if (operation.snapshot.parentSnapshotId !== (heads[0]?.header.snapshotId ?? null) && !operation.snapshot.resolvedSnapshotIds.length) {
       await showConflict(binding, heads, local.version); return;
@@ -67,11 +66,12 @@ export function createSyncCoordinator(options: Options) {
     if (confirmed.length !== 1 || confirmed[0].header.snapshotId !== operation.snapshot.snapshotId || confirmed[0].header.hash !== operation.snapshot.hash) {
       await showConflict(binding, confirmed, local.version); return;
     }
-    await accepted(record, confirmed[0], operation.version);
+    await accepted(confirmed[0], operation.version);
   }
   async function cycle(signal: AbortSignal) {
     let record = await store.read();
-    if (!record.enabled) { publish({ status: record.binding ? 'paused' : 'disabled' }); return; }
+    if (record.revocationPending) { publish({ status: 'reconnect', revocationPending: true }); return; }
+    if (!record.enabled) { publish({ status: record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); return; }
     if (!options.online()) { publish({ status: 'offline' }); return; }
     if (!options.visible()) return;
     if (record.attempts >= 5) { publish({ status: 'error' }); return; }
@@ -83,28 +83,28 @@ export function createSyncCoordinator(options: Options) {
     if (record.binding && !sameBinding(record.binding, binding)) {
       await showConflict(binding, heads, local.version, true); return;
     }
-    if (!record.binding) { record = { ...record, binding }; await guard(); await store.write(record); }
+    if (!record.binding) { record = { ...record, binding }; await guard(); await store.update({ binding }, owner); }
     const operation = await store.operation();
     if (operation && sameBinding(operation.binding, binding)) {
       const found = files.find(file => file.header.operationId === operation.snapshot.operationId);
       if (found && (found.header.hash !== operation.snapshot.hash || found.header.snapshotId !== operation.snapshot.snapshotId)) throw new SyncError('invalid');
-      if (found && heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(record, found, operation.version); return; }
+      if (found && heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(found, operation.version); return; }
       if (!record.base && operation.snapshot.resolvedSnapshotIds.length &&
         ids(heads) === [...operation.snapshot.resolvedSnapshotIds].sort().join(',')) {
-        await transfer(record, binding, drive, heads, local, signal); return;
+        await transfer(binding, drive, heads, local, signal); return;
       }
     }
     if (heads.length > 1) { await showConflict(binding, heads, local.version); return; }
     const hash = await libraryHash(local.library); const remote = heads[0];
-    if (remote?.header.hash === hash) { await accepted(record, remote, local.version); return; }
+    if (remote?.header.hash === hash) { await accepted(remote, local.version); return; }
     if (!remote) {
       if (record.base) { await showConflict(binding, heads, local.version); return; }
-      if (local.library.books.length) await transfer(record, binding, drive, heads, local, signal);
+      if (local.library.books.length) await transfer(binding, drive, heads, local, signal);
       else publish({ status: 'synced' });
       return;
     }
     if (!record.base) { await showConflict(binding, heads, local.version); return; }
-    if (remote.header.snapshotId === record.base.snapshotId) { await transfer(record, binding, drive, heads, local, signal); return; }
+    if (remote.header.snapshotId === record.base.snapshotId) { await transfer(binding, drive, heads, local, signal); return; }
     // The remote may advance only through a known ancestor, never via timestamps.
     const byId = new Map(files.map(file => [file.header.snapshotId, file]));
     const ancestors = new Set<string>(); const queue = [remote.header.snapshotId];
@@ -114,12 +114,12 @@ export function createSyncCoordinator(options: Options) {
     const incoming = await drive.download(remote, signal);
     const recovery = await snapshot(local.library, record.base.snapshotId);
     await guard(); if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
-    await store.preserve(recovery);
+    await store.preserve(recovery, owner);
     const coverMedia = await prepareBackupMedia(incoming.library);
     await guard();
     if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
-    const version = await repository.commit({ kind: 'replace', books: incoming.library.books, preferences: incoming.library.preferences, coverMedia }, local.version);
-    await accepted(record, remote, version);
+    const version = await repository.commit({ kind: 'replace', books: incoming.library.books, preferences: incoming.library.preferences, coverMedia }, local.version, { syncLeaseOwner: owner });
+    await accepted(remote, version);
   }
   async function locked(action: (signal: AbortSignal) => Promise<void>) {
     if (closed || running) return;
@@ -127,15 +127,16 @@ export function createSyncCoordinator(options: Options) {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
       if (!await store.lease(owner)) return;
-      heartbeat = setInterval(() => { void store.lease(owner).then(ok => { if (!ok) controller?.abort(); }).catch(() => controller?.abort()); }, 10_000);
+      heartbeat = setInterval(() => { void store.lease(owner, false, true).then(ok => { if (!ok) controller?.abort(); }).catch(() => controller?.abort()); }, 10_000);
       await action(controller.signal);
     } catch (error) {
       const failure = error instanceof SyncError ? error : new SyncError('invalid');
-      if (failure.code === 'cancelled' || closed) return;
+      if (failure.code === 'cancelled' || closed || controller?.signal.aborted) return;
       if (failure.code === 'retry') {
         const record = await store.read(); const attempts = record.attempts + 1;
         const delay = Math.max(failure.retryAfter, Math.min(60_000, 1000 * 2 ** Math.min(attempts, 6)) * (0.8 + Math.random() * 0.2));
-        await store.write({ ...record, attempts, nextAttempt: Date.now() + delay });
+        try { await store.update({ attempts, nextAttempt: Date.now() + delay }, owner); } catch { return; }
+        if (controller?.signal.aborted) return;
         publish({ status: 'pending' }); if (attempts < 5) schedule(delay);
       } else publish({ status: failure.code === 'reconnect' ? 'reconnect' : failure.code === 'quota' ? 'quota' : 'error' });
     } finally {
@@ -161,24 +162,36 @@ export function createSyncCoordinator(options: Options) {
   return {
     getSnapshot: () => view,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async start() { const record = await store.read(); if (record.attempts >= 5) await store.write({ ...record, attempts: 0 }); publish({ status: record.enabled ? 'pending' : record.binding ? 'paused' : 'disabled' }); schedule(); poll(); },
+    async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); schedule(); poll(); },
     async wake() {
       if (closed || !options.visible()) return;
       const record = await store.read();
       // User/lifecycle retry starts a new bounded cycle, but respects Retry-After.
-      if (record.attempts >= 5) await store.write({ ...record, attempts: 0 });
+      if (record.attempts >= 5) await store.update({ attempts: 0 });
       if (!conflict && Date.now() - lastPoll >= 60_000) { lastPoll = Date.now(); schedule(); }
     },
     async connect() {
-      const record = await store.read(); await store.write({ ...record, enabled: true, attempts: 0, nextAttempt: 0 });
-      options.navigate(await auth.start());
+      const destination = await auth.start();
+      // A new, explicit authorization replaces the user's previous disconnect intent.
+      // It does not assert that the earlier Google revocation was confirmed.
+      await store.update({ enabled: true, revocationPending: false, attempts: 0, nextAttempt: 0 });
+      options.navigate(destination);
     },
-    async pause() { controller?.abort(); clearTimeout(timer); const record = await store.read(); await store.write({ ...record, enabled: false }); auth.invalidate(); publish({ status: 'paused' }); },
-    async resume() { const record = await store.read(); await store.write({ ...record, enabled: true, attempts: 0 }); conflict = null; schedule(Math.max(0, record.nextAttempt - Date.now())); },
+    async pause() { controller?.abort(); clearTimeout(timer); await store.update({ enabled: false }, undefined, true); auth.invalidate(); publish({ status: 'paused' }); },
+    async resume() {
+      if ((await store.read()).revocationPending) throw new SyncError('reconnect');
+      const record = await store.update({ enabled: true, attempts: 0 }); conflict = null; schedule(Math.max(0, record.nextAttempt - Date.now()));
+    },
     async disconnect(all: boolean) {
-      controller?.abort(); clearTimeout(timer); const record = await store.read(); await store.write({ ...record, enabled: false }); auth.invalidate();
-      try { await auth.disconnect(all); publish({ status: 'paused' }); }
-      catch { publish({ status: 'error' }); throw new SyncError('reconnect'); }
+      controller?.abort(); clearTimeout(timer);
+      const record = await store.update({ enabled: false, ...(all ? { revocationPending: true } : {}) }, undefined, true);
+      auth.invalidate();
+      try {
+        const pending = await auth.disconnect(all);
+        const next = await store.update(all ? { revocationPending: pending } : {});
+        publish({ status: next.revocationPending ? 'reconnect' : 'paused', revocationPending: next.revocationPending });
+      }
+      catch { publish({ status: 'error', revocationPending: record.revocationPending }); throw new SyncError('reconnect'); }
     },
     async downloadRemote(id: string) {
       if (!conflict) throw new SyncError('conflict');
@@ -199,19 +212,18 @@ export function createSyncCoordinator(options: Options) {
           const file = heads.find(head => head.header.snapshotId === choice); if (!file) throw new SyncError('invalid');
           data = (await drive.download(file, signal)).library;
         }
-        await guard(); await store.preserve(await snapshot(local.library, null));
+        await guard(); await store.preserve(await snapshot(local.library, null), owner);
         if (choice !== 'local') {
           if (options.hasDraft()) throw new SyncError('conflict');
           const coverMedia = await prepareBackupMedia(data);
           await guard();
           if (options.hasDraft()) throw new SyncError('conflict');
-          version = await repository.commit({ kind: 'replace', books: data.books, preferences: data.preferences, coverMedia }, local.version);
+          version = await repository.commit({ kind: 'replace', books: data.books, preferences: data.preferences, coverMedia }, local.version, { syncLeaseOwner: owner });
         }
         const next = await snapshot(data, heads[0]?.header.snapshotId ?? null, heads.map(head => head.header.snapshotId));
-        const record = { ...await store.read(), binding, base: null, enabled: true };
-        await guard(); await store.saveOperation({ binding, version, snapshot: next }); await store.write(record);
+        await guard(); await store.saveOperation({ binding, version, snapshot: next }, owner); await store.update({ binding, base: null }, owner);
         conflict = null; publish({ status: 'syncing' });
-        await transfer(record, binding, drive, heads, { library: data, version }, signal);
+        await transfer(binding, drive, heads, { library: data, version }, signal);
       });
     },
     async runNow() { await locked(cycle); },

@@ -76,6 +76,7 @@ impl Auth {
             .store
             .take_oauth(&digest(state), &digest(cookie), self.clock.now())
             .await?;
+        let epoch = self.store.grant_epoch().await?;
         let grant = self
             .provider
             .exchange(code, &transaction.verifier.0, &transaction.nonce.0)
@@ -95,7 +96,13 @@ impl Auth {
             .await?;
         let raw = random()?;
         self.store
-            .connect(&connection, encrypted, &digest(&raw), self.clock.now())
+            .connect(
+                &connection,
+                encrypted,
+                &digest(&raw),
+                epoch,
+                self.clock.now(),
+            )
             .await?;
         Ok(raw)
     }
@@ -130,9 +137,16 @@ impl Auth {
             .claim(&digest(raw), &random()?, self.clock.now())
             .await?;
         let result = self.refresh_locked(&lease).await;
-        if matches!(result, Err(Error::Reconnect)) {
-            // Fail closed before surfacing invalid_grant/scope removal to the client.
-            self.store.invalidate(&lease, self.clock.now()).await?;
+        if matches!(result, Err(Error::Reconnect | Error::InvalidGrant)) {
+            let reason = if matches!(result, Err(Error::InvalidGrant)) {
+                InvalidationReason::InvalidGrant
+            } else {
+                InvalidationReason::ScopeChanged
+            };
+            self.store
+                .invalidate(&lease, reason, self.clock.now())
+                .await?;
+            return Err(Error::Reconnect);
         } else if result.is_err() {
             let _ = self.store.release(&lease).await;
         }
@@ -141,6 +155,9 @@ impl Auth {
     async fn refresh_locked(&self, lease: &Lease) -> Result<Access, Error> {
         let context = self.context(&lease.connection_id);
         let refresh = self.crypto.open(&context, &lease.encrypted_refresh).await?;
+        if self.clock.now() >= lease.authorization_until {
+            return Err(Error::Unauthorized);
+        }
         let mut access = self.provider.refresh(&refresh.0).await?;
         if access.token.0.is_empty() || access.expires_in == 0 || access.expires_in > 3600 {
             return Err(Error::Provider);
@@ -154,23 +171,68 @@ impl Auth {
             None => None,
         };
         self.store.finish(lease, rotated, self.clock.now()).await?;
+        // AWS round trips can cross a deadline even when the CAS preserved state.
+        // Rotation is retained, but a token is never published after its authorization.
+        if self.clock.now() >= lease.authorization_until {
+            return Err(Error::Unauthorized);
+        }
         Ok(access)
     }
     pub async fn disconnect(&self, raw: &str) -> Result<bool, Error> {
-        let lease = self.store.disable(&digest(raw), self.clock.now()).await?;
-        let refresh = self
-            .crypto
-            .open(
-                &self.context(&lease.connection_id),
-                &lease.encrypted_refresh,
-            )
-            .await?;
-        if self.provider.revoke(&refresh.0).await.is_ok() {
-            self.store.revoked(&lease).await?;
-            Ok(true)
-        } else {
-            Ok(false)
+        let key = self.store.disable(&digest(raw), self.clock.now()).await?;
+        // Blocking is durable even if decryption/provider/worker fails afterwards.
+        let outcome = self.revoke_key(&key).await;
+        if matches!(outcome, Ok(RevokeOutcome::Uncertain)) {
+            crate::metrics::uncertain_revocation();
         }
+        Ok(matches!(outcome, Ok(RevokeOutcome::Confirmed)))
+    }
+    pub async fn revoke_key(&self, key: &RevocationKey) -> Result<RevokeOutcome, Error> {
+        let claim = self
+            .store
+            .claim_revocation(key, &random()?, self.clock.now())
+            .await?;
+        if self.clock.now() >= claim.delete_at.min(claim.lease_until) {
+            return Err(Error::Unauthorized);
+        }
+        let refresh = match self
+            .crypto
+            .open(&self.context(&key.connection_id), &claim.encrypted_refresh)
+            .await
+        {
+            Ok(value) => value,
+            Err(_) => {
+                self.store
+                    .complete_revocation(
+                        &claim,
+                        RevokeOutcome::NotDispatchedRetryable,
+                        self.clock.now(),
+                    )
+                    .await?;
+                return Ok(RevokeOutcome::NotDispatchedRetryable);
+            }
+        };
+        self.store
+            .mark_revocation_dispatching(&claim, self.clock.now())
+            .await?;
+        // A persisted dispatch marker ensures a terminated Lambda cannot cause a blind retry.
+        let remaining = claim
+            .delete_at
+            .min(claim.lease_until)
+            .saturating_sub(self.clock.now());
+        if remaining == 0 {
+            return Err(Error::Unauthorized);
+        }
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(remaining),
+            self.provider.revoke(&refresh.0),
+        )
+        .await
+        .unwrap_or(RevokeOutcome::Uncertain);
+        self.store
+            .complete_revocation(&claim, outcome, self.clock.now())
+            .await?;
+        Ok(outcome)
     }
     fn context(&self, connection: &str) -> String {
         format!("{}:{connection}", self.config.environment)

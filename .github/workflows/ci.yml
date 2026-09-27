@@ -32,16 +32,29 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with: { components: clippy, rustfmt }
+        with: { components: 'clippy,rustfmt' }
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with: { workspaces: api }
       - run: cargo fmt --manifest-path api/Cargo.toml -- --check
       - run: cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --manifest-path api/Cargo.toml --all-features
+      - name: Install pinned Lambda build tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lambda-tools"
+          "$RUNNER_TEMP/lambda-tools/bin/pip" install cargo-lambda==1.9.2 ziglang==0.14.1
+          echo "$RUNNER_TEMP/lambda-tools/bin" >> "$GITHUB_PATH"
+      - name: Build Lambda release artifacts
+        run: cargo lambda build --manifest-path api/Cargo.toml --release --locked --all-features --bin auth --bin revocation --x86-64 --output-format zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: api-release
+          path: api/target/lambda/*/bootstrap.zip
+          if-no-files-found: error
+          retention-days: 7
 
   publish_frontend:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [frontend, api]
+    needs: [frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,3 +85,33 @@ jobs:
           aws s3 cp dist/sw.js "s3://$BUCKET/sw.js" --cache-control 'no-cache'
           aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache'
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest'
+
+  publish_api:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [api]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: livro-a-livro-api-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { name: api-release, path: release }
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_API_DEPLOY_ROLE_ARN }}
+          aws-region: sa-east-1
+      - name: Publish tested control-plane binaries
+        env:
+          ARTIFACT_BUCKET: ${{ vars.AWS_API_ARTIFACT_BUCKET }}
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          test -n "$ARTIFACT_BUCKET"
+          for FUNCTION in auth revocation; do
+            KEY="releases/$RELEASE_ID/$FUNCTION.zip"
+            aws s3 cp "release/$FUNCTION/bootstrap.zip" "s3://$ARTIFACT_BUCKET/$KEY" --only-show-errors
+            aws lambda update-function-code --function-name "livro-a-livro-$FUNCTION" --s3-bucket "$ARTIFACT_BUCKET" --s3-key "$KEY" --query '{State:State,LastUpdateStatus:LastUpdateStatus}'
+            aws lambda wait function-updated --function-name "livro-a-livro-$FUNCTION"
+          done
