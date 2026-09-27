@@ -1,0 +1,204 @@
+/* Livro a Livro · Design system 1.0 · tema claro
+ * Primitivos → papéis semânticos → componentes. Sem dependências externas.
+ * Breakpoints de referência: 40rem / 64rem (não usáveis via var em @media).
+ */
+:root {
+  color-scheme: light;
+
+  /* Paleta: valores literais ficam exclusivamente nesta camada. */
+  --paper-0: #ffffff;
+  --paper-50: #faf9f6;
+  --paper-100: #f1eee8;
+  --paper-200: #e1dcd3;
+  --paper-300: #c9c1b6;
+  --ink-500: #786f77;
+  --ink-600: #655c65;
+  --ink-700: #4d444f;
+  --ink-900: #29232d;
+  --plum-50: #f1edf4;
+  --plum-100: #e7deec;
+  --plum-300: #c2afce;
+  --plum-600: #745980;
+  --plum-700: #60456e;
+  --plum-800: #4d355a;
+  --plum-900: #3d2848;
+  --citron-100: #f5efbc;
+  --citron-300: #dfd580;
+  --citron-800: #605511;
+  --sage-50: #eaf0eb;
+  --sage-700: #385c46;
+  --blue-50: #eaf0f7;
+  --blue-700: #365a7b;
+  --blue-800: #244c85;
+  --amber-50: #faf0dd;
+  --amber-700: #795017;
+  --red-50: #faeeeb;
+  --red-700: #943e36;
+  --red-800: #78302a;
+  --red-900: #62241f;
+  --clay-200: #e7c4b2;
+  --slate-200: #c4d4de;
+  --sage-200: #c7d5c5;
+  --alpha-ink-08: rgb(41 35 45 / 8%);
+  --alpha-ink-14: rgb(41 35 45 / 14%);
+  --alpha-ink-48: rgb(41 35 45 / 48%);
+
+  /* Superfícies, conteúdo e interação */
+  --color-canvas: var(--paper-50);
+  --color-surface: var(--paper-0);
+  --color-surface-subtle: var(--paper-100);
+  --color-surface-brand: var(--plum-50);
+  --color-surface-inverse: var(--ink-900);
+  --color-text: var(--ink-900);
+  --color-text-secondary: var(--ink-600);
+  --color-text-inverse: var(--paper-50);
+  --color-text-on-action: var(--paper-0);
+  --color-border: var(--paper-200); /* Separador decorativo, não contorno de campo */
+  --color-border-strong: var(--ink-500);
+  --color-action: var(--plum-700);
+  --color-action-hover: var(--plum-800);
+  --color-action-pressed: var(--plum-900);
+  --color-action-soft: var(--plum-50);
+  --color-link: var(--plum-700);
+  --color-link-hover: var(--plum-900);
+  --color-focus: var(--blue-800);
+  --color-focus-gap: var(--paper-0);
+  --color-selected-bg: var(--plum-100);
+  --color-selected-text: var(--plum-900);
+  --color-selection-bg: var(--citron-100);
+  --color-selection-text: var(--ink-900);
+  --color-disabled-bg: var(--paper-100);
+  --color-disabled-text: var(--ink-600);
+  --color-disabled-border: var(--paper-300);
+  --color-placeholder: var(--ink-600);
+  --color-overlay: var(--alpha-ink-48);
+  --color-accent: var(--citron-300);
+  --color-accent-soft: var(--citron-100);
+  --color-on-accent: var(--citron-800);
+
+  /* Feedback do sistema ≠ estado de leitura */
+  --color-info: var(--blue-700);
+  --color-info-soft: var(--blue-50);
+  --color-success: var(--sage-700);
+  --color-success-soft: var(--sage-50);
+  --color-warning: var(--amber-700);
+  --color-warning-soft: var(--amber-50);
+  --color-danger: var(--red-700);
+  --color-danger-hover: var(--red-800);
+  --color-danger-pressed: var(--red-900);
+  --color-danger-soft: var(--red-50);
+  --color-status-want: var(--ink-600);
+  --color-status-want-bg: var(--paper-100);
+  --color-status-reading: var(--plum-700);
+  --color-status-reading-bg: var(--plum-50);
+  --color-status-read: var(--sage-700);
+  --color-status-read-bg: var(--sage-50);
+  --color-rating: var(--plum-700);
+  --color-rating-empty: var(--ink-500);
+  --color-local: var(--ink-600);
+  --color-local-bg: var(--paper-100);
+  --color-backup: var(--blue-700);
+  --color-backup-bg: var(--blue-50);
+
+  /* Capas abstratas e composição anual; nunca expressam status. */
+  --color-cover-plum: var(--plum-100);
+  --color-cover-clay: var(--clay-200);
+  --color-cover-blue: var(--slate-200);
+  --color-cover-sage: var(--sage-200);
+  --color-cover-citron: var(--citron-100);
+  --color-cover-ink: var(--ink-900);
+  --color-cover-text: var(--ink-900);
+  --color-cover-text-inverse: var(--paper-50);
+  --color-cover-rule: var(--alpha-ink-14);
+
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-editorial: Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  --font-numeric: var(--font-ui);
+  --text-caption: .75rem;
+  --text-small: .875rem;
+  --text-body: 1rem;
+  --text-lead: 1.125rem;
+  --text-h3: 1.375rem;
+  --text-h2: clamp(1.75rem, 3vw, 2.25rem);
+  --text-h1: clamp(2rem, 4vw, 3rem);
+  --text-display: clamp(2.75rem, 5.8vw, 5.25rem);
+  --text-metric: 2rem;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.08;
+  --leading-heading: 1.2;
+  --leading-body: 1.6;
+  --leading-compact: 1.4;
+  --tracking-title: -.035em;
+  --tracking-label: .12em;
+
+  --space-0: 0;
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --radius-cover: 2px;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-panel: 16px;
+  --radius-pill: 999px;
+  --border-width: 1px;
+  --focus-width: 3px;
+  --focus-offset: 3px;
+  --shadow-cover: 2px 4px 8px var(--alpha-ink-08);
+  --shadow-popover: 0 8px 24px var(--alpha-ink-08);
+  --shadow-dialog: 0 20px 64px var(--alpha-ink-14);
+  --control-height: 3rem;
+  --target-min: 2.75rem;
+  --icon-sm: 1rem;
+  --icon-md: 1.25rem;
+  --icon-lg: 1.5rem;
+  --content-max: 75rem;
+  --reading-max: 42rem;
+  --form-max: 36rem;
+  --dialog-max: 32rem;
+  --page-gutter: clamp(1rem, 4vw, 3rem);
+  --cover-ratio: 2 / 3;
+  --share-story-ratio: 9 / 16;
+  --share-square-ratio: 1;
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-popover: 20;
+  --z-dialog: 30;
+  --z-toast: 40;
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 240ms;
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Bases opcionais compartilhadas pelo catálogo e por futura implementação. */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-family: var(--font-ui); color: var(--color-text); background: var(--color-canvas); }
+body { margin: 0; font-size: var(--text-body); line-height: var(--leading-body); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, input, select, textarea, a { -webkit-tap-highlight-color: var(--color-action-soft); }
+button { touch-action: manipulation; }
+img, svg { max-width: 100%; }
+::selection { background: var(--color-selection-bg); color: var(--color-selection-text); }
+:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); box-shadow: 0 0 0 var(--focus-offset) var(--color-focus-gap); }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; --duration-normal: 0ms; --duration-slow: 0ms; }
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+  button, input, select, textarea { border: 1px solid ButtonText; }
+}
