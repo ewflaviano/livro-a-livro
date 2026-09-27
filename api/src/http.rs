@@ -187,8 +187,8 @@ async fn cancel_identity(State(auth): State<Auth>, headers: HeaderMap) -> Result
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Callback {
+    iss: String,
     state: String,
     code: Option<String>,
     error: Option<String>,
@@ -214,7 +214,7 @@ async fn callback(state: State<Auth>, headers: HeaderMap, request: Request) -> R
                 Error::AccountMismatch => {
                     "A conta escolhida é diferente da conta confirmada. Volte ao aplicativo e use a mesma conta ou entre novamente."
                 }
-                _ => "Não foi possível conectar ao Google Drive.",
+                _ => "Não foi possível concluir a conexão com Google.",
             };
             let status = error.into_response().status();
             let html = format!(
@@ -240,6 +240,11 @@ async fn callback_inner(
     let query: Callback = axum::extract::Query::try_from_uri(request.uri())
         .map_err(|_| Error::InvalidRequest)?
         .0;
+    // RFC 9207: compare the decoded authorization-response issuer literally,
+    // including errors, before consuming state or exchanging any code.
+    if query.iss != "https://accounts.google.com" {
+        return Err(Error::InvalidRequest);
+    }
     let _ = (
         &query.scope,
         &query.authuser,

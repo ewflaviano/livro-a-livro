@@ -52,12 +52,17 @@ try {
   assert.match(cookie, /^__Host-lal_oauth=[A-Za-z0-9_-]{43};/);
   for (const attribute of ['Secure', 'HttpOnly', 'SameSite=Lax', 'Path=/', 'Max-Age=600']) assert.ok(cookie.includes(attribute));
   assert.ok(!cookie.includes('Domain='));
-  const callback = await control('/v1/auth/google/callback?error=access_denied&state=synthetic-cancelled');
+  const callback = await control('/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&error=access_denied&state=synthetic-cancelled');
   assert.equal(callback.status, 401);
   assert.ok(callback.headers.get('content-type').startsWith('text/html'));
   const page = await callback.text();
   assert.ok(page.includes('https://livroalivro.app.br/#/dados'));
   assert.ok(!page.includes('synthetic-cancelled'));
+  for (const issuer of ['', '&iss=https%3A%2F%2Fissuer.invalid']) {
+    const invalidIssuer = await control('/v1/auth/google/callback?error=access_denied&state=synthetic-cancelled' + issuer);
+    assert.equal(invalidIssuer.status, 400);
+    assert.ok(!(await invalidIssuer.text()).includes('issuer.invalid'));
+  }
   console.log('AUTH_PRODUCTION_CONTROL_GATE_PASS');
 } catch {
   // Browser/HTTP assertion errors can contain credentials: emit no raw exception.
