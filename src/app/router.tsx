@@ -7,6 +7,7 @@ import { LibraryProvider } from './LibraryProvider';
 import type { ShelfService } from '../services/shelf-service';
 import { SyncProvider } from './SyncProvider';
 import { DataPage } from '../ui/pages/DataPage';
+import { MorePage } from '../ui/pages/MorePage';
 import { SupportPage } from '../ui/pages/SupportPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
@@ -20,6 +21,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="quero-ler" element={<ShelfPage key="want" status="want-to-read" />} />
         <Route path="adicionar" element={<AddBookPage />} />
         <Route path="livro/:id" element={<BookPage />} />
+        <Route path="mais" element={<MorePage />} />
         <Route path="dados" element={<DataPage />} />
         <Route path="apoiar" element={<SupportPage />} />
         <Route path="configuracoes" element={<PlaceholderPage title="Configurações" description="Simples, privado e do seu jeito." detail="As preferências do aplicativo estão em preparação. Você poderá usar sua estante sem criar uma conta." />} />

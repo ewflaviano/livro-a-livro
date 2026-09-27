@@ -158,3 +158,45 @@ h2 { font-size: var(--text-h2); }
 }
 .pwa-status p { margin: var(--space-2) 0; }
 .pwa-update { margin-top: var(--space-4); }
+
+/* Shelf tools and navigation share the same compact rhythm on touch screens. */
+.bottom-navigation { display: none; }
+.more-navigation { display: grid; gap: var(--space-3); margin-top: var(--space-6); max-width: var(--form-max); }
+.more-navigation small { display: block; font-weight: var(--weight-regular); color: var(--color-text-secondary); }
+.shelf-search { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-top: var(--space-4); }
+.shelf-search .form-field { margin: 0; flex: 1; min-width: min(100%, 12rem); }
+.shelf-heading { align-items: center; }
+.shelf-heading h1 { font-size: clamp(2rem, 4vw, 3rem); }
+.shelf-metrics { margin-block: var(--space-4); padding-block: var(--space-3); }
+.shelf-metrics dd { font-size: var(--text-h3); }
+.shelf-tools { margin-block: var(--space-4); }
+.shelf-page .share-entry { margin-block: var(--space-2); }
+.button-quiet { background: transparent; color: var(--color-link); padding-inline: var(--space-2); text-decoration: underline; }
+.button-quiet:hover { background: var(--color-surface-subtle); }
+.search-results li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding-block: var(--space-4); }
+.search-result-info { flex: 1; min-width: min(100%, 14rem); overflow-wrap: anywhere; }
+.search-result-info h2 { font-size: var(--text-body); font-family: var(--font-ui); font-weight: var(--weight-semibold); margin: 0; }
+.search-result-info p { margin: var(--space-1) 0 0; }
+@media (max-width: 63.999rem) {
+  html { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  body { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  .sidebar, .app-header .header-add { display: none; }
+  .app-header { padding-block: var(--space-3); }
+  .app-layout { padding-top: var(--space-4); }
+  .bottom-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: fixed; inset: auto 0 0; z-index: var(--z-sticky); background: var(--color-surface); border-top: var(--border-width) solid var(--color-border); padding: var(--space-1) env(safe-area-inset-right) calc(var(--space-1) + env(safe-area-inset-bottom)) env(safe-area-inset-left); }
+  .bottom-navigation a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-height: 3.5rem; min-width: 0; padding: var(--space-1); color: var(--color-text-secondary); font-size: var(--text-small); text-decoration: none; overflow-wrap: anywhere; }
+  .bottom-navigation a[aria-current="page"] { background: var(--color-selected-bg); color: var(--color-selected-text); font-weight: var(--weight-semibold); }
+  .book-collection--grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 39.999rem) {
+  .book-collection--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6) var(--space-4); }
+  .shelf-heading { gap: var(--space-3); }
+  .shelf-heading h1 { font-size: var(--text-h2); }
+  .year-field { gap: var(--space-1); }
+  .shelf-filters { width: 100%; }
+  .shelf-filters button { flex: 1; padding-inline: var(--space-2); }
+  .shelf-metrics { gap: var(--space-2); }
+  .shelf-metrics dt, .metric-note { font-size: var(--text-small); }
+  .metric-note { margin-block: var(--space-2); }
+  .shelf-tools { gap: var(--space-2); }
+}

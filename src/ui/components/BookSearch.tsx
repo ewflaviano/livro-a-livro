@@ -44,10 +44,10 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) 
     {error && <div role="alert"><p>{error}</p><button className="button button-secondary" onClick={() => void search(submitted)}>Tentar novamente</button></div>}
     {result && <div aria-label="Resultados da busca">
       <p role="status">{result.candidates.length ? `${result.candidates.length} resultados nesta página${result.cached ? ' · Resultados salvos neste dispositivo' : ''}.` : 'Não encontramos este livro. Tente outro título ou adicione manualmente.'}</p>
+      <p className="field-help">Confira os dados da sua edição ao revisar o livro escolhido.</p>
       <ul className="search-results">{result.candidates.map((candidate) => <li key={candidate.workId}>
-        <h2>{candidate.title}</h2><p>{candidate.authors.join(', ') || 'Autoria não informada'}</p>
-        {candidate.firstPublishedYear && <p className="field-help">Primeira publicação da obra: {candidate.firstPublishedYear} · pode ser diferente da sua edição</p>}
-        <p className="field-help">Open Library</p><button className="button button-secondary" onClick={() => select(candidate)}>Usar este livro<span className="visually-hidden">: {candidate.title}</span></button>
+        <div className="search-result-info"><h2>{candidate.title}</h2><p>{candidate.authors.join(', ') || 'Autoria não informada'}</p>
+        <p className="field-help">Obra · Open Library{candidate.firstPublishedYear ? ` · primeira publicação: ${candidate.firstPublishedYear}` : ''}</p></div><button className="button button-secondary" onClick={() => select(candidate)}>Usar este livro<span className="visually-hidden">: {candidate.title}</span></button>
       </li>)}</ul>
       <div className="form-actions">{result.page > 1 && <button className="button button-secondary" onClick={() => void search(submitted, result.page - 1)}>Página anterior</button>}
         {result.hasMore && <button className="button button-secondary" onClick={() => void search(submitted, result.page + 1)}>Próxima página</button>}</div>

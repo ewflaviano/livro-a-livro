@@ -28,7 +28,7 @@ async function setup(empty = false) {
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
   render(<MemoryRouter initialEntries={['/estante']}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await screen.findByRole('button', { name: 'Compartilhar ano' });
+  await screen.findByRole('combobox', { name: 'Ano da estante' });
   return repository;
 }
 
@@ -64,10 +64,9 @@ describe('annual image preview', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Compartilhar ano' }));
   });
 
-  it('explains why an empty year cannot create a share image', async () => {
+  it('omits sharing when the year has no read books', async () => {
     await setup(true);
-    expect(screen.getByRole('button', { name: 'Compartilhar ano' })).toHaveProperty('disabled', true);
-    expect(screen.getByText(/A imagem fica disponível após marcar um livro/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Compartilhar ano' })).toBeNull();
   });
 
   it('handles unsupported Canvas without pretending a file exists', async () => {

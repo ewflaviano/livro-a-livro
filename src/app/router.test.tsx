@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter, AppRoutes } from './router';
@@ -41,6 +41,19 @@ describe('application shell', () => {
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>);
     expect(screen.getByRole('heading', { name: title, level: 1 })).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeTruthy();
+  });
+
+  it('offers three mobile destinations and keeps more active on its child pages', async () => {
+    render(<MemoryRouter initialEntries={['/lendo']}><AppRoutes /></MemoryRouter>);
+    const mobile = within(screen.getByRole('navigation', { name: 'Navegação mobile' }));
+    expect(mobile.getAllByRole('link')).toHaveLength(3);
+    expect(mobile.getByRole('link', { name: 'Estante' }).getAttribute('aria-current')).toBe('page');
+    await userEvent.click(mobile.getByRole('link', { name: 'Mais' }));
+    const options = within(screen.getByRole('navigation', { name: 'Outras opções' }));
+    expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/apoiar']);
+    await userEvent.click(options.getByRole('link', { name: /Seus dados/ }));
+    expect(mobile.getByRole('link', { name: 'Mais' }).getAttribute('aria-current')).toBe('page');
+    expect(document.activeElement).toBe(screen.getByRole('main'));
   });
 
   it('skips navigation without changing the route fragment', async () => {

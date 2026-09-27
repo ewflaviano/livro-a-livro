@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BookOpen, Bookmark, Library, Plus, Settings, ShieldCheck } from 'lucide-react';
+import { BookOpen, Bookmark, Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
 import { PwaStatus } from './PwaStatus';
@@ -37,7 +37,7 @@ export function AppShell() {
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span>Livro a Livro</span>
         </Link>
-        <Link className="button button-primary" to="/adicionar" state={{ returnTo }}
+        <Link className="button button-primary header-add" to="/adicionar" state={{ returnTo }}
           onClick={() => positions.set(returnTo, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>
       </header>
       {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
@@ -54,6 +54,17 @@ export function AppShell() {
         </aside>
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
+      <nav className="bottom-navigation" aria-label="Navegação mobile">
+        <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? 'page' : undefined}>
+          <Library aria-hidden="true" /><span>Estante</span>
+        </Link>
+        <NavLink to="/adicionar" state={{ returnTo }} onClick={() => positions.set(returnTo, window.scrollY)}>
+          <Plus aria-hidden="true" /><span>Adicionar</span>
+        </NavLink>
+        <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
+          <MoreHorizontal aria-hidden="true" /><span>Mais</span>
+        </Link>
+      </nav>
       <PwaStatus />
       <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><Link to="/apoiar">Apoiar o projeto</Link></footer>
     </>
