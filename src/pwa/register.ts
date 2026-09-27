@@ -8,6 +8,7 @@ let state: PwaState = { availability: 'unsupported', online: true, update: 'none
 let registration: ServiceWorkerRegistration | undefined;
 let started = false;
 let reloadRequested = false;
+let reloadPage = () => window.location.reload();
 function publish(patch: Partial<PwaState>) {
   state = { ...state, ...patch };
   listeners.forEach((listener) => listener());
@@ -32,7 +33,19 @@ function ask(worker: ServiceWorker, type: string): Promise<Record<string, unknow
   });
 }
 
+function reconcileWaiting() {
+  const waiting = registration?.waiting;
+  const replacement = waiting && registration?.active && waiting !== registration.active && registration.active.state === 'activated';
+  if (!replacement) {
+    if (state.update !== 'applying') publish({ update: 'none' });
+  } else if (state.update === 'none') publish({ update: 'available' });
+}
+
+let checkRegistration: (() => Promise<boolean>) | undefined;
+export async function checkPwaUpdate() { return await checkRegistration?.() ?? false; }
+
 async function refreshAvailability() {
+  reconcileWaiting();
   if (!registration?.active) return;
   try {
     const response = await ask(registration.active, 'OFFLINE_STATUS');
@@ -40,39 +53,58 @@ async function refreshAvailability() {
   } catch { publish({ availability: 'unavailable' }); }
 }
 
-export async function applyPwaUpdate() {
-  if (state.blocked || state.update === 'applying' || !registration?.waiting) return;
-  publish({ update: 'applying' });
-  reloadRequested = true;
-  try {
-    const response = await ask(registration.waiting, 'APPLY_UPDATE');
-    if (response.applied !== true) { reloadRequested = false; publish({ update: 'other-tabs' }); }
-  } catch { reloadRequested = false; publish({ update: 'failed' }); }
+function finishActivation() {
+  const shouldReload = reloadRequested && !state.blocked;
+  reloadRequested = false;
+  if (shouldReload) reloadPage();
+  else { publish({ update: 'none' }); void refreshAvailability(); }
 }
 
-export async function registerPwa() {
+export async function applyPwaUpdate() {
+  reconcileWaiting();
+  if (state.blocked || state.update === 'none' || state.update === 'applying' || !registration?.waiting) return;
+  publish({ update: 'applying' });
+  reloadRequested = true;
+  const worker = registration.waiting;
+  const activated = () => {
+    if (worker.state !== 'activated') return;
+    worker.removeEventListener('statechange', activated);
+    finishActivation();
+  };
+  worker.addEventListener('statechange', activated);
+  try {
+    const response = await ask(worker, 'APPLY_UPDATE');
+    if (response.applied !== true) { worker.removeEventListener('statechange', activated); reloadRequested = false; publish({ update: 'other-tabs' }); }
+  } catch { worker.removeEventListener('statechange', activated); reloadRequested = false; publish({ update: 'failed' }); }
+}
+
+export async function registerPwa(reload = () => window.location.reload()) {
   if (started) return;
   started = true;
+  reloadPage = reload;
   publish({ online: navigator.onLine });
   window.addEventListener('offline', () => publish({ online: false }));
   window.addEventListener('online', () => { publish({ online: true }); void check(); });
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
   publish({ availability: 'preparing' });
   let lastCheck = 0;
-  async function check() {
-    if (!registration || document.visibilityState === 'hidden') return;
+  async function check(force = false): Promise<boolean> {
+    if (!registration || (!force && document.visibilityState === 'hidden')) return false;
+    reconcileWaiting();
     void refreshAvailability();
-    if (!navigator.onLine || Date.now() - lastCheck < 60_000) return;
+    if (!navigator.onLine || (!force && Date.now() - lastCheck < 60_000)) return false;
     lastCheck = Date.now();
-    try { await registration.update(); } catch { /* Connectivity does not change saved local data. */ }
+    try { await registration.update(); reconcileWaiting(); return true; } catch { return false; }
   }
+  checkRegistration = () => check(true);
   try {
     registration = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
     const observe = () => {
-      if (registration?.waiting) publish({ update: 'available' });
+      reconcileWaiting();
       const worker = registration?.installing;
       worker?.addEventListener('statechange', () => {
-        if (worker.state === 'installed' && registration?.waiting) publish({ update: 'available' });
+        // waiting/active may settle after the statechange event (especially first install).
+        window.setTimeout(reconcileWaiting, 0);
         if (worker.state === 'activated') void refreshAvailability();
         if (worker.state === 'redundant' && !registration?.active) publish({ availability: 'unavailable' });
       });
@@ -80,9 +112,8 @@ export async function registerPwa() {
     registration.addEventListener('updatefound', observe);
     observe();
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      // Other tabs never reload; a new draft acquired while activation was pending also survives.
-      if (reloadRequested && !state.blocked) { reloadRequested = false; window.location.reload(); }
-      else { reloadRequested = false; publish({ update: 'none' }); void refreshAvailability(); }
+      // Only the consenting tab reloads, and a draft acquired during activation survives.
+      finishActivation();
     });
     document.addEventListener('visibilitychange', () => { void check(); });
     window.addEventListener('focus', () => { void check(); });

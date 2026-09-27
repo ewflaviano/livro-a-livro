@@ -54,10 +54,17 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
     updatePreferences(patch: Partial<PortablePreferences>) {
       if (state.status !== 'ready') return;
       ++preferenceEdit;
-      publish({ ...state, preferences: { ...state.preferences, ...patch }, preferenceError: false });
+      publish({ ...state, preferences: { ...state.preferences, ...patch } });
       // Preserve interaction order in this tab; the adapter merges only these fields.
       preferenceQueue = preferenceQueue.then(async () => {
-        try { await repository.updatePreferences(patch); }
+        try {
+          await repository.updatePreferences(patch);
+          // A later partial save cannot repair an earlier failed field. Only a full
+          // preferences retry clears that warning after its transaction succeeds.
+          if ('shelfYear' in patch && 'mode' in patch && 'filter' in patch && state.status === 'ready') {
+            publish({ ...state, preferenceError: false });
+          }
+        }
         catch { if (state.status === 'ready') publish({ ...state, preferenceError: true }); }
       });
     },

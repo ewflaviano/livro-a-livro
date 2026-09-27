@@ -50,7 +50,7 @@ describe('application shell', () => {
     expect(mobile.getByRole('link', { name: 'Estante' }).getAttribute('aria-current')).toBe('page');
     await userEvent.click(mobile.getByRole('link', { name: 'Mais' }));
     const options = within(screen.getByRole('navigation', { name: 'Outras opções' }));
-    expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/apoiar']);
+    expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/instalar', '/apoiar']);
     await userEvent.click(options.getByRole('link', { name: /Seus dados/ }));
     expect(mobile.getByRole('link', { name: 'Mais' }).getAttribute('aria-current')).toBe('page');
     expect(document.activeElement).toBe(screen.getByRole('main'));

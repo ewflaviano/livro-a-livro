@@ -61,11 +61,11 @@ export function AppShell() {
         <NavLink to="/adicionar" state={{ returnTo }} onClick={() => positions.set(returnTo, window.scrollY)}>
           <Plus aria-hidden="true" /><span>Adicionar</span>
         </NavLink>
-        <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
+        <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/instalar', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
           <MoreHorizontal aria-hidden="true" /><span>Mais</span>
         </Link>
       </nav>
-      <PwaStatus />
+      {location.pathname !== '/configuracoes' && <PwaStatus />}
       <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><Link to="/apoiar">Apoiar o projeto</Link></footer>
     </>
   );

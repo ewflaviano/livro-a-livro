@@ -17,8 +17,8 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Capas enviadas | Cadastro, estante e detalhe, inclusive offline; livro e capa gravados juntos, com limites portáveis |
 | Backup JSON | Backup local em Seus dados, offline e sem Drive: exportação, prévia, confirmação e restauração atômica com capas |
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
-| PWA | App shell offline e aviso de atualização implementados; instalação não é backup |
-| Configurações | Rota existe, mas mostra “Em construção” |
+| PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
+| Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
 | Google Drive | Cliente e simulador implementados; API de produção e habilitação pendentes na issue #13 |
 | Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 
@@ -85,4 +85,6 @@ Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo
 
 ### Navegação e busca local
 
-Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações e Apoiar; desktop mantém a lateral. A estante busca título e autoria localmente, sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas; compartilhar ano aparece após a coleção quando há livros lidos.
+Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações, Instalar e Apoiar; desktop mantém a lateral. A estante busca título e autoria localmente, sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas; compartilhar ano aparece após a coleção quando há livros lidos.
+
+Configurações usa as mesmas preferências da estante. Em falha, informa que a escolha vale apenas na sessão e oferece tentar salvar novamente. Instalar mostra instruções por plataforma e botão somente quando o navegador oferece o evento nativo; aceitar o pedido ainda não confirma a conclusão. A primeira preparação offline não aparece como atualização. Atualizar exige uma versão aguardando, ausência de rascunho/operação e nenhuma outra aba aberta.

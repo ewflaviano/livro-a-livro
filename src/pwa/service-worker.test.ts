@@ -14,7 +14,14 @@ function environment() {
     open: async (name: string) => {
       if (!stores.has(name)) stores.set(name, new Map());
       return { put: async (request: string | Request, response: Response) => { stores.get(name)!.set(key(request), response); },
-        match: async (request: string | Request) => stores.get(name)!.get(key(request)) };
+        match: async (request: string | Request, options?: { ignoreVary?: boolean }) => {
+          const response = stores.get(name)!.get(key(request));
+          // Precache uses cache.put(url, response), so its stored request has no
+          // Origin. Native module requests include it; ordinary fetch may not.
+          if (!options?.ignoreVary && response?.headers.get('vary')?.toLowerCase().split(/,\s*/).includes('origin') &&
+            typeof request !== 'string' && request.headers.has('Origin')) return undefined;
+          return response;
+        } };
     },
     keys: async () => [...stores.keys()], delete: vi.fn(async (name: string) => stores.delete(name)),
   };
@@ -73,6 +80,24 @@ describe('public app-shell worker', () => {
     env.handlers.get('fetch')!({ request: { url: origin + '/', method: 'GET', mode: 'navigate', headers: new Headers() },
       respondWith: (promise: Promise<Response>) => { result = promise; } });
     expect(await (await result)!.text()).toBe('public shell');
+  });
+  it('serves current and previous public modules with Vary Origin offline', async () => {
+    const env = environment();
+    env.fetch.mockImplementation(async () => new Response('public module', { headers: { 'Content-Type': 'text/javascript', Vary: 'Origin' } }));
+    await env.lifecycle('install');
+    const old = await env.caches.open('livro-a-livro-shell-previous');
+    await old.put('/assets/previous.js', new Response('previous module', { headers: { 'Content-Type': 'text/javascript', Vary: 'Origin' } }));
+    env.fetch.mockClear(); env.fetch.mockRejectedValue(new Error('offline'));
+    for (const [path, body] of [['/assets/app-123.js', 'public module'], ['/assets/previous.js', 'previous module']]) {
+      // Node Request preserves this header, modeling the native module request
+      // observed in CDP; browser-authored JS cannot manually add forbidden Origin.
+      const request = new Request(origin + path, { headers: { Origin: origin } });
+      expect(request.headers.get('Origin')).toBe(origin);
+      let result: Promise<Response> | undefined;
+      env.handlers.get('fetch')!({ request, respondWith: (response: Promise<Response>) => { result = response; } });
+      expect(await (await result)!.text()).toBe(body);
+    }
+    expect(env.fetch).not.toHaveBeenCalled();
   });
   it('defers updates with other windows and retains old caches when any window exists', async () => {
     const env = environment(); await env.caches.open('livro-a-livro-shell-old'); await env.caches.open('unrelated');

@@ -67,13 +67,16 @@ self.addEventListener('fetch', (event) => {
   if (!navigation && !urls.has(url.href) && !url.pathname.startsWith('/assets/')) return;
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
-    const cached = await cache.match(navigation ? '/index.html' : request);
+    // These caches contain only public, integrity-checked build assets fetched
+    // without credentials. Module requests add Origin, unlike precache requests;
+    // Vary: Origin must not hide an otherwise identical immutable public asset.
+    const cached = await cache.match(navigation ? '/index.html' : request, { ignoreVary: true });
     if (cached) return cached;
     // Old tabs may request their immutable chunks after an explicit update.
     if (url.pathname.startsWith('/assets/')) {
       for (const name of await caches.keys()) {
         if (!name.startsWith(prefix)) continue;
-        const previous = await (await caches.open(name)).match(request);
+        const previous = await (await caches.open(name)).match(request, { ignoreVary: true });
         if (previous) return previous;
       }
     }

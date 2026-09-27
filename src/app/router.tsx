@@ -1,6 +1,8 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../ui/components/AppShell';
-import { PlaceholderPage } from '../ui/pages/PlaceholderPage';
+import { NotFoundPage } from '../ui/pages/NotFoundPage';
+import { SettingsPage } from '../ui/pages/SettingsPage';
+import { InstallPage } from '../ui/pages/InstallPage';
 import { ShelfPage } from '../ui/pages/ShelfPage';
 import { AddBookPage, BookPage } from '../ui/pages/BookPage';
 import { LibraryProvider } from './LibraryProvider';
@@ -24,8 +26,9 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="mais" element={<MorePage />} />
         <Route path="dados" element={<DataPage />} />
         <Route path="apoiar" element={<SupportPage />} />
-        <Route path="configuracoes" element={<PlaceholderPage title="Configurações" description="Simples, privado e do seu jeito." detail="As preferências do aplicativo estão em preparação. Você poderá usar sua estante sem criar uma conta." />} />
-        <Route path="*" element={<PlaceholderPage title="Página não encontrada" description="Este endereço não faz parte da sua estante." detail="Volte para continuar navegando." back />} />
+        <Route path="configuracoes" element={<SettingsPage />} />
+        <Route path="instalar" element={<InstallPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
     </SyncProvider></LibraryProvider>
