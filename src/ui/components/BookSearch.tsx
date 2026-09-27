@@ -11,7 +11,7 @@ const messages = {
   'invalid-response': 'Não foi possível ler os resultados. Tente novamente ou adicione manualmente.',
   cooldown: 'A Open Library pediu uma pausa. Aguarde um pouco antes de tentar novamente; o cadastro manual continua disponível.',
 };
-export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook, coverUrl: string | null) => void; onManual: () => void }) {
+export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) => void; onManual: () => void }) {
   const [service] = useState(openBookSearch);
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -30,7 +30,7 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook, 
   }
   function select(candidate: BookCandidate) {
     service.cancel();
-    onSelect(candidateDraft(candidate), candidate.coverId ? service.coverUrl(candidate.coverId) : null);
+    onSelect(candidateDraft(candidate));
   }
   return <div className="book-search">
     <form onSubmit={(event) => { event.preventDefault(); void search(query); }}>
@@ -53,10 +53,4 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook, 
         {result.hasMore && <button className="button button-secondary" onClick={() => void search(submitted, result.page + 1)}>Próxima página</button>}</div>
     </div>}
   </div>;
-}
-
-export function SelectedCover({ url, title }: { url: string; title: string }) {
-  const [failed, setFailed] = useState(false);
-  return <div className="selected-cover book-cover">{failed ? <span>Sem capa · {title}</span> :
-    <img src={url} alt="" crossOrigin="anonymous" referrerPolicy="no-referrer" onError={() => setFailed(true)} />}</div>;
 }

@@ -6,10 +6,14 @@ import { createOpenLibraryClient } from '../adapters/open-library/client';
 import { createSearchService } from '../services/search-service';
 import { openLibraryCoverUrl } from '../adapters/open-library/covers';
 
+export function bookCoverUrl(coverId: number): string | null {
+  return import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' ? null : openLibraryCoverUrl(coverId);
+}
+
 export function openBookSearch() {
   const local = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true';
   const source = local ? { async search() { return { candidates: [], page: 1, hasMore: false, cached: false }; } } : createOpenLibraryClient(createSearchCache());
-  return { ...createSearchService(source), coverUrl: local ? () => null : openLibraryCoverUrl };
+  return createSearchService(source);
 }
 
 export async function openShelfService() {

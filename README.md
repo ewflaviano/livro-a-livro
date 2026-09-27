@@ -13,8 +13,8 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Estante anual, Grade/Lista, filtros e estatísticas | Integrados à interface e ao IndexedDB |
 | Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
 | Busca Open Library | Explícita, com revisão antes de salvar; indisponível no simulador local |
-| Capas Open Library | Prévia na seleção; ainda não aparecem na estante nem no detalhe salvo |
-| Capas enviadas | Cadastro e detalhe implementados; livro e capa gravados juntos, com limites portáveis; estante ainda usa fallback |
+| Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
+| Capas enviadas | Cadastro, estante e detalhe, inclusive offline; livro e capa gravados juntos, com limites portáveis |
 | Backup JSON | Backup local em Seus dados, offline e sem Drive: exportação, prévia, confirmação e restauração atômica com capas |
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
 | PWA | App shell offline e aviso de atualização implementados; instalação não é backup |

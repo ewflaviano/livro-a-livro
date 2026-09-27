@@ -4,9 +4,9 @@ A biblioteca permanece local. Em produção, `sync/api.ts` só faz chamadas sem 
 
 Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VITE_DRIVE_ENABLED=true` depois da implantação/configuração da issue #13. Firebase não é necessário ao protocolo. Não há configuração de infraestrutura nem credenciais nesta entrega.
 
-## Pendências conhecidas — 27 set 2026
+## Estado local e gates — 27 set 2026
 
-O conector não substitui o backup independente: o download da tela Dados depende de sua disponibilidade/estado, e a interface de exportação/importação sem Drive ainda não foi ligada ao serviço. As capas externas não são desenhadas na estante/detalhe.
+O backup independente está disponível em Seus dados → Backup local (issue #40), com exportação/importação offline e sem Drive. A issue #42 unifica capas na revisão, estante e detalhe: mídias locais funcionam offline; capas externas usam conexão e fallback em ausência/erro. A habilitação do conector continua condicionada aos gates da API/OAuth.
 
 A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebidos validam os bytes de imagem antes da prévia, e a aplicação remota automática ou escolhida no conflito substitui livros, mídias, preferências, revisão e outbox numa única transação condicional. Exportações leem esses dados em um snapshot readonly coerente. A issue #39 unifica o orçamento de gravação/exportação/restauração (S2), com base64 e envelope incluídos, e limita snapshots às mídias referenciadas. Estados legados excessivos permanecem legíveis, sem garantia retroativa de exportação.
 

@@ -1,9 +1,10 @@
+import { BookCover } from '../components/BookCover';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import type { Book, NewBook } from '../../domain/book';
-import { BookSearch, SelectedCover } from '../components/BookSearch';
+import { BookSearch } from '../components/BookSearch';
 import { formatShelfYear } from '../../domain/library';
 import type { LocalRevision } from '../../ports/library-repository';
 import { sameRevision } from '../../services/library-service';
@@ -31,7 +32,6 @@ export function AddBookPage() {
   const [session, setSession] = useState<{ year: number; version: LocalRevision } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<NewBook | null>(null);
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   useEffect(() => { document.title = 'Adicionar livro · Livro a Livro'; }, []);
@@ -41,13 +41,13 @@ export function AddBookPage() {
   return <section className="page-content"><BackLink returnTo={returnTo} />
     <p className="eyebrow">Uma leitura de cada vez</p><h1>Adicionar livro</h1>
     <p className="page-description">Guarde sua leitura. Você pode completar os detalhes depois.</p>
-    {session && books ? draft === null ? <BookSearch onManual={() => { setDraft({ title: '' }); setCoverUrl(null); }}
-      onSelect={(next, url) => { setDraft(next); setCoverUrl(url); }} /> : <>
+    {session && books ? draft === null ? <BookSearch onManual={() => setDraft({ title: '' })}
+      onSelect={setDraft} /> : <>
       {draft.source && <p className="field-help">Confira os dados da Open Library antes de salvar. Páginas, ISBN e ano da sua edição podem ser preenchidos abaixo.</p>}
-      {coverUrl && <SelectedCover key={coverUrl} url={coverUrl} title={draft.title} />}
+      {draft.cover && <BookCover cover={draft.cover} title={draft.title} className="selected-cover" />}
       <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books}
       onSaved={(book) => navigate(`/livro/${book.id}`, { replace: true, state: { returnTo, saved: true } })}
-      onCancel={() => { setDraft(null); setCoverUrl(null); }} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
+      onCancel={() => setDraft(null)} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
       <LibraryState state={state.status === 'error' ? 'error' : 'loading'} onRetry={retry} />}
   </section>;
 }
@@ -66,7 +66,6 @@ function BookDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
-  const [localCoverUrl, setLocalCoverUrl] = useState<string | null>(null);
   useEffect(() => { if (busy || removing) return blockPwaUpdate(); }, [busy, removing]);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
@@ -81,15 +80,6 @@ function BookDetail({ id }: { id: string }) {
       .catch(() => { if (active) setLoadError(true); });
     return () => { active = false; };
   }, [books, id, editing, removing, attempt, revision]);
-  useEffect(() => {
-    const cover = loaded?.book?.cover;
-    if (!books || !cover || cover.provider !== 'local') { setLocalCoverUrl(null); return; }
-    let active = true; let url: string | null = null;
-    void books.readCover(cover.mediaId).then(stored => {
-      if (stored && active) { url = URL.createObjectURL(stored.bytes); setLocalCoverUrl(url); }
-    }).catch(() => { if (active) setLocalCoverUrl(null); });
-    return () => { active = false; if (url) URL.revokeObjectURL(url); };
-  }, [books, loaded?.book?.cover]);
   const reload = () => { setEditing(false); setLoaded(null); setError(''); setSaved(false); setAttempt((value) => value + 1); };
   async function remove() {
     if (!books || !loaded || busy) return;
@@ -102,10 +92,11 @@ function BookDetail({ id }: { id: string }) {
   return <section className="page-content"><BackLink returnTo={returnTo} />
     {!loaded || loadError ? <><h1>Livro</h1><LibraryState state={loadError || state.status === 'error' ? 'error' : 'loading'} onRetry={() => { if (!books) retry(); else setAttempt((value) => value + 1); }} /></> :
       !book ? <><h1>Livro não encontrado</h1><p>Este registro não está mais nesta biblioteca. Volte à estante para continuar.</p></> : <>
-        <div className="book-detail-heading">{localCoverUrl ? <img className="book-cover-image" src={localCoverUrl} alt={`Capa de ${book.title}`} /> : <div className="book-cover" aria-hidden="true"><BookOpen /><span>{book.title}</span></div>}
+        <div className="book-detail-heading"><BookCover cover={book.cover} title={book.title} />
           <div><p className="eyebrow">Estante {formatShelfYear(book.shelfYear)}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || 'Autoria não informada'}</p>
             <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span></div>
         </div>
+        {book.cover?.provider === 'open_library' && <p className="field-help">A capa da Open Library usa conexão. Seus registros continuam disponíveis sem a imagem.</p>}
         {editing && books ? <>
           {observed && !sameRevision(observed, loaded.version) && <p role="status" className="form-error">A biblioteca mudou. Seu rascunho foi preservado; ao salvar, será necessário revisar a versão atual.</p>}
           <BookForm book={book} year={book.shelfYear} version={loaded.version} service={books}
