@@ -17,13 +17,14 @@ async function setup() {
   render(<MemoryRouter initialEntries={['/configuracoes']}><AppRoutes openService={async () => service} /></MemoryRouter>);
   await screen.findByRole('combobox', { name: 'Ano da estante' }); return { name, repository };
 }
-it('persists existing preferences across reopening without changing the library', async () => {
-  const { name, repository } = await setup(); const revision = await repository.readRevision();
+it('persists preferences across reopening and advances revision without changing books', async () => {
+  const { name, repository } = await setup(); const revision = await repository.readRevision(); const books = (await repository.readAll()).books;
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ano da estante' }), '2025');
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Visualização inicial' }), 'list');
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filtro inicial' }), 'read');
   await waitFor(async () => expect(await repository.readPreferences()).toMatchObject({ shelfYear: 2025, mode: 'list', filter: 'read' }));
-  expect(await repository.readRevision()).toEqual(revision);
+  expect(await repository.readRevision()).toEqual({ ...revision, revision: revision.revision + 3 });
+  expect((await repository.readAll()).books).toEqual(books);
   expect(screen.getByText(/Versão .*build/)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Como instalar' }).getAttribute('href')).toBe('/instalar');
   cleanup();
@@ -41,6 +42,7 @@ it('reports failed persistence, keeps session choice and allows retry', async ()
   await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('reading'));
   expect(screen.getByRole('alert')).toBeTruthy();
   expect((await repository.readPreferences()).mode).toBe('grid');
+  expect((screen.getByRole('combobox', { name: 'Visualização inicial' }) as HTMLSelectElement).value).toBe('list');
   await userEvent.click(screen.getByRole('button', { name: 'Tentar salvar preferências' }));
   await waitFor(async () => expect((await repository.readPreferences()).mode).toBe('list'));
   expect(screen.queryByRole('alert')).toBeNull();

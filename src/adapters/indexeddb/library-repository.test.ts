@@ -163,9 +163,9 @@ describe('IndexedDB library repository', () => {
     const preferences = await repo.readPreferences();
     const db = await openDB<LibraryDatabase>(name);
     await db.put('searchCache', { synthetic: true }, 'synthetic');
-    const version = await repo.commit({ kind: 'replace', books: [] }, old);
+    const version = await repo.commit({ kind: 'replace', books: [] }, await repo.readRevision());
     expect(version.generation).not.toBe(old.generation);
-    expect(version.revision).toBe(old.revision + 1);
+    expect(version.revision).toBe(old.revision + 2);
     await expect(repo.commit({ kind: 'put', book: book() }, old)).rejects.toMatchObject({ code: 'StaleRevision' });
     // Generation is checked independently, even if the revision number is current.
     await expect(repo.commit({ kind: 'delete', id: book().id }, { ...version, generation: old.generation }))
@@ -187,14 +187,14 @@ describe('IndexedDB library repository', () => {
     await expect(fresh.commit({ kind: 'put', book: book() }, draftVersion)).rejects.toMatchObject({ code: 'StaleRevision' });
   });
 
-  it('merges concurrent preference patches without touching library revision', async () => {
+  it('merges concurrent portable preference patches and advances the shared revision', async () => {
     const name = newName();
     const a = await open(name);
     const b = await open(name);
     const version = await a.readRevision();
     await Promise.all([a.updatePreferences({ shelfYear: 2025 }), b.updatePreferences({ mode: 'list' })]);
     expect(await a.readPreferences()).toEqual({ ...DEFAULT_PREFERENCES, shelfYear: 2025, mode: 'list' });
-    expect(await b.readRevision()).toEqual(version);
+    expect(await b.readRevision()).toEqual({ ...version, revision: version.revision + 2 });
     await expect(a.updatePreferences({ shelfYear: 0 })).rejects.toMatchObject({ code: 'InvalidLibrary' });
   });
 
@@ -326,4 +326,14 @@ describe('IndexedDB library repository', () => {
     focusTarget.dispatchEvent(new Event('focus'));
     expect(listener).toHaveBeenCalledTimes(1);
   });
+});
+
+it('portable no-ops and lastExport stay outside content revision, but a mixed portable patch advances once', async () => {
+  const repo = await open(); const original = await repo.readRevision();
+  await repo.updatePreferences({ mode: 'grid', filter: 'all', shelfYear: null });
+  await repo.updatePreferences({ lastExport: { startedAt: '2026-09-26T12:00:00Z', version: original } });
+  expect(await repo.readRevision()).toEqual(original);
+  const observed = vi.fn(); repo.subscribe(observed);
+  await repo.updatePreferences({ mode: 'list', filter: 'reading', lastExport: null });
+  expect(await repo.readRevision()).toEqual({ ...original, revision: original.revision+1 }); expect(observed).toHaveBeenCalledOnce();
 });

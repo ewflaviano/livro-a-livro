@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { headerSchema, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SnapshotHeader } from './contracts';
+import { canonicalJson, sameHeader, headerSchema, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SnapshotHeader } from './contracts';
 import { limitedJson, request } from './network';
-import { MAX_SYNC_BYTES, parseSnapshot } from './snapshot';
+import { MAX_SYNC_BYTES, parseSnapshot, libraryHashV2, remoteHeads } from './snapshot';
 
 const origin = 'https://www.googleapis.com';
 const fileSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/u), size: z.string().regex(/^\d+$/u), appProperties: z.record(z.string(), z.string()) });
@@ -9,7 +9,7 @@ const pageSchema = z.object({ nextPageToken: z.string().max(4000).optional(), fi
 const name = 'livro-a-livro-snapshot-v1.json';
 
 export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: typeof fetch = fetch): DriveClient {
-  const resolutionHeaders = new Map<string, SnapshotHeader>();
+  const resolutionHeaders = new Map<string, { metadata: string; header: SnapshotHeader }>();
   async function google(url: string, init: RequestInit, signal: AbortSignal) {
     const parsed = new URL(url);
     if (parsed.origin !== origin || parsed.username || parsed.password ||
@@ -29,8 +29,10 @@ export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: t
     if (file.size > MAX_SYNC_BYTES) throw new SyncError('invalid');
     const snapshot = await parseSnapshot(await limitedJson(await google(`${origin}/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`, {}, signal), MAX_SYNC_BYTES));
     const { library: _, ...header } = snapshot;
-    if (header.snapshotId !== file.header.snapshotId || header.hash !== file.header.hash || header.operationId !== file.header.operationId ||
-      header.parentSnapshotId !== file.header.parentSnapshotId || header.createdAt !== file.header.createdAt) throw new SyncError('invalid');
+    if (header.protocolVersion !== file.header.protocolVersion || header.snapshotId !== file.header.snapshotId || header.hash !== file.header.hash || header.operationId !== file.header.operationId ||
+      header.parentSnapshotId !== file.header.parentSnapshotId || header.createdAt !== file.header.createdAt ||
+      file.resolution !== undefined && file.resolution !== (header.resolvedSnapshotIds.length > 0) ||
+      file.header.resolvedSnapshotIds.length > 0 && !sameHeader(header, file.header)) throw new SyncError('invalid');
     return snapshot;
   }
   return {
@@ -49,12 +51,14 @@ export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: t
             snapshotId: p.snapshotId, operationId: p.operationId, parentSnapshotId: p.parentSnapshotId === 'root' ? null : p.parentSnapshotId,
             hash: p.hash, createdAt: p.createdAt, resolvedSnapshotIds: [] });
           if (!parsed.success || !['0', '1'].includes(p.resolution) || Number(raw.size) > MAX_SYNC_BYTES) throw new SyncError('invalid');
-          const file: DriveFile = { id: raw.id, size: Number(raw.size), header: parsed.data };
+          const file: DriveFile = { id: raw.id, size: Number(raw.size), header: parsed.data, resolution: p.resolution === '1' };
           if (p.resolution === '1') {
-            let header = resolutionHeaders.get(raw.id);
+            const metadata = canonicalJson(raw);
+            const cached = resolutionHeaders.get(raw.id);
+            let header = cached?.metadata === metadata ? cached.header : undefined;
             if (!header) {
               const { library: _, ...downloaded } = await download(file, signal);
-              header = downloaded; resolutionHeaders.set(raw.id, header);
+              header = downloaded; resolutionHeaders.set(raw.id, { metadata, header });
             }
             file.header = header;
           }
@@ -65,6 +69,17 @@ export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: t
         if (pageToken && tokens.has(pageToken)) throw new SyncError('invalid');
         if (pageToken) tokens.add(pageToken);
       } while (pageToken);
+      remoteHeads(files); // Complete discovery must be valid before any decision.
+      const seen = new Map<string, { file: DriveFile; digest?: string }>();
+      for (const file of files) {
+        const key = file.header.operationId.toLowerCase(); const previous = seen.get(key);
+        if (!previous) { seen.set(key, { file }); continue; }
+        if (!sameHeader(previous.file.header, file.header)) throw new SyncError('invalid');
+        if (file.header.protocolVersion === 1) {
+          previous.digest ??= await libraryHashV2((await download(previous.file, signal)).library);
+          if (previous.digest !== await libraryHashV2((await download(file, signal)).library)) throw new SyncError('invalid');
+        }
+      }
       return files;
     },
     download,
@@ -72,7 +87,7 @@ export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: t
       const snapshot = await parseSnapshot(input);
       const content = JSON.stringify(snapshot);
       const metadata = { name, mimeType: 'application/json', parents: ['appDataFolder'], appProperties: {
-        protocolVersion: '1', snapshotId: snapshot.snapshotId, operationId: snapshot.operationId,
+        protocolVersion: String(snapshot.protocolVersion), snapshotId: snapshot.snapshotId, operationId: snapshot.operationId,
         parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt,
         resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0',
       } };

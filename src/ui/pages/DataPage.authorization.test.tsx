@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SyncView } from '../../sync/contracts';
 import { MemoryRouter } from 'react-router-dom';
-import { GlobalSyncControls } from '../components/GlobalSyncControls';
+import { GlobalSyncControls, GlobalSyncHeader } from '../components/GlobalSyncControls';
 import { DataPage } from './DataPage';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false,
@@ -48,4 +48,13 @@ it('shows unconfirmed logout honestly and offers no global Drive revocation for 
   expect(screen.getByRole('button', { name: 'Sair deste navegador' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Desconectar Google Drive' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Retomar sincronização' })).toBeNull();
+});
+
+it('describes an empty connected Drive without claiming a confirmed backup', () => {
+  sync.state = { status: 'connected-empty', login: { status: 'signed-in', driveAuthorized: true } };
+  render(<MemoryRouter><GlobalSyncControls><GlobalSyncHeader /><DataPage /></GlobalSyncControls></MemoryRouter>);
+  expect(screen.getByText('Drive conectado. Sua biblioteca está vazia; nenhum backup foi enviado.')).toBeTruthy();
+  expect(screen.getByText('Drive conectado')).toBeTruthy();
+  expect(screen.queryByText(/Cópia confirmada no Google Drive/)).toBeNull();
+  expect(screen.getByRole('button', { name: 'Exportar JSON' })).toBeTruthy();
 });

@@ -40,6 +40,12 @@ const mediaId = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
 fixture.books[0].cover = { provider: 'local', mediaId };
 fixture.books[0].source = null;
 fixture.coverMedia = [{ id: mediaId, mimeType: 'image/png', bytes: images['image/png'], width: 32, height: 48, createdAt: '2026-09-26T12:00:00Z' }];
+const extraBooks = {
+  A: { ...fixture.books[0], id: 'ab8b6944-b1de-44e9-9d07-28d9e70ba211', title: 'Gate sintético exclusivo A' },
+  B: { ...fixture.books[0], id: 'c72bf4a8-4d05-483c-a162-328672c6b813', title: 'Gate sintético exclusivo B' },
+};
+const knownSyntheticBooks = [...fixture.books, extraBooks.A, extraBooks.B];
+const mergePreferences = { A: { ...fixture.preferences, mode: 'grid' }, B: { ...fixture.preferences, filter: 'all' } };
 
 function apiAllowed(request) {
   const url = new URL(request.url());
@@ -102,14 +108,15 @@ async function routeRequest(route) {
   return smoke ? route.abort() : route.continue();
 }
 function syntheticLibrary(library) {
-  check(library?.books?.length === fixture.books.length && library.coverMedia?.length === fixture.coverMedia.length);
+  check(Array.isArray(library?.books) && library.books.length >= 1 && library.books.length <= knownSyntheticBooks.length && library.coverMedia?.length === fixture.coverMedia.length);
+  check(new Set(library.books.map(book => book.id)).size === library.books.length);
   for (const value of library.books) {
-    const original = fixture.books.find(book => book.id === value.id); check(Boolean(original));
+    const original = knownSyntheticBooks.find(book => book.id === value.id); check(Boolean(original));
     const { note, updatedAt, ...rest } = value; const { note: originalNote, updatedAt: _, ...expected } = original;
     check(isDeepStrictEqual(rest, expected) && typeof updatedAt === 'string');
     check(note === originalNote || /^Gate sintético (A|B|PUT) [0-9]+$/.test(note));
   }
-  check(isDeepStrictEqual(library.coverMedia, fixture.coverMedia) && isDeepStrictEqual(library.preferences, fixture.preferences));
+  check(isDeepStrictEqual(library.coverMedia, fixture.coverMedia) && [fixture.preferences, ...Object.values(mergePreferences)].some(preferences => isDeepStrictEqual(library.preferences, preferences)));
 }
 async function driveRequest(route) {
   const request = route.request(); const url = new URL(request.url());
@@ -136,7 +143,7 @@ async function driveRequest(route) {
         response = { status: 200, headers, body: JSON.stringify({ id }) };
       } else if (url.pathname === '/drive/v3/files') {
         response = { status: 200, headers, body: JSON.stringify({ files: fakeDriveFiles.map(({ id, snapshot }) => ({ id, size: String(Buffer.byteLength(JSON.stringify(snapshot))), appProperties: {
-          protocolVersion: '1', snapshotId: snapshot.snapshotId, operationId: snapshot.operationId, parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt, resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0',
+          protocolVersion: String(snapshot.protocolVersion), snapshotId: snapshot.snapshotId, operationId: snapshot.operationId, parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt, resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0',
         } })) }) };
       } else {
         const file = fakeDriveFiles.find(file => url.pathname === `/drive/v3/files/${file.id}`); check(Boolean(file));
@@ -196,7 +203,7 @@ async function prepare() {
     const page = await context.newPage(); pages[id] = page; page.setDefaultTimeout(30_000);
     page.on('framenavigated', frame => { if (frame === page.mainFrame() && new URL(frame.url()).origin === 'https://accounts.google.com') emit('READY_FOR_GOOGLE_CONSENT'); });
     stage = 'OPEN_DATA'; await dataPage(page);
-    await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
   }
   const page = pages.A;
   stage = 'IMPORT'; await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-gate.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
@@ -241,7 +248,8 @@ async function pauseOrDisconnect(id, kind) {
   if (restored.revocationPending) {
     await expect(page.getByRole('heading', { name: 'Revogação no Google ainda não confirmada', exact: true })).toBeVisible();
     emit('REVOCATION_UNCONFIRMED');
-  } else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
+  } else if (kind === 'logout') await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
+  else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
   check(isDeepStrictEqual(before, await snapshot(page)));
   emit('LOCAL_PRESERVED_AND_PAUSED');
 }
@@ -351,7 +359,13 @@ async function editSyntheticNote(id, label) {
   stage = 'EDIT_DETAILS'; await page.locator('textarea[name="note"]').waitFor({ state: 'attached' }); if (!await page.locator('textarea[name="note"]').isVisible()) await page.locator('details').filter({ has: page.locator('textarea[name="note"]') }).locator('summary').click();
   stage = 'EDIT_NOTE'; await page.locator('textarea[name="note"]').fill(label);
   stage = 'EDIT_SAVE'; await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
-  stage = 'EDIT_SAVED'; await expect(page.getByRole('button', { name: 'Editar livro', exact: true })).toBeVisible();
+  stage = 'EDIT_DUPLICATE_REVIEW';
+  const saved = page.getByRole('button', { name: 'Editar livro', exact: true });
+  const duplicate = page.getByRole('button', { name: 'Salvar mesmo assim', exact: true });
+  await expect(saved.or(duplicate)).toBeVisible();
+  // The union fixture deliberately has independently registered books with the same ISBN.
+  if (await duplicate.isVisible()) await duplicate.click();
+  stage = 'EDIT_SAVED'; await expect(saved).toBeVisible();
 }
 async function recovery(page) {
   const library = await page.evaluate(async () => {
@@ -386,6 +400,59 @@ async function conflictGate() {
     emit('DIVERGENT_CONFLICT_RECOVERY_PASS');
   } finally { await setOffline('A', false); await setOffline('B', false); }
 }
+async function importMergeFixture(id, sequence) {
+  const page = pages[id]; const library = structuredClone(fixture);
+  library.books[0].note = `Gate sintético ${id} ${sequence}`;
+  library.books.push(structuredClone(extraBooks[id])); library.preferences = mergePreferences[id];
+  await dataPage(page);
+  await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(library)) });
+  await page.getByRole('button', { name: /^Substituir por/ }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: /^Substituir por/ }).click();
+  await expect.poll(async () => (await snapshot(page)).books.length).toBe(2);
+  return snapshot(page);
+}
+async function mergeGate() {
+  stage = 'MERGE_BASE'; await pages.A.reload(); await synced('A'); await pages.B.reload(); await synced('B');
+  check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
+  await pauseOrDisconnect('A', 'pause'); await pauseOrDisconnect('B', 'pause');
+  await setOffline('A', true); await setOffline('B', true);
+  try {
+    const sequence = ++gateSequence;
+    stage = 'MERGE_EDIT'; const a = await importMergeFixture('A', sequence); const b = await importMergeFixture('B', sequence);
+    stage = 'MERGE_SEND_A'; await setOffline('A', false); await dataPage(pages.A); await pages.A.getByRole('button', { name: 'Retomar sincronização', exact: true }).click(); await synced('A');
+    stage = 'MERGE_CONFLICT_B'; await setOffline('B', false); await dataPage(pages.B); await pages.B.getByRole('button', { name: 'Retomar sincronização', exact: true }).click();
+    await expect(pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 });
+    check(isDeepStrictEqual(b, await snapshot(pages.B)));
+    stage = 'MERGE_CANCEL'; await pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click();
+    await expect(pages.B.getByRole('heading', { name: 'Prévia da união', exact: true })).toBeVisible();
+    await pages.B.getByRole('button', { name: 'Cancelar união', exact: true }).click();
+    check(isDeepStrictEqual(b, await snapshot(pages.B)));
+    stage = 'MERGE_CHOOSE'; await pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click();
+    await expect(pages.B.getByRole('heading', { name: 'Prévia da união', exact: true })).toBeVisible();
+    if (smoke) {
+      await pages.B.setViewportSize({ width: 320, height: 900 });
+      await pages.B.getByRole('heading', { name: 'Prévia da união', exact: true }).scrollIntoViewIfNeeded();
+      check(await pages.B.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      if (process.env.LAL_GATE_SCREENSHOT) {
+        await pages.B.screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT) });
+        const divergent = pages.B.getByRole('group', { name: /^Livro [0-9]+: Livro sintético$/ });
+        await divergent.scrollIntoViewIfNeeded();
+        await pages.B.screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT.replace(/\.png$/, '-book.png')) });
+      }
+      await pages.B.setViewportSize({ width: 1280, height: 720 });
+    }
+    await pages.B.getByRole('group', { name: /^Livro [0-9]+: Livro sintético$/ }).getByRole('radio', { name: 'Usar versão deste dispositivo', exact: true }).check();
+    await pages.B.getByRole('radio', { name: /^Preferências deste dispositivo:/ }).check();
+    const absence = pages.B.getByRole('checkbox', { name: /^Incluir livros presentes só em algumas versões/ });
+    if (await absence.count()) await absence.check();
+    stage = 'MERGE_COMMIT'; await pages.B.getByRole('button', { name: 'Revisar e juntar', exact: true }).click();
+    await pages.B.getByRole('alertdialog').getByRole('button', { name: 'Confirmar união', exact: true }).click(); await synced('B');
+    const expected = { ...b, books: [...b.books, a.books.find(book => book.id === extraBooks.A.id)].sort((x, y) => x.id.localeCompare(y.id)) };
+    stage = 'MERGE_RECOVERY'; check(isDeepStrictEqual(expected, await snapshot(pages.B))); check(isDeepStrictEqual(b, await recovery(pages.B)));
+    stage = 'MERGE_CONVERGENCE'; await pages.A.reload(); await synced('A'); check(isDeepStrictEqual(expected, await snapshot(pages.A)));
+    emit('EXPLICIT_MERGE_BOOKS_PREFERENCES_COVER_RECOVERY_PASS');
+  } finally { await setOffline('A', false); await setOffline('B', false); }
+}
 async function lostPutGate(id) {
   stage = 'LOST_PUT'; await synced(id); check(!lostPut);
   let timeout;
@@ -409,6 +476,7 @@ async function command(line) {
   const [name, id] = line.trim().split(/\s+/);
   if (name === 'prepare') return prepare();
   if (name === 'conflict') return conflictGate();
+  if (name === 'merge') return mergeGate();
   if (name === 'audit') { check(!violation); emit('API_BOUNDARY_PASS'); return; }
   if (name === 'compare') { check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B))); emit('CONTEXTS_EQUAL'); return; }
   check(['A', 'B'].includes(id) && pages[id]); const page = pages[id];
@@ -442,7 +510,7 @@ async function command(line) {
   if (name === 'offline-crud') return offlineCrud(id);
   if (name === 'renew') return renewSession(id);
   if (name === 'lost-put') return lostPutGate(id);
-  if (name === 'reconnect-required') { await page.reload(); await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true })).toBeVisible(); emit('RECONNECT_REQUIRED'); return; }
+  if (name === 'reconnect-required') { await page.reload(); await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible(); emit('RECONNECT_REQUIRED'); return; }
   throw new Error('UNKNOWN_COMMAND');
 }
 try {
@@ -459,6 +527,7 @@ try {
     await response.body?.cancel();
   }
   if (distArg < 0) execFileSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist], { cwd: root, env: { ...process.env, VITE_DRIVE_ENABLED: 'true', VITE_LOCAL_MODE: 'false' }, stdio: 'ignore' });
+  stage = 'BROWSER_START';
   browser = await chromium.launch({ headless: smoke, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   if (smoke) {
     await prepare(); await offlineCrud('A'); check(counters.drive === 0 && !violation);
@@ -492,8 +561,11 @@ try {
     }
     await pages.A.reload(); await synced('A');
     await pages.B.reload(); await dataPage(pages.B);
-    await pages.B.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }).click(); await confirm(pages.B); await synced('B');
-    await conflictGate(); await lostPutGate('A'); smokeDrive = false;
+    await synced('B');
+    check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
+    check(await pages.B.getByRole('heading', { name: 'Escolher uma versão', exact: true }).count() === 0);
+    emit('FRESH_EMPTY_AUTO_RECEIVE_PASS');
+    await conflictGate(); await mergeGate(); await lostPutGate('A'); smokeDrive = false;
     const invalid = { url: () => `${api}/v1/session`, method: () => 'POST', postDataBuffer: () => Buffer.from('synthetic'), isNavigationRequest: () => false };
     check(!apiAllowed(invalid)); check(!apiAllowed({ ...invalid, postDataBuffer: () => null, method: () => 'GET', url: () => `${api}/v1/session?library=synthetic` }));
     emit('SMOKE_PASS');
@@ -506,5 +578,12 @@ try {
       catch { process.exitCode = 1; emit('COMMAND_FAILED'); if (violation) { emit('API_OR_ASSET_BOUNDARY_FAILED'); break; } }
     }
   }
-} catch { emit(`GATE_FAILED_${stage}`); process.exitCode = 1; }
+} catch {
+  if (smoke && process.env.LAL_GATE_SCREENSHOT) {
+    for (const id of ['A', 'B']) if (pages[id] && !pages[id].isClosed()) {
+      await pages[id].screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT.replace(/\.png$/, `-failure-${id}.png`)) }).catch(() => {});
+    }
+  }
+  emit(`GATE_FAILED_${stage}`); process.exitCode = 1;
+}
 finally { input?.close(); await browser?.close(); await rm(temporary, { recursive: true, force: true }); }

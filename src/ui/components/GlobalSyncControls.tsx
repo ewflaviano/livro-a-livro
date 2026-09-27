@@ -14,7 +14,8 @@ export const useGlobalSyncControls = () => useContext(Context);
 const shortLabels: Record<SyncView['status'], string> = {
   disabled: 'Entrar com Google', identifying: 'Identificação pendente', 'authorize-drive': 'Autorizar Drive',
   'authorization-expired': 'Entrar novamente', 'authorization-error': 'Verificar autorização', 'authorization-waiting': 'Autorização pendente',
-  paused: 'Drive pausado', pending: 'Envio pendente', syncing: 'Sincronizando…', synced: 'Drive atualizado', offline: 'Drive offline',
+  'connected-empty': 'Drive conectado',
+  paused: 'Drive pausado', pending: 'Envio pendente', syncing: 'Enviando…', receiving: 'Recebendo…', synced: 'Drive atualizado', offline: 'Drive offline',
   reconnect: 'Reconectar Google', error: 'Falha no Drive', quota: 'Drive sem espaço', conflict: 'Versões diferentes',
 };
 const attentionStates = ['reconnect', 'error', 'quota', 'conflict', 'authorization-expired', 'authorization-error'];

@@ -8,7 +8,7 @@ export type ShelfState =
   | { status: 'error' }
   | { status: 'ready'; snapshot: Snapshot; preferences: PortablePreferences; preferenceError: boolean };
 
-/** A projection of committed local data. Preferences never write a library snapshot. */
+/** Committed books plus unsaved preference intentions, tracked independently per field. */
 export function createShelfService(repository: LibraryRepository, parser?: BackupParser) {
   const backup = createBackupService(repository, parser?.parse, parser?.cancel);
   let state: ShelfState = { status: 'loading' };
@@ -16,6 +16,12 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
   let request = 0;
   let preferenceEdit = 0;
   let preferenceQueue = Promise.resolve();
+  const preferenceFields = ['shelfYear', 'mode', 'filter'] as const;
+  const overlay = new Map<keyof PortablePreferences, { sequence: number; value: PortablePreferences[keyof PortablePreferences]; failed: boolean }>();
+  const hasPreferenceError = () => [...overlay.values()].some(value => value.failed);
+  const withOverlay = (persisted: PortablePreferences): PortablePreferences => ({ ...persisted,
+    ...Object.fromEntries([...overlay].map(([field, intent]) => [field, intent.value])),
+  });
   const listeners = new Set<() => void>();
   const publish = (next: ShelfState) => {
     if (disposed) return;
@@ -25,15 +31,13 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
 
   async function refresh() {
     const ticket = ++request;
-    const edit = preferenceEdit;
     try {
       await preferenceQueue;
       // One transaction includes books, revision and restored preferences.
       const { books, version, preferences } = await repository.readBackupSnapshot();
       if (ticket !== request || disposed) return;
       publish({ status: 'ready', snapshot: { books, version },
-        preferences: edit !== preferenceEdit && state.status === 'ready' ? state.preferences : preferences,
-        preferenceError: state.status === 'ready' && state.preferenceError });
+        preferences: withOverlay(preferences), preferenceError: hasPreferenceError() });
     } catch {
       if (ticket === request) publish({ status: 'error' });
     }
@@ -43,8 +47,11 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
   return {
     books: createLibraryService(repository),
     backup: { ...backup, async confirmImport(preview: ImportPreview) {
+      const priorEdit = preferenceEdit;
       await preferenceQueue;
       const version = await backup.confirmImport(preview);
+      // The explicit import supersedes earlier unsaved choices, never a later interaction.
+      for (const [field, intent] of overlay) if (intent.sequence <= priorEdit) overlay.delete(field);
       await refresh();
       return version;
     } },
@@ -53,19 +60,24 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
     refresh,
     updatePreferences(patch: Partial<PortablePreferences>) {
       if (state.status !== 'ready') return;
-      ++preferenceEdit;
-      publish({ ...state, preferences: { ...state.preferences, ...patch } });
-      // Preserve interaction order in this tab; the adapter merges only these fields.
+      ++request; // Even a no-op write must invalidate reads started before this interaction.
+      const sequence = ++preferenceEdit;
+      const selected = preferenceFields.filter(field => patch[field] !== undefined);
+      const queued = Object.fromEntries(selected.map(field => [field, patch[field]])) as Partial<PortablePreferences>;
+      for (const field of selected) overlay.set(field, { sequence, value: queued[field]!, failed: overlay.get(field)?.failed ?? false });
+      publish({ ...state, preferences: withOverlay(state.preferences), preferenceError: hasPreferenceError() });
+      // A completion only settles the exact field intention it was scheduled to save.
       preferenceQueue = preferenceQueue.then(async () => {
         try {
-          await repository.updatePreferences(patch);
-          // A later partial save cannot repair an earlier failed field. Only a full
-          // preferences retry clears that warning after its transaction succeeds.
-          if ('shelfYear' in patch && 'mode' in patch && 'filter' in patch && state.status === 'ready') {
-            publish({ ...state, preferenceError: false });
+          await repository.updatePreferences(queued);
+          for (const field of selected) if (overlay.get(field)?.sequence === sequence) overlay.delete(field);
+        } catch {
+          for (const field of selected) {
+            const intent = overlay.get(field);
+            if (intent?.sequence === sequence) intent.failed = true;
           }
         }
-        catch { if (state.status === 'ready') publish({ ...state, preferenceError: true }); }
+        if (state.status === 'ready') publish({ ...state, preferences: withOverlay(state.preferences), preferenceError: hasPreferenceError() });
       });
     },
     close() { backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
