@@ -21,6 +21,7 @@ async function setup(books: Book[] = [], route = '/adicionar') {
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
   render(<MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter>);
+  if (route === '/adicionar') await userEvent.click(await screen.findByRole('button', { name: 'Adicionar manualmente' }));
   return { repository, service };
 }
 const titleField = () => screen.getByRole('textbox', { name: 'Título (obrigatório)' });

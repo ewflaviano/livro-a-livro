@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
-import type { Book } from '../../domain/book';
+import type { Book, NewBook } from '../../domain/book';
+import { BookSearch, SelectedCover } from '../components/BookSearch';
 import { formatShelfYear } from '../../domain/library';
 import type { LocalRevision } from '../../ports/library-repository';
 import { sameRevision } from '../../services/library-service';
@@ -28,6 +29,8 @@ export function AddBookPage() {
   const { state, books, retry } = useLibrary();
   const [session, setSession] = useState<{ year: number; version: LocalRevision } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [draft, setDraft] = useState<NewBook | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   useEffect(() => { document.title = 'Adicionar livro · Livro a Livro'; }, []);
@@ -37,9 +40,13 @@ export function AddBookPage() {
   return <section className="page-content"><BackLink returnTo={returnTo} />
     <p className="eyebrow">Uma leitura de cada vez</p><h1>Adicionar livro</h1>
     <p className="page-description">Guarde sua leitura. Você pode completar os detalhes depois.</p>
-    {session && books ? <BookForm key={attempt} year={session.year} version={session.version} service={books}
+    {session && books ? draft === null ? <BookSearch onManual={() => { setDraft({ title: '' }); setCoverUrl(null); }}
+      onSelect={(next, url) => { setDraft(next); setCoverUrl(url); }} /> : <>
+      {draft.source && <p className="field-help">Confira os dados da Open Library antes de salvar. Páginas, ISBN e ano da sua edição podem ser preenchidos abaixo.</p>}
+      {coverUrl && <SelectedCover key={coverUrl} url={coverUrl} title={draft.title} />}
+      <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books}
       onSaved={(book) => navigate(`/livro/${book.id}`, { replace: true, state: { returnTo, saved: true } })}
-      onCancel={() => navigate(returnTo)} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /> :
+      onCancel={() => { setDraft(null); setCoverUrl(null); }} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
       <LibraryState state={state.status === 'error' ? 'error' : 'loading'} onRetry={retry} />}
   </section>;
 }
