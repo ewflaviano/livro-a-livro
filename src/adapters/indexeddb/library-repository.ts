@@ -126,14 +126,22 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
     }),
     readRevision: () => transaction(['meta'], 'readonly', async (tx) =>
       versionOf(parseMetadata(await tx.objectStore('meta').get('library')))),
-    commit: async (change, expected) => {
+    commit: async (change, expected, fence) => {
       // Validation, cloning and full replacement size calculation precede the transaction.
       const prepared = prepare(change);
       const expectedVersion = parseDomain(revisionSchema, expected, 'StaleRevision');
       const replacementBytes = prepared.kind === 'replace' ? bytes(prepared.books) : 0;
       const putBytes = prepared.kind === 'put' ? bytes(prepared.book) : 0;
       const generation = prepared.kind === 'replace' ? globalThis.crypto.randomUUID() : null;
-      const version = await transaction(['books', 'meta', 'preferences', 'coverMedia', 'syncOutbox'], 'readwrite', async (tx) => {
+      const version = await transaction(['books', 'meta', 'preferences', 'coverMedia', 'syncOutbox', 'syncState'], 'readwrite', async (tx) => {
+        // Serialize remote replacement with pause/logout in the same database transaction.
+        if (fence) {
+          const state = tx.objectStore('syncState');
+          const control = await state.get('control') as { enabled?: boolean } | undefined;
+          const lease = await state.get('lease') as { owner?: string; until?: number } | undefined;
+          if (control?.enabled !== true || lease?.owner !== fence.syncLeaseOwner ||
+            typeof lease.until !== 'number' || lease.until <= Date.now()) throw new DomainError('StaleRevision');
+        }
         const books = tx.objectStore('books');
         const meta = parseMetadata(await tx.objectStore('meta').get('library'));
         if (!sameRevision(meta, expectedVersion)) throw new DomainError('StaleRevision');

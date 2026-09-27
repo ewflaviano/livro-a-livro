@@ -14,6 +14,30 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       return value === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(value);
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
+    /** Patch current control and fence cycle writes in the same transaction. */
+    async update(patch: Partial<SyncRecord>, owner?: string, revokeLease = false, acknowledged?: LocalRevision) {
+      const tx = db.transaction(['syncState', 'syncOutbox'], 'readwrite');
+      const control = tx.objectStore('syncState');
+      const raw = await control.get('control');
+      const current = raw === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(raw);
+      if (owner) {
+        const lease = await control.get('lease') as { owner: string; until: number } | undefined;
+        if (!current.enabled || lease?.owner !== owner || lease.until <= Date.now()) {
+          await tx.done; throw new SyncError('cancelled');
+        }
+      }
+      const next = syncStateSchema.parse({ ...current, ...patch });
+      await control.put(next, 'control');
+      if (revokeLease) await control.delete('lease');
+      if (acknowledged) {
+        const outbox = tx.objectStore('syncOutbox');
+        const pending = await outbox.get('pending');
+        if (pending !== undefined && sameRevision(pendingSchema.parse(pending).version, acknowledged)) await outbox.delete('pending');
+        await outbox.delete('operation');
+      }
+      await tx.done;
+      return next;
+    },
     async pending() {
       const value = await db.get('syncOutbox', 'pending');
       return value === undefined ? null : pendingSchema.parse(value).version;
@@ -29,17 +53,46 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const parsed = z.strictObject({ binding: bindingSchema, version: revisionSchema, snapshot: z.unknown() }).parse(value);
       return { ...parsed, snapshot: await parseSnapshot(parsed.snapshot) };
     },
-    async saveOperation(operation: Operation) { await db.put('syncOutbox', operation, 'operation'); },
+    async saveOperation(operation: Operation, owner?: string) {
+      const tx = db.transaction(['syncState', 'syncOutbox'], 'readwrite');
+      if (owner) {
+        const state = tx.objectStore('syncState');
+        const control = await state.get('control');
+        const lease = await state.get('lease') as { owner: string; until: number } | undefined;
+        if (!control || !syncStateSchema.parse(control).enabled || lease?.owner !== owner || lease.until <= Date.now()) {
+          await tx.done; throw new SyncError('cancelled');
+        }
+      }
+      await tx.objectStore('syncOutbox').put(operation, 'operation');
+      await tx.done;
+    },
     async clearOperation() { await db.delete('syncOutbox', 'operation'); },
     // Original local copies survive automatic downloads and explicit resolution; never deleted by sync.
-    async preserve(snapshot: Operation['snapshot']) { await db.put('syncState', snapshot, 'recovery'); },
+    async preserve(snapshot: Operation['snapshot'], owner: string) {
+      const tx = db.transaction('syncState', 'readwrite');
+      void tx.done.catch(() => {});
+      try {
+        const control = await tx.store.get('control');
+        const rawLease = await tx.store.get('lease');
+        const lease = rawLease === undefined ? null : z.strictObject({ owner: z.string(), until: z.number() }).parse(rawLease);
+        if (!control || !syncStateSchema.parse(control).enabled || lease?.owner !== owner || lease.until <= Date.now()) {
+          throw new SyncError('cancelled');
+        }
+        await tx.store.put(snapshot, 'recovery');
+        await tx.done;
+      } catch (error) {
+        try { tx.abort(); } catch { /* Already completed or aborted. */ }
+        await tx.done.catch(() => {});
+        throw error;
+      }
+    },
     async recovery() { const raw = await db.get('syncState', 'recovery'); return raw ? parseSnapshot(raw) : null; },
     /** Lease fallback for browsers without Web Locks; renew and verify before every effect. */
-    async lease(owner: string, release = false) {
+    async lease(owner: string, release = false, renew = false) {
       const tx = db.transaction('syncState', 'readwrite');
       const raw = await tx.store.get('lease');
       const previous = raw === undefined ? null : z.strictObject({ owner: z.string(), until: z.number() }).parse(raw);
-      const available = !previous || previous.owner === owner || previous.until <= Date.now();
+      const available = renew ? previous?.owner === owner && previous.until > Date.now() : !previous || previous.owner === owner || previous.until <= Date.now();
       if (release) { if (previous?.owner === owner) await tx.store.delete('lease'); }
       else if (available) await tx.store.put({ owner, until: Date.now() + 45_000 }, 'lease');
       await tx.done; return available;

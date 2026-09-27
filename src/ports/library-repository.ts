@@ -24,7 +24,7 @@ export interface LibraryRepository {
   readBook(id: string): Promise<{ book: Book | null; version: LocalRevision }>;
   readCover(id: string): Promise<CoverMedia | null>;
   readRevision(): Promise<LocalRevision>;
-  commit(change: LibraryChange, expected: LocalRevision): Promise<LocalRevision>;
+  commit(change: LibraryChange, expected: LocalRevision, fence?: { syncLeaseOwner: string }): Promise<LocalRevision>;
   readPreferences(): Promise<LibraryPreferences>;
   // Merge only the supplied fields inside a transaction; no library revision change.
   updatePreferences(patch: Partial<LibraryPreferences>): Promise<LibraryPreferences>;

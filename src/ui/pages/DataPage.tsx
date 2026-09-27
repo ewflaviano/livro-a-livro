@@ -57,12 +57,16 @@ export function DataPage() {
     <p>O envio acontece enquanto o aplicativo está aberto e retoma quando você voltar com conexão. Com o navegador fechado, alterações podem continuar aguardando envio.</p>
     {!available ? <p>O conector está em preparação e será liberado após a configuração do serviço de autorização.</p> : <>
       <p role="status">{labels[state.status]} {state.lastSyncedAt && <time dateTime={state.lastSyncedAt}>{new Date(state.lastSyncedAt).toLocaleString('pt-BR')}</time>}</p>
+      {state.revocationPending && <div className="notice-panel" role="status">
+        <h3>Revogação no Google ainda não confirmada</h3>
+        <p>Os envios estão pausados neste dispositivo. Remova o Livro a Livro nas <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">conexões da sua Conta Google</a>. Se a reconexão continuar bloqueada, <a href="mailto:ewanderson.flaviano@gmail.com">fale com o suporte</a> para verificar a autorização. Seus livros locais continuam aqui.</p>
+      </div>}
       {!coordinator && <p>Não foi possível iniciar o conector. A biblioteca local continua disponível.</p>}
       <div className="form-actions">
-        {['disabled', 'reconnect'].includes(state.status) && <button className="button button-primary" disabled={!coordinator || busy} onClick={() => setConfirm('connect')}>{state.status === 'reconnect' ? 'Reconectar Google Drive' : 'Conectar Google Drive'}</button>}
-        {state.status === 'paused' && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Retomar sincronização</button>}
+        {(state.revocationPending || ['disabled', 'reconnect'].includes(state.status)) && <button className="button button-primary" disabled={!coordinator || busy} onClick={() => setConfirm('connect')}>{state.revocationPending || state.status === 'reconnect' ? 'Reconectar Google Drive' : 'Conectar Google Drive'}</button>}
+        {!state.revocationPending && state.status === 'paused' && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Retomar sincronização</button>}
         {!['disabled', 'paused'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.pause())}>Pausar neste dispositivo</button>}
-        {['error', 'quota', 'pending', 'offline'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Tentar novamente</button>}
+        {!state.revocationPending && ['error', 'quota', 'pending', 'offline'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Tentar novamente</button>}
         {state.status !== 'disabled' && <>
           <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('logout')}>Encerrar sessão neste dispositivo</button>
           <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('revoke')}>Desconectar em todos os dispositivos</button>
@@ -98,6 +102,7 @@ export function DataPage() {
         if (confirm === 'revoke' || confirm === 'logout') return coordinator!.disconnect(confirm === 'revoke');
         return coordinator!.resolve(confirm);
       })}>
+      {confirm === 'connect' && state.revocationPending && <p>Você está iniciando uma nova autorização. Isso não confirma a revogação anterior no Google. Se a conexão continuar bloqueada, remova a permissão na Conta Google e fale com o suporte.</p>}
       <p>{confirm === 'connect' ? 'Seus livros, notas e avaliações serão enviados diretamente ao seu Google Drive. Você pode pausar quando quiser.' : confirm === 'revoke' || confirm === 'logout' ? 'Sua biblioteca neste dispositivo e os arquivos já existentes no Drive serão preservados. Tokens já emitidos podem continuar válidos até a revogação ou expiração.' : 'A escolha substitui a versão ativa completa. Confira e baixe as duas cópias antes de continuar. Uma cópia local anterior ficará preservada para download.'}</p>
     </ConfirmDialog>}
   </section>;

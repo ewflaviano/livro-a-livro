@@ -6,7 +6,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 ## Estado atual
 
-**Revisado em 27 set 2026.** O projeto tem uma base local funcional, mas ainda não concluiu configurações e serviços opcionais. O backup local já tem fluxo independente. Issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 27 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |

@@ -23,6 +23,8 @@ use tower::ServiceExt;
 // Deliberately test-only. No in-memory credentials/session store ships in the runtime.
 #[derive(Default)]
 struct Database {
+    epoch: u64,
+    finish_clock: Option<Arc<Time>>,
     oauth: HashMap<String, Transaction>,
     sessions: HashMap<String, Session>,
     connections: HashMap<String, Connection>,
@@ -33,6 +35,7 @@ struct Connection {
     active: bool,
     owner: Option<(String, u64)>,
     refreshed: Option<u64>,
+    revocation: Option<(String, Option<String>, u64, bool)>,
 }
 #[derive(Default)]
 struct Memory(Mutex<Database>);
@@ -53,6 +56,9 @@ fn current(db: &Database, hash: &str, now: u64) -> Result<Session, Error> {
 }
 #[async_trait]
 impl Store for Memory {
+    async fn grant_epoch(&self) -> Result<u64, Error> {
+        Ok(self.0.lock().unwrap().epoch)
+    }
     async fn put_oauth(&self, key: &str, transaction: Transaction) -> Result<(), Error> {
         self.0.lock().unwrap().oauth.insert(key.into(), transaction);
         Ok(())
@@ -70,10 +76,17 @@ impl Store for Memory {
         connection: &str,
         encrypted: Vec<u8>,
         hash: &str,
+        epoch: u64,
         now: u64,
     ) -> Result<Session, Error> {
         let mut db = self.0.lock().unwrap();
+        if db.epoch != epoch {
+            return Err(Error::Busy);
+        }
         let old = db.connections.get(connection);
+        if old.is_some_and(|c| c.revocation.is_some()) {
+            return Err(Error::Busy);
+        }
         if old.is_some_and(|c| c.owner.as_ref().is_some_and(|(_, until)| *until > now)) {
             return Err(Error::Busy);
         }
@@ -86,6 +99,7 @@ impl Store for Memory {
                 active: true,
                 owner: None,
                 refreshed: None,
+                revocation: None,
             },
         );
         let session = Session {
@@ -123,6 +137,10 @@ impl Store for Memory {
         }
         c.owner = Some((owner.into(), now + LEASE_TTL));
         Ok(Lease {
+            session_hash: hash.into(),
+            authorization_until: (now + LEASE_TTL)
+                .min(session.expires_at)
+                .min(session.absolute_expires_at),
             connection_id: session.connection_id,
             generation: c.generation,
             owner: owner.into(),
@@ -131,6 +149,7 @@ impl Store for Memory {
     }
     async fn finish(&self, lease: &Lease, rotated: Option<Vec<u8>>, now: u64) -> Result<(), Error> {
         let mut db = self.0.lock().unwrap();
+        current(&db, &lease.session_hash, now)?;
         let c = db.connections.get_mut(&lease.connection_id).unwrap();
         if !c.active
             || c.generation != lease.generation
@@ -146,6 +165,9 @@ impl Store for Memory {
         }
         c.owner = None;
         c.refreshed = Some(now);
+        if let Some(clock) = &db.finish_clock {
+            clock.0.store(now + LEASE_TTL, Ordering::Relaxed);
+        }
         Ok(())
     }
     async fn release(&self, lease: &Lease) -> Result<(), Error> {
@@ -159,21 +181,30 @@ impl Store for Memory {
         }
         Ok(())
     }
-    async fn disable(&self, hash: &str, now: u64) -> Result<Lease, Error> {
+    async fn disable(&self, hash: &str, now: u64) -> Result<RevocationKey, Error> {
         let mut db = self.0.lock().unwrap();
         let session = current(&db, hash, now)?;
         let c = db.connections.get_mut(&session.connection_id).unwrap();
         c.active = false;
         c.generation += 1;
         c.owner = None;
-        Ok(Lease {
+        let id = random()?;
+        c.revocation = Some((id.clone(), None, now + 86400, false));
+        let key = RevocationKey {
             connection_id: session.connection_id,
             generation: c.generation,
-            owner: String::new(),
-            encrypted_refresh: c.encrypted.clone(),
-        })
+            revocation_id: id,
+        };
+        db.epoch += 1;
+        Ok(key)
     }
-    async fn invalidate(&self, lease: &Lease, now: u64) -> Result<(), Error> {
+
+    async fn invalidate(
+        &self,
+        lease: &Lease,
+        reason: InvalidationReason,
+        now: u64,
+    ) -> Result<(), Error> {
         let mut db = self.0.lock().unwrap();
         let c = db.connections.get_mut(&lease.connection_id).unwrap();
         if !c.active
@@ -188,14 +219,98 @@ impl Store for Memory {
         c.active = false;
         c.generation += 1;
         c.owner = None;
+        match reason {
+            InvalidationReason::InvalidGrant => {
+                c.encrypted.clear();
+                c.revocation = None;
+            }
+            InvalidationReason::ScopeChanged => {
+                c.revocation = Some((random()?, None, now + 86400, false));
+            }
+        }
+        db.epoch += 1;
         Ok(())
     }
-    async fn revoked(&self, lease: &Lease) -> Result<(), Error> {
+    async fn claim_revocation(
+        &self,
+        key: &RevocationKey,
+        owner: &str,
+        now: u64,
+    ) -> Result<RevocationClaim, Error> {
         let mut db = self.0.lock().unwrap();
-        let c = db.connections.get_mut(&lease.connection_id).unwrap();
-        if !c.active && c.generation == lease.generation {
-            c.encrypted.clear();
+        let c = db
+            .connections
+            .get_mut(&key.connection_id)
+            .ok_or(Error::Unauthorized)?;
+        let r = c.revocation.as_mut().ok_or(Error::Unauthorized)?;
+        if c.generation != key.generation
+            || r.0 != key.revocation_id
+            || r.1.is_some()
+            || r.2 <= now
+            || r.3
+        {
+            return Err(Error::Busy);
         }
+        r.1 = Some(owner.into());
+        let claim = RevocationClaim {
+            key: key.clone(),
+            owner: owner.into(),
+            lease_until: now + 30,
+            delete_at: r.2,
+            encrypted_refresh: c.encrypted.clone(),
+        };
+        db.epoch += 1;
+        Ok(claim)
+    }
+    async fn mark_revocation_dispatching(
+        &self,
+        claim: &RevocationClaim,
+        now: u64,
+    ) -> Result<(), Error> {
+        let mut db = self.0.lock().unwrap();
+        let c = db
+            .connections
+            .get_mut(&claim.key.connection_id)
+            .ok_or(Error::Unauthorized)?;
+        let r = c.revocation.as_mut().ok_or(Error::Unauthorized)?;
+        if c.generation != claim.key.generation
+            || r.0 != claim.key.revocation_id
+            || r.1.as_deref() != Some(&claim.owner)
+            || claim.lease_until <= now
+        {
+            return Err(Error::Unauthorized);
+        }
+        r.3 = true;
+        Ok(())
+    }
+    async fn complete_revocation(
+        &self,
+        claim: &RevocationClaim,
+        outcome: RevokeOutcome,
+        now: u64,
+    ) -> Result<(), Error> {
+        let mut db = self.0.lock().unwrap();
+        let c = db
+            .connections
+            .get_mut(&claim.key.connection_id)
+            .ok_or(Error::Unauthorized)?;
+        let r = c.revocation.as_mut().ok_or(Error::Unauthorized)?;
+        if c.generation != claim.key.generation
+            || r.0 != claim.key.revocation_id
+            || r.1.as_deref() != Some(&claim.owner)
+            || claim.lease_until <= now
+            || r.2 <= now
+        {
+            return Err(Error::Unauthorized);
+        }
+        if outcome == RevokeOutcome::Confirmed {
+            c.encrypted.clear();
+            c.revocation = None;
+        } else {
+            r.1 = None;
+            r.3 = outcome == RevokeOutcome::Uncertain;
+        }
+        db.epoch += 1;
         Ok(())
     }
 }
@@ -227,10 +342,14 @@ impl Clock for Time {
 #[derive(Default)]
 struct FakeGoogle {
     mode: AtomicU64,
+    revoke_during_exchange: Option<Arc<Memory>>,
 }
 #[async_trait]
 impl Provider for FakeGoogle {
     async fn exchange(&self, _: &str, verifier: &str, nonce: &str) -> Result<Grant, Error> {
+        if let Some(store) = &self.revoke_during_exchange {
+            store.0.lock().unwrap().epoch += 1;
+        }
         assert_eq!(verifier.len(), 43);
         assert_eq!(nonce.len(), 43);
         Ok(Grant {
@@ -246,7 +365,7 @@ impl Provider for FakeGoogle {
     async fn refresh(&self, refresh: &str) -> Result<Access, Error> {
         assert!(refresh.starts_with("synthetic-"));
         if self.mode.load(Ordering::Relaxed) == 2 {
-            return Err(Error::Reconnect);
+            return Err(Error::InvalidGrant);
         }
         Ok(Access {
             token: Secret("synthetic-access".into()),
@@ -255,11 +374,11 @@ impl Provider for FakeGoogle {
             rotated_refresh: Some(Secret("synthetic-rotated".into())),
         })
     }
-    async fn revoke(&self, _: &str) -> Result<(), Error> {
+    async fn revoke(&self, _: &str) -> RevokeOutcome {
         if self.mode.load(Ordering::Relaxed) == 3 {
-            Err(Error::Provider)
+            RevokeOutcome::Uncertain
         } else {
-            Ok(())
+            RevokeOutcome::Confirmed
         }
     }
 }
@@ -561,7 +680,7 @@ async fn invalid_grant_and_pending_revocation_block_all_sessions() {
     provider.mode.store(2, Ordering::Relaxed);
     assert_eq!(auth.access(&first).await.err(), Some(Error::Reconnect));
     assert_eq!(auth.session(&second).await.err(), Some(Error::Unauthorized));
-    provider.mode.store(0, Ordering::Relaxed);
+    let (auth, _, _, provider) = setup();
     let raw = connect(&auth).await;
     provider.mode.store(3, Ordering::Relaxed);
     assert!(!auth.disconnect(&raw).await.unwrap());
@@ -588,6 +707,7 @@ async fn revoked_or_expired_lease_cannot_publish_token_or_overwrite_refresh() {
         store.finish(&lease, Some(vec![1]), time.now()).await.err(),
         Some(Error::Unauthorized)
     );
+    let (auth, store, time, _) = setup();
     let raw = connect(&auth).await;
     let lease = store
         .claim(&digest(&raw), "new-owner", time.now())
@@ -611,4 +731,53 @@ fn scopes_are_exact_and_pkce_matches_rfc7636_vector() {
         digest("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
         "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
     );
+}
+
+#[tokio::test]
+async fn callback_crossing_revocation_epoch_cannot_create_a_session() {
+    let (mut auth, store, _, _) = setup();
+    auth.provider = Arc::new(FakeGoogle {
+        mode: AtomicU64::new(0),
+        revoke_during_exchange: Some(store.clone()),
+    });
+    let (url, cookie) = auth.start().await.unwrap();
+    let url = url::Url::parse(&url).unwrap();
+    let state = url
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .unwrap()
+        .1
+        .into_owned();
+    assert_eq!(
+        auth.callback(&state, &cookie, "synthetic-code").await.err(),
+        Some(Error::Busy)
+    );
+    assert!(store.0.lock().unwrap().sessions.is_empty());
+}
+#[tokio::test]
+async fn deadline_crossed_during_finish_never_publishes_access_token() {
+    let (auth, store, time, _) = setup();
+    let raw = connect(&auth).await;
+    store.0.lock().unwrap().finish_clock = Some(time);
+    assert_eq!(auth.access(&raw).await.err(), Some(Error::Unauthorized));
+}
+
+#[tokio::test]
+async fn callback_failure_is_static_human_readable_and_never_echoes_query() {
+    let (auth, _, _, _) = setup();
+    let response=router(auth).oneshot(Request::builder().uri("/v1/auth/google/callback?state=private-state&error=access_denied&code=private-code").body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        response.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/html")
+    );
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let body =
+        String::from_utf8(to_bytes(response.into_body(), 8192).await.unwrap().to_vec()).unwrap();
+    assert!(body.contains("https://livroalivro.app.br/#/dados"));
+    assert!(!body.contains("private-state"));
+    assert!(!body.contains("private-code"));
+    assert!(!body.contains("access_denied"));
 }

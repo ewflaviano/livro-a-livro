@@ -5,9 +5,31 @@ edition = "2024"
 publish = false
 
 [features]
-lambda = ["dep:lambda_http"]
+lambda = ["dep:lambda_http", "dep:lambda_runtime", "aws"]
+aws = ["dep:aws-config", "dep:aws-sdk-dynamodb", "dep:aws-sdk-kms", "dep:aws-sdk-secretsmanager"]
+
+[[bin]]
+name = "auth"
+path = "src/bin/auth.rs"
+required-features = ["lambda"]
+
+[[bin]]
+name = "revocation"
+path = "src/bin/revocation.rs"
+required-features = ["lambda"]
+
+[[bin]]
+name = "auth-admin"
+path = "src/bin/auth-admin.rs"
+required-features = ["aws"]
 
 [dependencies]
+aws-config = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-sdk-dynamodb = { version = "1", optional = true }
+aws-sdk-kms = { version = "1", optional = true }
+aws-sdk-secretsmanager = { version = "1", optional = true }
+lambda_runtime = { version = "1", optional = true }
+
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
@@ -20,11 +42,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 subtle = "2"
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
 url = "2"
 zeroize = "1"
 
 [dev-dependencies]
+aws-smithy-runtime-api = "1"
+aws-smithy-types = "1"
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto", "use_pem"] }
 rand = "0.8"
 rsa = "0.9"

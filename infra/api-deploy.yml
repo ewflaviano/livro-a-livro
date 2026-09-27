@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Private API release artifacts and GitHub OIDC code-publishing role. No user data.
+Resources:
+  Artifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      VersioningConfiguration: { Status: Enabled }
+  ArtifactPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Artifacts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt Artifacts.Arn, !Sub '${Artifacts.Arn}/*']
+            Condition: { Bool: { 'aws:SecureTransport': false } }
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: livro-a-livro-api-deploy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com' }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:ewflaviano@324998515/livro-a-livro@1389905851:ref:refs/heads/main
+      Policies:
+        - PolicyName: publish-api-code
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub '${Artifacts.Arn}/releases/*'
+              - Effect: Allow
+                Action: [lambda:UpdateFunctionCode, lambda:GetFunctionConfiguration]
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-auth'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-revocation'
+Outputs:
+  ArtifactBucketName: { Value: !Ref Artifacts }
+  DeployRoleArn: { Value: !GetAtt DeployRole.Arn }

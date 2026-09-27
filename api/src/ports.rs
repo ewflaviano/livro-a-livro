@@ -17,6 +17,7 @@ pub enum Error {
     IncompleteConsent,
     Busy,
     Reconnect,
+    InvalidGrant,
     Provider,
     Unavailable,
     Configuration,
@@ -38,7 +39,7 @@ pub struct Access {
 pub trait Provider: Send + Sync {
     async fn exchange(&self, code: &str, verifier: &str, nonce: &str) -> Result<Grant, Error>;
     async fn refresh(&self, refresh: &str) -> Result<Access, Error>;
-    async fn revoke(&self, refresh: &str) -> Result<(), Error>;
+    async fn revoke(&self, refresh: &str) -> RevokeOutcome;
 }
 
 #[async_trait]
@@ -69,7 +70,7 @@ pub struct Transaction {
     pub verifier: Secret,
     pub expires_at: u64,
 }
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub connection_id: String,
     pub generation: u64,
@@ -77,16 +78,45 @@ pub struct Session {
     pub absolute_expires_at: u64,
 }
 pub struct Lease {
+    pub session_hash: String,
+    pub authorization_until: u64,
     pub connection_id: String,
     pub generation: u64,
     pub owner: String,
     pub encrypted_refresh: Vec<u8>,
 }
 
+#[derive(Clone)]
+pub struct RevocationKey {
+    pub connection_id: String,
+    pub generation: u64,
+    pub revocation_id: String,
+}
+pub struct RevocationClaim {
+    pub key: RevocationKey,
+    pub owner: String,
+    pub lease_until: u64,
+    pub delete_at: u64,
+    pub encrypted_refresh: Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RevokeOutcome {
+    Confirmed,
+    NotDispatchedRetryable,
+    Uncertain,
+}
+
+#[derive(Clone, Copy)]
+pub enum InvalidationReason {
+    InvalidGrant,
+    ScopeChanged,
+}
+
 /// All methods are strongly consistent and atomic across processes/Lambda instances.
 /// Implementations MUST verify deadlines inside the transaction, not rely on TTL cleanup.
 #[async_trait]
 pub trait Store: Send + Sync {
+    async fn grant_epoch(&self) -> Result<u64, Error>;
     async fn put_oauth(&self, state_hash: &str, transaction: Transaction) -> Result<(), Error>;
     /// Atomically check cookie hash + expiry and delete; wrong cookie must not consume it.
     async fn take_oauth(
@@ -103,6 +133,7 @@ pub trait Store: Send + Sync {
         connection: &str,
         encrypted_refresh: Vec<u8>,
         session_hash: &str,
+        expected_grant_epoch: u64,
         now: u64,
     ) -> Result<Session, Error>;
     /// Validate session deadline, active connection, generation and 180-day connection inactivity.
@@ -119,10 +150,30 @@ pub trait Store: Send + Sync {
     async fn release(&self, lease: &Lease) -> Result<(), Error>;
     /// Disable only the still-owned lease/generation, before releasing it on invalid_grant.
     /// A concurrent newer consent must never be invalidated by an old refresh failure.
-    async fn invalidate(&self, lease: &Lease, now: u64) -> Result<(), Error>;
+    async fn invalidate(
+        &self,
+        lease: &Lease,
+        reason: InvalidationReason,
+        now: u64,
+    ) -> Result<(), Error>;
     /// Block immediately, bump generation and invalidate leases before provider revocation.
     /// Retain ciphertext only for revocation retry (max 24h). No new access is permitted.
-    async fn disable(&self, session_hash: &str, now: u64) -> Result<Lease, Error>;
-    /// Remove retained ciphertext only for this disabled generation (no reconnect race).
-    async fn revoked(&self, lease: &Lease) -> Result<(), Error>;
+    async fn disable(&self, session_hash: &str, now: u64) -> Result<RevocationKey, Error>;
+    async fn claim_revocation(
+        &self,
+        key: &RevocationKey,
+        owner: &str,
+        now: u64,
+    ) -> Result<RevocationClaim, Error>;
+    async fn mark_revocation_dispatching(
+        &self,
+        claim: &RevocationClaim,
+        now: u64,
+    ) -> Result<(), Error>;
+    async fn complete_revocation(
+        &self,
+        claim: &RevocationClaim,
+        outcome: RevokeOutcome,
+        now: u64,
+    ) -> Result<(), Error>;
 }
