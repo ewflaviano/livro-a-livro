@@ -51,3 +51,27 @@ Os comandos concretos acima cobrem conflito divergente e resposta PUT perdida, a
 - **Consentimento negado/expirado:** verificar recuperação honesta na UI após retorno do OAuth sem autorização válida, sem perda local.
 
 Somente depois de todos os gates de frontend, API e infraestrutura, revisar e publicar separadamente a alteração da flag pública.
+
+## Alternativa no Chrome normal quando Google recusa o navegador automatizado
+
+Interromper o OAuth automatizado ao receber essa recusa. Não alterar identificação do navegador, flags de segurança ou verificações do Google. O login/consentimento continua manual em um navegador normal; a automação autorizada pode acompanhar a interface do aplicativo depois.
+
+`node scripts/build-drive-qa.mjs` gera dois builds temporários fora do repositório. `--out /tmp/diretorio-novo` permite escolher um diretório ainda inexistente. O script não publica arquivos e não muda o build de produção. O arquivo local `build-info.json` informa o commit, prefixo público, nomes exatos dos bancos e URLs terminadas em `index.html#/dados`.
+
+- Cada build compila o mesmo aplicativo com Drive habilitado e um banco fixo `livro-a-livro-qa-<commit>-a` ou `-b`. Livros, mídias, preferências, busca, outbox e canais de revisão usam esse nome; o banco habitual não é aberto por esses builds. O caminho/origem exatos são conferidos antes de montar o aplicativo. Mudança no código que impeça aplicar os transforms interrompe o build.
+- O banner identifica A/B e exige dados sintéticos. Não há manifesto, registro de Service Worker ou observação de instalação nesses builds. O SW público existente não intercepta esses caminhos/assets. Não remover esse SW nem limpar dados da origem para preparar o teste.
+- A página de validação é **pública**: endereço não divulgado e `noindex` não são controle de acesso. Ela exige a mesma autorização Google/API e não contém segredo, sessão pronta, fixture pessoal ou mecanismo de contornar permissões. Não existe parâmetro de URL que habilite Drive no aplicativo normal.
+- API, origem, callback, cookies, escopos e CSP permanecem iguais aos de produção. A pasta tem armazenamento separado por convenção da aplicação, não isolamento de segurança entre scripts da mesma origem.
+- Usar conta sem biblioteca anterior do Livro a Livro. O transporte exclusivo de QA registra em `localStorage` somente IDs de operações criadas pelo ensaio, em chaves `livro-a-livro-qa-<commit>:operation:<uuid>` compartilhadas por A/B. A primeira listagem deve estar vazia. Metadados de arquivos com operação desconhecida interrompem a validação **antes de qualquer download**, com aviso no banner; não continuar ou apagar arquivos desconhecidos para forçar o teste. O registro não contém tokens, cookies, URLs de upload ou conteúdo da biblioteca.
+
+O operador publica somente o conteúdo de `a/` e `b/` sob seus prefixos exatos de `build-info.json`, com `Cache-Control: no-store`; não publicar o diretório pai, alterar arquivos da raiz ou usar remoção recursiva no bucket inteiro. Definir a janela de teste e remover o prefixo ao final da sessão de validação; invalidar somente esse prefixo no CDN. Metadados de operação ficam locais. A publicação não faz parte do fluxo normal de CI.
+
+Preferir um **perfil novo normal do Chrome** para o teste. O callback fixo retorna a `https://livroalivro.app.br/#/dados`, que carrega o aplicativo público e pode abrir o banco habitual daquele perfil. Em um perfil pessoal, esse retorno não é uma prova de isolamento global. Não abrir, exportar ou inspecionar sua biblioteca para validar o teste. Depois do retorno, a pessoa abre novamente a URL A/B informada; o opt-in pendente continua no banco de validação.
+
+1. Abrir A e B e confirmar os dois banners e bibliotecas vazias. Importar somente a fixture sintética em A; manter B vazia.
+2. Na página A, escolher conectar e realizar login/consentimento manualmente. Após o retorno canônico, voltar explicitamente à URL A. Exigir sincronização confirmada.
+3. Conectar/retomar B pelo fluxo normal e testar restauração/conflito com comparação dos dados sintéticos. Repetir os gates aplicáveis desta página pela interface, sem copiar tokens, cookies ou conteúdo pessoal.
+4. A e B no **mesmo perfil** compartilham cookies da API. Elas comprovam isolamento das bibliotecas e concorrência local, mas não equivalem a duas sessões de dispositivos. Logout independente e revogação entre sessões reais exigem outro perfil/navegador normal ou permanecem registrados como pendentes; testes AWS separados não devem ser chamados de evidência de navegador real.
+5. Ao terminar, fechar as abas QA, remover os objetos do prefixo publicado e invalidar esse prefixo. Se desejado, excluir somente os dois bancos QA de nomes exatos e as chaves técnicas de operações desse ensaio, com as abas fechadas. Nunca usar “limpar dados do site”, apagar o banco `livro-a-livro`, desregistrar o SW da raiz ou remover caches do aplicativo público. Arquivos sintéticos do Drive seguem a política explícita do ensaio; desconectar não os apaga. Apagar os IDs conhecidos impede que um ensaio futuro baixe os arquivos antigos: usar uma conta de teste vazia ou um plano explícito para a limpeza sintética.
+
+Este caminho valida o OAuth normal e Drive reais; não substitui os gates de instalação/offline da PWA ou transforma gates ainda pendentes em aprovados.

@@ -52,6 +52,8 @@ Para a primeira instalação, baixe o artefato `api-release` do run validado e u
 
 O job da API produz os ZIPs com Cargo Lambda e publica exatamente o artefato daquele run, após fmt, clippy e testes. Os ZIPs ficam identificados pelo commit. Para reverter código, um operador republica os dois ZIPs do commit aprovado anterior e aguarda `function-updated` (usa a permissão limitada GetFunctionConfiguration). Confirmar compatibilidade do esquema antes: uma reversão nunca deve restaurar credenciais antigas ou remover tombstones. A rotina e a API podem executar versões diferentes durante a atualização; alterações no contrato exigem uma transição compatível.
 
+A publicação direta de código não atualiza os parâmetros de artefato guardados pelo CloudFormation. Em uma atualização posterior de infraestrutura, execute o script de provisionamento com os ZIPs e o commit da versão aprovada atual; não reaplique um template com chaves de artefatos antigos, pois isso pode reverter o código das funções.
+
 ### Limites e operação
 
 - Lambda tem timeout de 25 segundos; a posse exclusiva de refresh/revogação dura 30 segundos. O código limita chamadas externas e falha sem liberar token quando perde essa posse.
