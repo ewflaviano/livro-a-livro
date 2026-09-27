@@ -1,7 +1,7 @@
 import { DomainError } from '../domain/errors';
 import { instantSchema } from '../domain/book';
 import { parseDomain } from '../domain/errors';
-import { LIBRARY_LIMITS } from '../domain/library';
+import { LIBRARY_LIMITS, utf8ByteLength } from '../domain/library';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import type { LibraryExport } from '../backup/schema';
 import { parseExportV1 } from '../backup/schema';
@@ -42,6 +42,7 @@ export function createBackupService(repository: LibraryRepository,
       if (file.size > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       let text: string;
       try { text = await file.text(); } catch { throw new DomainError('InvalidBackup'); }
+      if (utf8ByteLength(text) > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       // Validate injected/worker result again and clone; callers never receive mutable data.
       const data = parseExportV1(await parse(text));
       const current = await repository.readAll();

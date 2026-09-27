@@ -80,6 +80,18 @@ describe('portable V1 backup', () => {
       .toThrow('ImportTooLarge');
   });
 
+  it('checks actual bytes before an injected parser even when the declared size is small', async () => {
+    const { repo } = await setup();
+    const parser = vi.fn(async () => parseBackupText(text));
+    const service = createBackupService(repo, parser);
+    const before = await repo.readBackupSnapshot();
+    await expect(service.prepareImport({ size: 1,
+      text: async () => 'é'.repeat(LIBRARY_LIMITS.jsonBytes / 2 + 1),
+    })).rejects.toThrow('ImportTooLarge');
+    expect(parser).not.toHaveBeenCalled();
+    expect(await repo.readBackupSnapshot()).toEqual(before);
+  });
+
   it('invalidates old/cancelled/foreign previews and only permits one commit', async () => {
     const { service } = await setup();
     const old = await service.prepareImport(file());
