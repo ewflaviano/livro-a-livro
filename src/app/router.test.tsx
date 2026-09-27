@@ -35,7 +35,7 @@ describe('application shell', () => {
 
   it.each([
     ['/lendo', 'Lendo'], ['/dados', 'Seus dados'],
-    ['/configuracoes', 'Configurações'], ['/livro/example', 'Livro'],
+    ['/configuracoes', 'Configurações'], ['/apoiar', 'Apoie o Livro a Livro'], ['/livro/example', 'Livro'],
     ['/unknown', 'Página não encontrada'],
   ])('renders a direct visit to %s', (path, title) => {
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>);

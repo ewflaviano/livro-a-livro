@@ -45,6 +45,7 @@ O modo local mostra uma faixa em todas as telas, usa banco IndexedDB separado e 
 - [Arquitetura técnica: biblioteca local, API opcional, Drive e experimentos](docs/architecture.md)
 - [Entrega, domínio e publicação](docs/deployment.md)
 - [Como participar do desenvolvimento](CONTRIBUTING.md)
+- [Como apoiar, sugerir melhorias ou contribuir com código](docs/support.md)
 - [Sequência de entrega e papéis dos agentes](docs/delivery-plan.md)
 
 ## Tecnologia planejada

@@ -55,7 +55,7 @@ export function AppShell() {
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
       <PwaStatus />
-      <footer className="app-footer">Sua história em livros. Privada, por princípio.</footer>
+      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><Link to="/apoiar">Apoiar o projeto</Link></footer>
     </>
   );
 }
