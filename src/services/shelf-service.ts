@@ -9,13 +9,15 @@ export type ShelfState =
   | { status: 'ready'; snapshot: Snapshot; preferences: PortablePreferences; preferenceError: boolean };
 
 /** Committed books plus unsaved preference intentions, tracked independently per field. */
-export function createShelfService(repository: LibraryRepository, parser?: BackupParser) {
+export function createShelfService(repository: LibraryRepository, parser?: BackupParser, holdReload?: () => (() => void) | null) {
   const backup = createBackupService(repository, parser?.parse, parser?.cancel);
   let state: ShelfState = { status: 'loading' };
   let disposed = false;
   let request = 0;
   let preferenceEdit = 0;
   let preferenceQueue = Promise.resolve();
+  let releasePreferenceHold: (() => void) | undefined;
+  const releaseSettledPreferences = () => { if (overlay.size === 0) { releasePreferenceHold?.(); releasePreferenceHold = undefined; } };
   const preferenceFields = ['shelfYear', 'mode', 'filter'] as const;
   const overlay = new Map<keyof PortablePreferences, { sequence: number; value: PortablePreferences[keyof PortablePreferences]; failed: boolean }>();
   const hasPreferenceError = () => [...overlay.values()].some(value => value.failed);
@@ -52,6 +54,7 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
       const version = await backup.confirmImport(preview);
       // The explicit import supersedes earlier unsaved choices, never a later interaction.
       for (const [field, intent] of overlay) if (intent.sequence <= priorEdit) overlay.delete(field);
+      releaseSettledPreferences();
       await refresh();
       return version;
     } },
@@ -60,6 +63,9 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
     refresh,
     updatePreferences(patch: Partial<PortablePreferences>) {
       if (state.status !== 'ready') return;
+      if (!releasePreferenceHold && holdReload) {
+        const release = holdReload(); if (!release) return; releasePreferenceHold = release;
+      }
       ++request; // Even a no-op write must invalidate reads started before this interaction.
       const sequence = ++preferenceEdit;
       const selected = preferenceFields.filter(field => patch[field] !== undefined);
@@ -78,9 +84,10 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
           }
         }
         if (state.status === 'ready') publish({ ...state, preferences: withOverlay(state.preferences), preferenceError: hasPreferenceError() });
+        releaseSettledPreferences();
       });
     },
-    close() { backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
+    close() { releasePreferenceHold?.(); releasePreferenceHold = undefined; backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
   };
 }
 

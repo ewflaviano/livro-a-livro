@@ -1,3 +1,4 @@
+import { holdPwaReload } from '../pwa/register';
 import { createBackupWorkerParser } from '../backup/worker-parser';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { createShelfService } from '../services/shelf-service';
@@ -22,6 +23,6 @@ export async function openShelfService() {
     onDatabaseEvent: () => { void service?.refresh(); },
     onObservationError: () => { void service?.refresh(); },
   });
-  service = createShelfService(repository, createBackupWorkerParser());
+  service = createShelfService(repository, createBackupWorkerParser(), holdPwaReload);
   return service;
 }

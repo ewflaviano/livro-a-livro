@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
 import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
 import { PwaStatus } from './PwaStatus';
+import { PwaUpdateBanner } from './PwaUpdateBanner';
 
 const navigation = [
   { to: '/estante', label: 'Estante', icon: Library },
@@ -45,6 +46,7 @@ function Shell() {
           onClick={() => positions.set(returnTo, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>
         <GlobalSyncHeader />
       </header>
+      <PwaUpdateBanner />
       <GlobalSyncAttention />
       {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
       <div className="app-layout">

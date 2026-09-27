@@ -12,7 +12,7 @@ import type { LibraryExport } from '../backup/schema';
 import { encodeCover } from '../adapters/indexeddb/cover-media';
 
 type Options = { resolutionRepository: SyncResolutionRepository; repository: LibraryRepository; store: SyncStore; auth: AuthClient; drive: (binding: Binding) => DriveClient;
-  online: () => boolean; visible: () => boolean; hasDraft: () => boolean; navigate: (url: string) => void };
+  online: () => boolean; visible: () => boolean; hasDraft: () => boolean; navigate: (url: string) => void; holdReload?: () => (() => void) | null };
 type Conflict = { binding: Binding; heads: DriveFile[]; version: LocalRevision; accountChanged: boolean };
 const ids = (files: DriveFile[]) => files.map(file => file.header.snapshotId).sort().join(',');
 const fingerprint = (files: DriveFile[]) => canonicalJson(files.map(file => file.header).sort((a,b) => a.snapshotId < b.snapshotId ? -1 : 1));
@@ -20,6 +20,10 @@ const MAX_RESOLUTION_BYTES = 100 * 1024 * 1024;
 
 export function createSyncCoordinator(options: Options) {
   const { repository, store, auth } = options;
+  const acquireReloadHold = () => { const release = options.holdReload?.(); if (release === null) throw new SyncError('cancelled'); return release ?? (() => {}); };
+  function held<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>) {
+    return async (...args: Args): Promise<Result> => { const release = acquireReloadHold(); try { return await action(...args); } finally { release(); } };
+  }
   const listeners = new Set<() => void>(); const owner = crypto.randomUUID();
   let view: SyncView = { status: 'disabled', login: { status: 'checking' } }; let conflict: Conflict | null = null;
   let preview: { plan: PreparedMerge; context: Awaited<ReturnType<SyncStore['context']>>; binding: Binding; heads: DriveFile[]; local: Awaited<ReturnType<typeof library>> } | null = null;
@@ -120,7 +124,7 @@ export function createSyncCoordinator(options: Options) {
   }
   let loginRequest: Promise<void> | null = null; let loginAgain = false;
   const signedIn = (login: LoginSession) => ({ status: 'signed-in' as const, signInAttemptId: login.signInAttemptId, connectionId: login.connectionId });
-  async function refreshLogin() {
+  const refreshLogin = held(async () => {
     if (loginRequest) { loginAgain = true; return loginRequest; }
     loginRequest = (async () => {
       const before = await store.read();
@@ -144,9 +148,9 @@ export function createSyncCoordinator(options: Options) {
         const absent = error instanceof SyncError && error.code === 'reconnect';
         publish({ ...view, login: absent ? { status: 'signed-out' } : { ...view.login, status: 'unavailable' }, status: absent ? current.enabled ? 'reconnect' : 'disabled' : view.status });
       }
-    })().finally(() => { loginRequest = null; if (loginAgain && !closed) { loginAgain = false; void refreshLogin(); } });
+    })().finally(() => { loginRequest = null; if (loginAgain && !closed) { loginAgain = false; void refreshLogin().catch(() => {}); } });
     return loginRequest;
-  }
+  });
   async function inspectAuthorization(intent: AuthorizationIntent, signal: AbortSignal) {
     if (intent.stage === 'identity' || intent.stage === 'identity-starting') {
       await store.compareAuthorization(intent, { authorization: null }); publish({ status: 'authorization-expired', login: { status: 'signed-out' } }); return;
@@ -246,6 +250,8 @@ export function createSyncCoordinator(options: Options) {
 
   async function locked<Result>(action: (signal: AbortSignal) => Promise<Result>, rethrow = false): Promise<Result | undefined> {
     if (closed || running) { if (rethrow) throw new SyncError('conflict'); return; }
+    let release: () => void;
+    try { release = acquireReloadHold(); } catch (error) { if (rethrow) throw error; return; }
     running = true; controller = new AbortController();
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
@@ -265,7 +271,7 @@ export function createSyncCoordinator(options: Options) {
       } else publish({ status: failure.code === 'drive-required' ? 'authorize-drive' : failure.code === 'reconnect' ? 'reconnect' : failure.code === 'quota' ? 'quota' : 'error' });
     } finally {
       if (heartbeat) clearInterval(heartbeat);
-      await store.lease(owner, true).catch(() => {}); controller = null; running = false;
+      await store.lease(owner, true).catch(() => {}); controller = null; running = false; release();
     }
   }
   function schedule(delay = 0) {
@@ -309,8 +315,8 @@ export function createSyncCoordinator(options: Options) {
     }
     await refreshLogin();
   }
-  const unsubscribeControl = store.subscribe(() => { void refreshLogin(); schedule(); });
-  return {
+  const unsubscribeControl = store.subscribe(() => { void refreshLogin().catch(() => {}); schedule(); });
+  const coordinator = {
     getSnapshot: () => view,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.authorization ? 'identifying' : record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); await refreshLogin(); schedule(); poll(); },
@@ -458,5 +464,14 @@ export function createSyncCoordinator(options: Options) {
     async runNow() { await locked(cycle); },
     close() { closed = true; preview = null; controller?.abort(); clearTimeout(timer); clearTimeout(polling); unsubscribe(); unsubscribeControl(); listeners.clear(); auth.invalidate(); },
   };
+  return { ...coordinator,
+    start: held(coordinator.start), wake: held(coordinator.wake), dismissDrivePrompt: held(coordinator.dismissDrivePrompt),
+    connect: held(coordinator.connect), authorizeDrive: held(coordinator.authorizeDrive), retryDriveAuthorization: held(coordinator.retryDriveAuthorization),
+    retryAuthorization: held(coordinator.retryAuthorization), cancelAuthorization: held(coordinator.cancelAuthorization), pause: held(coordinator.pause),
+    resume: held(coordinator.resume), disconnect: held(coordinator.disconnect), downloadRemote: held(coordinator.downloadRemote),
+    localCopy: held(coordinator.localCopy), prepareResolution: held(coordinator.prepareResolution),
+    confirmResolution: held(coordinator.confirmResolution), resolve: held(coordinator.resolve),
+  };
+
 }
 export type SyncCoordinator = ReturnType<typeof createSyncCoordinator>;
