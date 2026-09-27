@@ -1,5 +1,7 @@
 # Roteiro de construção da V1
 
+> Plano de referência. Para distinguir entregas integradas, módulos isolados e serviços pendentes, consulte o [estado atual](../README.md#estado-atual) e a [auditoria de 27/09/2026](audit-2026-09-27.md).
+
 ## Regra de escopo
 
 Construir primeiro a promessa: **“Livro a Livro é o lugar mais simples para guardar a história dos livros que você lê.”**

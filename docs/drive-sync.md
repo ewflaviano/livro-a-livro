@@ -4,6 +4,12 @@ A biblioteca permanece local. Em produção, `sync/api.ts` só faz chamadas sem 
 
 Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VITE_DRIVE_ENABLED=true` depois da implantação/configuração da issue #13. Firebase não é necessário ao protocolo. Não há configuração de infraestrutura nem credenciais nesta entrega.
 
+## Pendências conhecidas — 27 set 2026
+
+O conector não substitui o backup independente: o download da tela Dados depende de sua disponibilidade/estado, e a interface de exportação/importação sem Drive ainda não foi ligada ao serviço. As capas externas não são desenhadas na estante/detalhe.
+
+A inclusão de mídia local introduziu riscos na restauração: mídia e livros são substituídos em transações separadas, e os limites de gravação/exportação/restauração divergem. Ver S1/S2/S4 da [auditoria](audit-2026-09-27.md). Corrigir e testar essas garantias antes de habilitar produção; não considerar a cópia de recuperação uma prova de preservação integral de capas.
+
 ## Persistência e recuperação
 
 - Cada commit de biblioteca marca sua revisão pendente **na mesma transação IndexedDB**. Outbox nunca contém credenciais. Revisões posteriores não são apagadas pela confirmação de uma anterior.

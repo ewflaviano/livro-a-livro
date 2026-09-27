@@ -1,10 +1,14 @@
 # Arquitetura técnica do Livro a Livro
 
-**Decisão para V1 · 26 set 2026 · Status: proposta executável, ainda não implementada**
+**Decisão para V1 · 26 set 2026 · Estado revisto em 27 set 2026**
 
-O Livro a Livro será uma **PWA estática em React + TypeScript + Vite**, com biblioteca em IndexedDB e backup JSON versionado. A biblioteca funciona integralmente sem conta. Desde o início, haverá um trilho opcional em **Rust/Axum** para sincronização automática com Google Drive e uma base de experimentos controlados remotamente; IA permanece fora do escopo. A Open Library será uma fonte externa de busca e enriquecimento acionada pela pessoa; nunca a base da biblioteca. O crescimento do público será atendido pela distribuição estática, enquanto sincronização opt-in e consultas bibliográficas têm limites próprios. A API nunca é requisito para abrir, editar ou exportar a biblioteca local.
+O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com biblioteca em IndexedDB e contrato de backup JSON versionado. O núcleo local, busca, compartilhamento anual e app shell estão implementados. A API opcional Rust/Axum tem núcleo OAuth e contratos técnicos; composição durável e habilitação de produção continuam pendentes. IA permanece fora do escopo.
 
-Este documento complementa o [roteiro de construção](build-plan.md), o [design system](design-system.md) e seus [tokens](tokens.css). **Ajuste de escopo posterior:** o roteiro e o guia ainda tratam Drive como futuro; a orientação mais recente inclui a arquitetura da API/Drive e dos experimentos desde o início, sem tornar conexão requisito do fluxo local. Esta decisão prevalece nesses pontos; os demais padrões visuais, três estados e estatísticas permanecem. Os dois documentos anteriores não são reescritos nesta tarefa de arquitetura. A árvore, contratos e infraestrutura abaixo são propostas; não afirmam que esses arquivos, recursos AWS ou fluxos já existem. O repositório consultado contém a configuração inicial de Vite/TypeScript, dependências declaradas e um placeholder. Esta entrega não instala pacotes nem implementa o aplicativo.
+Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
+
+**Lacunas atuais:** Configurações é placeholder; o backup independente não tem interface; capas Open Library não são renderizadas na biblioteca; experimentos/métricas não têm consumidores runtime. A restauração com mídias tem riscos confirmados de atomicidade e limites (S1, S2 e S4 da auditoria). As garantias de recuperação descritas abaixo são requisitos a cumprir, não declaração de que esses defeitos foram corrigidos.
+
+A orientação vigente inclui Drive opcional e experimentos desde a arquitetura inicial, sem tornar conta ou conexão requisitos do fluxo local. Ela substitui a exclusão histórica de Drive do roteiro visual. O [design system](design-system.md) e o [catálogo](design-system.html) continuam referências visuais, não inventário funcional.
 
 ## 1. Decisões que orientam a implementação
 
@@ -80,7 +84,7 @@ Regras de dependência:
 - `backup/` contém contrato, serialização e migrações de arquivo; `sharing/` recebe uma projeção permitida, nunca o objeto completo com notas.
 - Não criar contêiner de injeção, barramento de eventos genérico, classe `BaseRepository` ou servidor falso. Manter `api/` como serviço Rust separado do frontend, sem exigir framework de monorepo. Funções e interfaces pequenas são suficientes.
 
-### Árvore proposta, a criar durante a implementação
+### Árvore de responsabilidades proposta (não inventário do checkout)
 
 ```text
 src/
@@ -360,7 +364,7 @@ Nome: `livro-a-livro-AAAA-MM-DD.json`. O texto de confirmação é **“Arquivo 
 2. **Versão estrutural IndexedDB**: stores/índices e transformações locais no upgrade.
 3. **`schemaVersion` do JSON**: contrato portátil; migrações puras `vN → vN+1`, com fixtures permanentes.
 
-No primeiro release, apenas V1 é aceito. Ao adicionar V2, continuar importando V1 por migração explícita; não descartar um arquivo antigo porque o banco já foi atualizado. Migrações não fazem rede nem inferem conteúdo pessoal. Em `versionchange`, fechar conexão e pedir recarga; em `blocked`, orientar fechar outras abas, sem apagar o banco.
+O importador atual aceita apenas V1, com `coverMedia` opcional na entrada para compatibilidade com arquivos anteriores à inclusão de capas. Ao adicionar V2, continuar importando V1 por migração explícita; não descartar um arquivo antigo porque o banco já foi atualizado. Migrações não fazem rede nem inferem conteúdo pessoal. Em `versionchange`, fechar conexão e pedir recarga; em `blocked`, orientar fechar outras abas, sem apagar o banco.
 
 Mudança estrutural pequena usa transação de upgrade e aborto integral em falha. Mudança de dados destrutiva exige exportação prévia orientada e plano testado de recuperação; antes de migrar, o app antigo ainda deve conseguir exportar. Se banco estiver em versão mais nova que o bundle, bloquear escritas e pedir versão compatível; não tentar downgrade ou recriar banco vazio.
 
@@ -386,7 +390,7 @@ O store reservado `searchCache` guarda somente páginas normalizadas e os prazos
 
 Na revisão, somente após selecionar um resultado, a capa é carregada por URL construída a partir de `coverId` validado, com CORS anônimo, sem referrer e fallback local. Os resultados não carregam imagens. Esta fatia preserva a referência de capa no livro; a estante e o detalhe ainda usam fallback tipográfico. Cache raster validado e reutilização de capas em estante/compartilhamento pertencem à integração seguinte. A busca não instala service worker nem proxy. As diretrizes e endpoints oficiais abaixo foram conferidos antes da implementação; nenhum teste automatizado acessa o serviço público.
 
-**Evolução posterior solicitada:** capa enviada pela pessoa será outro tipo discriminado de capa, com bytes locais duráveis e sincronização opcional direta PWA ↔ Google Drive. Não usar o cache descartável bibliográfico para esses arquivos, nem enviar à API/AWS. A issue #7 conserva o contrato atual `provider: 'open_library'`; a inclusão do novo tipo e sua portabilidade/migração precisam de uma fatia própria. A construção de URL e a normalização do fornecedor estão isoladas para permitir essa evolução.
+**Capas locais adicionadas na issue #21:** o domínio aceita `provider: 'local'`, os bytes ficam em `coverMedia` e o detalhe mostra a imagem enviada. A estante ainda usa fallback. Backup e sincronização carregam mídias, mas a auditoria identificou falhas de atomicidade e limites; sua portabilidade precisa ser corrigida antes de ser considerada completa. Capas não passam pela API/AWS.
 
 O provedor publica limites de **1 requisição/s sem identificação e 3/s com identificação**, pede cache e uso humano de baixo volume, e não se propõe a servir como backend de alto tráfego. Não distribuir tráfego deliberadamente por IPs para contornar limites. Revalidar essas regras antes do lançamento e de cada expansão relevante. [Diretrizes oficiais](https://openlibrary.org/developers/api).
 
@@ -733,7 +737,7 @@ Configurações ficam em tabela DynamoDB própria, com backups/auditoria adminis
 
 ## 16. Estratégia de testes e gates de release
 
-Ferramentas propostas: Vitest para domínio/serviços, Testing Library para comportamento acessível, fake-indexeddb para integração rápida e Playwright para IndexedDB/SW em navegadores reais. No Rust, usar testes de unidade/rotas Axum com provedores OAuth simulados, `cargo fmt`, `clippy` e testes de integração de sessão/contratos. Fixtures de auth/catálogo/telemetria são compartilhadas entre TS e Rust; fixtures da biblioteca nunca são body de endpoint da API. São escolhas para a implementação, não instalações executadas nesta tarefa. Emulador de IndexedDB não substitui testes reais de quota, upgrades e service worker.
+Ferramentas instaladas: Vitest para domínio/serviços, Testing Library para comportamento acessível e fake-indexeddb para integração rápida. Uma suíte E2E de navegador ainda não está configurada; Playwright para IndexedDB/SW permanece uma proposta. No Rust, usar testes de unidade/rotas Axum com provedores OAuth simulados, `cargo fmt`, `clippy` e testes de integração de sessão/contratos. Fixtures de auth/catálogo/telemetria são compartilhadas entre TS e Rust; fixtures da biblioteca nunca são body de endpoint da API. A tabela abaixo descreve a cobertura exigida; não comprova que todos esses cenários já estejam automatizados. Emulador de IndexedDB não substitui testes reais de quota, upgrades e service worker.
 
 | Camada | Evidência necessária |
 | --- | --- |

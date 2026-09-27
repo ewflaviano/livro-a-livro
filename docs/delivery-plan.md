@@ -1,5 +1,7 @@
 # Sequência de entrega
 
+> Plano de referência. Para distinguir entregas integradas, módulos isolados e serviços pendentes, consulte o [estado atual](../README.md#estado-atual) e a [auditoria de 27/09/2026](audit-2026-09-27.md).
+
 As issues seguem uma ordem deliberada: primeiro provar que os dados locais são confiáveis; depois tornar a estante agradável; por último adicionar conexões opcionais.
 
 | Ordem | Marco | Resultado verificável | Agente principal |

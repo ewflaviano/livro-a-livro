@@ -8,7 +8,7 @@ Este guia define a primeira direção visual do Livro a Livro. Os [tokens CSS](t
 
 ## 1. Escopo e princípios
 
-O Livro a Livro é privado, local-first, sem conta no app e sem componente social. A V1 reúne **Quero ler, Lendo e Lido**, estante anual em Grade/Lista, cadastro por busca ou manual, página do livro, avaliação e nota privadas, estatísticas mínimas, exportação/importação JSON e imagem anual em Story/Quadrado. Google Drive é uma possibilidade futura, opcional: não pertence à navegação nem às ações disponíveis na V1. Não introduzir feed, metas, sequências de dias, recomendações, IA, comentários, seguidores ou rankings.
+O Livro a Livro é privado, local-first, sem conta no app e sem componente social. A V1 reúne **Quero ler, Lendo e Lido**, estante anual em Grade/Lista, cadastro por busca ou manual, página do livro, avaliação e nota privadas, estatísticas mínimas, exportação/importação JSON e imagem anual em Story/Quadrado. A arquitetura posterior inclui Google Drive opcional; seu cliente e simulador existem, mas a habilitação de produção depende dos gates da API. Consulte o [estado atual](../README.md#estado-atual); o catálogo visual continua conceitual. Não introduzir feed, metas, sequências de dias, recomendações, IA, comentários, seguidores ou rankings.
 
 1. **O livro é o centro.** Capa, título e autoria têm precedência. A interface organiza a estante e depois sai do caminho.
 2. **Calma com precisão.** Muito espaço em torno do conteúdo, pouco ornamento e rótulos que descrevem o efeito de cada ação.
@@ -208,9 +208,9 @@ Não afirmar “backup concluído” quando só foi possível observar o início
 
 **Importação:** selecionar arquivo local → validar formato/versão sem modificar estante → mostrar quantidade de livros e anos do arquivo e da biblioteca atual → explicar a operação → confirmar. Proposta V1: substituir biblioteca inteira, sem prometer mesclagem inteligente. Antes de substituir, oferecer exportar a atual; botão final “Substituir por 8 livros”, com Cancelar. Arquivo inválido, versão incompatível ou falha não altera registros existentes. Só anunciar “8 livros importados neste dispositivo” após conclusão atômica. Não enviar arquivo ao servidor. O catálogo não executa importação; a revisão descrita aqui é um contrato para a implementação.
 
-### Sincronização futura, fora da V1
+### Sincronização opcional — contrato visual e gate de produção
 
-Os nomes abaixo são reservados para evolução e não constituem recurso disponível. O catálogo os apresenta em um bloco documental separado, sem botão Conectar Google Drive. Na V1, se houver menção, usar “Sincronização não disponível nesta versão”.
+Os estados abaixo orientam o conector implementado e seu simulador. O catálogo estático não oferece conexão real. Em produção, enquanto o gate de autorização não estiver concluído, informar indisponibilidade claramente, sem botão que prometa um serviço pronto.
 
 - Não conectado: “Seus dados estão apenas neste dispositivo.”
 - Conectando / Sincronizando: informar operação em andamento, sem antecipar sucesso.
@@ -219,7 +219,7 @@ Os nomes abaixo são reservados para evolução e não constituem recurso dispon
 - Falha: “Seus dados locais continuam aqui. Não foi possível atualizar a cópia no Drive.”
 - Conflito: explicar versões, datas e quantidades; oferecer baixar cópias antes de escolher. Nunca substituir silenciosamente.
 
-Permissões, conta conectada, conflitos e retenção precisam de definição própria antes de implementar. Google Drive é opcional; criar conta no Livro a Livro não é requisito futuro implícito.
+Permissões, sessão, conflitos e retenção estão definidos em [API OAuth](auth-api.md) e [sincronização](drive-sync.md); a composição de produção continua pendente. Google Drive é opcional; criar conta no Livro a Livro não é requisito implícito.
 
 ## 14. Responsividade e movimento
 
@@ -257,6 +257,13 @@ Consumo: importar `tokens.css`, aplicar tokens semânticos nos componentes e man
 }
 ```
 
-Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; esta versão não desenha uma área de experimentos.
+Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. Os consentimentos atuais em Seus dados ainda não acionam consumidores runtime; ver [estado da integração](experiments.md).
 
 Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semântica, comportamento de teclado, variante estreita e contraste revisados. Mudar uma cor primitiva requer conferir todos os papéis que a usam. A documentação é referência de projeto, não declaração de que armazenamento, busca, compartilhamento ou sincronização já existem.
+
+
+## 17. Direção de navegação mobile — revisão de 27 set 2026
+
+A [auditoria](audit-2026-09-27.md) e a solicitação do responsável pelo produto orientam uma próxima entrega com barra inferior **Estante · Adicionar · Mais**. Mais dá acesso a Seus dados, Configurações e Apoiar; Lendo e Quero ler permanecem filtros da estante. Desktop conserva navegação lateral.
+
+Essa direção ainda não está implementada e não altera os tokens ou o catálogo histórico nesta entrega documental. Ao implementá-la, atualizar guia, catálogo e testes juntos: rótulos visíveis, estado ativo acessível, alvos de 44 px, área segura inferior e espaço no conteúdo para evitar sobreposição. Validar teclado virtual, foco, diálogos, rascunhos e paisagem. Remover a navegação superior duplicada no mobile e corrigir o truncamento observado no tablet.

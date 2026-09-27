@@ -2,52 +2,71 @@
 
 Um registro pessoal, privado e local-first da história dos livros que você lê.
 
-## Princípios
-
-- Sem conta obrigatória e sem rede social.
-- Biblioteca no dispositivo, com exportação e importação de dados.
-- Sincronização opcional e direta pelo Google Drive.
-- Código aberto, experiências pequenas e escolhas explicáveis.
+A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google Drive é opcional e a transferência prevista é direta entre PWA e Drive. A API própria não recebe livros, notas, avaliações, backups ou capas.
 
 ## Estado atual
 
-O domínio, o repositório IndexedDB e os serviços de backup têm implementação e testes. O aplicativo já inicia com o design system e navegação responsiva por hash: Estante, Lendo, Quero ler, Adicionar, Livro, Seus dados e Configurações.
+**Revisado em 27 set 2026.** O projeto tem uma base local funcional, mas ainda não concluiu os fluxos de backup, configurações e serviços opcionais. Issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
-A estante anual já lê o IndexedDB, com grade/lista, filtros e estatísticas dos livros lidos. O cadastro manual, a página privada do livro, a edição e a exclusão funcionam localmente, incluindo aviso de duplicata e proteção contra alterações concorrentes. Notas são texto simples e ficam fora da estante. A interface confirma salvamento somente depois do commit e preserva o rascunho quando há falha.
+| Recurso | Disponibilidade atual |
+| --- | --- |
+| Estante anual, Grade/Lista, filtros e estatísticas | Integrados à interface e ao IndexedDB |
+| Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
+| Busca Open Library | Explícita, com revisão antes de salvar; indisponível no simulador local |
+| Capas Open Library | Prévia na seleção; ainda não aparecem na estante nem no detalhe salvo |
+| Capas enviadas | Cadastro e detalhe implementados; estante usa fallback; portabilidade tem pendências de integridade |
+| Backup JSON | Serviço e testes existem; exportação/importação independentes do Drive ainda não têm interface. O download oferecido pelo conector não substitui esse fluxo |
+| Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
+| PWA | App shell offline e aviso de atualização implementados; instalação não é backup |
+| Configurações | Rota existe, mas mostra “Em construção” |
+| Google Drive | Cliente e simulador implementados; API de produção e habilitação pendentes na issue #13 |
+| Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 
-A busca explícita usa a Open Library somente para sugerir um rascunho revisável; a consulta é o único dado enviado ao catálogo. O aplicativo é instalável e prepara uma casca offline pública depois da primeira visita online. Cache de rede não recebe livros, notas, backups, tokens ou dados de Drive, e instalar o app não substitui a exportação de backup. Backup visual e serviços opcionais continuam nas próximas issues.
+Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. A promessa de exportar/restaurar offline continua sendo requisito de entrega, ainda pendente na interface atual. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
 
-## Desenvolvimento
+## Começar a desenvolver
 
-O núcleo opcional da [API de autorização do Drive](docs/auth-api.md) está em `api/` (Rust/Axum), com provider Google e testes de sessão. O [conector do frontend](docs/drive-sync.md) tem outbox local, transferência direta, conflitos e recuperação. A composição persistente AWS e a configuração Google são gates de entrega; nenhum serviço foi publicado nesta etapa. O conector de produção só aparece com `VITE_DRIVE_ENABLED=true`, após esses gates.
+Pré-requisitos: Node.js 24 (versão do CI), npm, Git e Make. Para verificar a API, Rust estável com Cargo, rustfmt e Clippy. Não são necessárias contas Google ou AWS para o fluxo local.
 
-Experimentos de interface e métricas técnicas são escolhas independentes, desligadas por padrão e descritas em [Experimentos e métricas](docs/experiments.md). A API só aceita catálogos versionados e contadores allowlisted; livros, notas, backups e identificadores continuam fora dela.
+```sh
+npm ci
+make dev
+```
 
-Use `npm install` e `npm run dev` para abrir o aplicativo localmente. `npm test`, `npm run typecheck` e `npm run build` verificam testes, tipos e produção. O build é estático e fica em `dist/`.
+Abra `http://127.0.0.1:5173`. Para busca real na Open Library, use esse modo com dados de teste. A busca ocorre somente ao clicar Buscar ou pressionar Enter.
 
-### Mesmo fluxo local do BioRotina
+### Drive simulado, sem credenciais
 
-- `make` ou `make dev`: inicia o app em `http://127.0.0.1:5173`.
-- `make local`: inicia app + simulador Google/Drive em `127.0.0.1:8788`. Dispensa login, AWS, GCP e secrets; a busca Open Library fica desativada. Abra **Seus dados → Conectar Google Drive** para testar.
-- `make local-api`: somente o simulador; `LIVRO_LOCAL_API_PORT` troca a porta.
-- Se o BioRotina ocupar 5173, use `LIVRO_LOCAL_APP_PORT=5174 make local` para abrir este projeto em outra porta.
-- `make local-reset`: com o simulador parado, remove seus dois arquivos descartáveis em `.local/livro-a-livro`. Não remove dados reais nem o IndexedDB. Para limpar a estante de teste, remova apenas o banco `livro-a-livro-local` nas ferramentas do navegador.
-- `make test`: testes TypeScript + simulador. `make check`: inclui tipos, build e Rust.
+```sh
+make local
+```
 
-O modo local mostra uma faixa em todas as telas, usa banco IndexedDB separado e grava somente dados descartáveis no computador. Os arquivos do simulador são ignorados pelo Git. Para simular dois dispositivos, abra outro perfil de navegador em `127.0.0.1:5173`; ambos usam o mesmo Drive simulado. A variável `VITE_LOCAL_MODE` funciona apenas no servidor de desenvolvimento; o transporte local é eliminado do build de produção. O simulador não valida OAuth real e não substitui os gates de produção.
+O comando inicia app e simulador em loopback (`5173` e `8788`), exibe uma faixa de teste e usa o banco separado `livro-a-livro-local`. Abra **Seus dados → Conectar Google Drive**. Open Library e capas externas ficam desativadas nesse modo. Somente dados descartáveis: o simulador não valida OAuth real.
 
-## Design system
+- Outra porta: `LIVRO_LOCAL_APP_PORT=5174 make local`.
+- Somente simulador: `make local-api`; porta configurável por `LIVRO_LOCAL_API_PORT`.
+- Dois dispositivos: perfis de navegador separados acessando a mesma origem do app e o mesmo simulador.
+- `make local-reset`, com simulador parado, remove apenas seus arquivos descartáveis; não limpa o IndexedDB.
+- `make preview` compila e serve o build. Use para verificar o service worker; o servidor de desenvolvimento não reproduz o ciclo de PWA de produção.
 
-- [Guia de identidade, componentes e padrões](docs/design-system.md)
-- [Tokens CSS e bases reutilizáveis](docs/tokens.css)
-- [Catálogo visual e Estante 2026](docs/design-system.html) — abra o arquivo diretamente no navegador, sem instalar dependências. Os exemplos são estáticos e não salvam dados.
-- [Roteiro de construção da V1](docs/build-plan.md)
-- [Arquitetura técnica: biblioteca local, API opcional, Drive e experimentos](docs/architecture.md)
-- [Entrega, domínio e publicação](docs/deployment.md)
-- [Como participar do desenvolvimento](CONTRIBUTING.md)
-- [Como apoiar, sugerir melhorias ou contribuir com código](docs/support.md)
-- [Sequência de entrega e papéis dos agentes](docs/delivery-plan.md)
+`VITE_LOCAL_MODE` só funciona em desenvolvimento. Não habilite `VITE_DRIVE_ENABLED` em produção antes de concluir os [gates da API](docs/auth-api.md) e a [entrega](docs/deployment.md). Variáveis `VITE_*` são públicas, nunca segredos.
 
-## Tecnologia planejada
+## Verificar e contribuir
 
-React, TypeScript e Vite no cliente; IndexedDB para a biblioteca local. Open Library será uma fonte de busca e enriquecimento, nunca a base de dados do usuário.
+```sh
+make check
+```
+
+Inclui testes TypeScript, simulador, tipos, build, formatação/Clippy e testes Rust. O [guia de contribuição](CONTRIBUTING.md) explica comandos por área, revisão, testes manuais e como investigar instabilidade da suíte.
+
+## Documentação
+
+- [Contribuir: ambiente, mapa do código e validação](CONTRIBUTING.md)
+- [Auditoria: segurança, UI/UX e comparação com BioRotina](docs/audit-2026-09-27.md)
+- [Arquitetura e fronteiras de dados](docs/architecture.md)
+- [Design system](docs/design-system.md), [tokens](docs/tokens.css) e [catálogo conceitual](docs/design-system.html)
+- [API OAuth](docs/auth-api.md), [sincronização](docs/drive-sync.md) e [experimentos](docs/experiments.md)
+- [Publicação](docs/deployment.md), [sequência de entrega](docs/delivery-plan.md) e [roteiro original](docs/build-plan.md)
+- [Apoiar ou sugerir melhorias](docs/support.md)
+
+O catálogo visual e o roteiro são referências de intenção. A tabela de estado acima descreve a integração atual. Stack: React, TypeScript, Vite, IndexedDB e API opcional Rust/Axum.
