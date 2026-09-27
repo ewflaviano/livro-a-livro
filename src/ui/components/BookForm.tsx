@@ -4,6 +4,7 @@ import { DomainError } from '../../domain/errors';
 import type { LocalRevision } from '../../ports/library-repository';
 import type { LibraryService } from '../../services/library-service';
 import { ConfirmDialog } from './ConfirmDialog';
+import { blockPwaUpdate } from '../../pwa/register';
 
 const messages: Record<string, string> = {
   title: 'Informe um título com até 500 caracteres.',
@@ -49,6 +50,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const [conflict, setConflict] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const dirty = JSON.stringify(initial) !== JSON.stringify(draft);
+  useEffect(() => { if (dirty || busy) return blockPwaUpdate(); }, [dirty, busy]);
   useEffect(() => { form.current?.querySelector('input')?.focus(); }, []);
   useEffect(() => {
     if (busy || invalid.length === 0) return;

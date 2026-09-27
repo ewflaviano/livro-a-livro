@@ -13,7 +13,9 @@ Um registro pessoal, privado e local-first da história dos livros que você lê
 
 O domínio, o repositório IndexedDB e os serviços de backup têm implementação e testes. O aplicativo já inicia com o design system e navegação responsiva por hash: Estante, Lendo, Quero ler, Adicionar, Livro, Seus dados e Configurações.
 
-A estante anual já lê o IndexedDB, com grade/lista, filtros e estatísticas dos livros lidos. O cadastro manual, a página privada do livro, a edição e a exclusão funcionam localmente, incluindo aviso de duplicata e proteção contra alterações concorrentes. Notas são texto simples e ficam fora da estante. A interface confirma salvamento somente depois do commit e preserva o rascunho quando há falha. Busca, backup visual, PWA e serviços opcionais serão conectados em suas issues; Seus dados e Configurações ainda indicam essa preparação.
+A estante anual já lê o IndexedDB, com grade/lista, filtros e estatísticas dos livros lidos. O cadastro manual, a página privada do livro, a edição e a exclusão funcionam localmente, incluindo aviso de duplicata e proteção contra alterações concorrentes. Notas são texto simples e ficam fora da estante. A interface confirma salvamento somente depois do commit e preserva o rascunho quando há falha.
+
+A busca explícita usa a Open Library somente para sugerir um rascunho revisável; a consulta é o único dado enviado ao catálogo. O aplicativo é instalável e prepara uma casca offline pública depois da primeira visita online. Cache de rede não recebe livros, notas, backups, tokens ou dados de Drive, e instalar o app não substitui a exportação de backup. Backup visual e serviços opcionais continuam nas próximas issues.
 
 ## Desenvolvimento
 
