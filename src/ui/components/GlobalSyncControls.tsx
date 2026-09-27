@@ -36,13 +36,13 @@ export function GlobalSyncControls({ children }: { children: ReactNode }) {
     if (state.status !== 'authorize-drive') {
       setDismissed(false);
       setPrompt(current => current === 'authorize' ? null : current);
-    } else if (available && coordinator && !blocked && !currentlyBlocked && getUiOccupancy() === 0 && !dismissed && !prompt && !busy) setPrompt('authorize');
-  }, [state.status, available, coordinator, blocked, pwa.blocked, pwa.update, occupied, dismissed, prompt, busy]);
+    } else if (available && coordinator && !blocked && !currentlyBlocked && getUiOccupancy() === 0 && !dismissed && !state.drivePromptDismissed && !prompt && !busy) setPrompt('authorize');
+  }, [state.status, available, coordinator, blocked, pwa.blocked, pwa.update, occupied, dismissed, state.drivePromptDismissed, prompt, busy]);
   function open(action: Action) {
     if (!available || !coordinator || running.current || blocked) return;
     setError(''); setPrompt(action);
   }
-  function dismiss() { setDismissed(true); setPrompt(null); setError(''); }
+  function dismiss() { setDismissed(true); setPrompt(null); setError(''); if (state.status === 'authorize-drive') void coordinator?.dismissDrivePrompt().catch(() => {}); }
   async function confirm() {
     if (!coordinator || !prompt || running.current) return;
     if (getPwaState().blocked || getPwaState().update === 'applying' || getUiOccupancy() > 1) {
@@ -62,7 +62,7 @@ export function GlobalSyncControls({ children }: { children: ReactNode }) {
     {prompt && <ConfirmDialog title={prompt === 'connect' ? 'Entrar com Google?' : 'Guardar sua biblioteca no Drive?'}
       confirmLabel={prompt === 'connect' ? 'Entrar com Google' : 'Autorizar Drive'} cancelLabel={prompt === 'connect' ? 'Cancelar' : 'Agora não'}
       variant="primary" returnFocus={trigger} busy={busy} onCancel={dismiss} onConfirm={() => void confirm()}>
-      <p>{prompt === 'connect' ? 'Esta etapa confirma sua Conta Google por alguns minutos. Ela ainda não autoriza o Drive nem envia sua biblioteca. Você voltará ao aplicativo para decidir se deseja autorizar o Drive.' : 'Sua identificação é temporária, por até dez minutos. O Drive ainda não foi autorizado. Se você permitir, seus livros, notas, avaliações e capas serão enviados diretamente para a área privada do aplicativo no seu Google Drive.'}</p>
+      <p>{prompt === 'connect' ? 'Esta etapa entra com sua Conta Google e mantém sua sessão neste navegador. Ela ainda não autoriza o Drive nem envia sua biblioteca. Você voltará ao aplicativo para decidir se deseja autorizar o Drive.' : 'Você entrou com Google. O Drive ainda não foi autorizado. Se você permitir, seus livros, notas, avaliações e capas serão enviados diretamente para a área privada do aplicativo no seu Google Drive.'}</p>
       {prompt !== 'connect' && <p>Essa permissão é opcional. Sem ela, sua biblioteca e o backup JSON continuam disponíveis neste navegador. O Google pode apresentar sua própria seleção de permissões.</p>}
       {state.revocationPending && <p>A revogação anterior ainda não foi confirmada. Entrar novamente não remove esse bloqueio; consulte os detalhes em Seus dados.</p>}
       {error && <p role="alert">{error}</p>}
@@ -74,15 +74,15 @@ export function GlobalSyncHeader() {
   const { state, available, coordinator, initializing } = useSync();
   const controls = useGlobalSyncControls();
   const signIn = ['disabled', 'reconnect', 'authorization-expired'].includes(state.status);
-  const label = !available ? 'Google indisponível' : initializing ? 'Preparando conexão…' : !coordinator ? 'Drive indisponível' : state.revocationPending ? 'Revogação pendente' : shortLabels[state.status];
+  const label = !available ? 'Google indisponível' : initializing || state.login?.status === 'checking' ? 'Preparando conexão…' : !coordinator ? 'Drive indisponível' : state.login?.status === 'unavailable' ? 'Verificar conexão' : state.revocationPending ? 'Revogação pendente' : shortLabels[state.status];
   const interactive = available && !initializing && coordinator && !state.revocationPending && (signIn || state.status === 'authorize-drive');
   return <><nav className="header-tools" aria-label="Conta e opções">
     <Link className="header-option" to="/apoiar"><Heart aria-hidden="true" /><span>Apoiar</span></Link>
     {interactive ? <button ref={controls.trigger} className="header-option global-sync" disabled={controls.busy || controls.blocked}
       title={controls.blocked ? 'Conclua ou saia do formulário ou operação em andamento antes de conectar.' : undefined}
-      onClick={() => controls.open(signIn ? 'connect' : 'authorize')}><Cloud aria-hidden="true" /><span aria-live="polite">{label}</span></button> :
+      onClick={() => controls.open(signIn ? 'connect' : 'authorize')}><Cloud aria-hidden="true" /><span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></button> :
       <Link className="header-option global-sync" to="/dados" aria-label={`${label} — ver detalhes`}>
-        {state.status === 'offline' ? <CloudOff aria-hidden="true" /> : <Cloud aria-hidden="true" />}<span aria-live="polite">{label}</span></Link>}
+        {state.status === 'offline' ? <CloudOff aria-hidden="true" /> : <Cloud aria-hidden="true" />}<span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></Link>}
     <Link className="header-option header-settings" to="/configuracoes" aria-label="Abrir configurações" title="Configurações"><Settings aria-hidden="true" /></Link>
   </nav>{controls.error && <p className="global-action-error" role="alert">{controls.error} Abra os detalhes da conexão para tentar novamente ou cancelar.</p>}</>;
 }

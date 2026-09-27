@@ -13,7 +13,7 @@ import { BookForm } from './BookForm';
 import type { LibraryService } from '../../services/library-service';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false, initializing: false,
-  coordinator: { connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), retryDriveAuthorization: vi.fn(async () => {}) },
+  coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), retryDriveAuthorization: vi.fn(async () => {}) },
 }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 afterEach(() => { cleanup(); expect(getUiOccupancy()).toBe(0); expect(getPwaState().blocked).toBe(false); vi.clearAllMocks(); sync.state = { status: 'disabled' }; sync.available = true; sync.initializing = false; });
@@ -135,4 +135,13 @@ it('yields an open invitation to a newly mounted dialog without competing focus 
   expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
   await userEvent.click(screen.getByRole('button', { name: 'Agora não' }));
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Autorizar Drive' }));
+});
+
+it('keeps a persisted dismissal while offering explicit Drive activation for login-only', () => {
+  sync.state = { status: 'authorize-drive', login: { status: 'signed-in', signInAttemptId: 'synthetic', driveAuthorized: false }, drivePromptDismissed: true };
+  render(<Shell />);
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(screen.getByText('Google conectado')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Autorizar Drive/ })).toBeTruthy();
+  expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
 });

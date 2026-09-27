@@ -64,6 +64,8 @@ fn sign_in_does_not_require_or_confer_access_token_authority() {
     );
     let drive = OAuthPurpose::Drive {
         identity_hash: "synthetic".into(),
+        login_hash: "synthetic".into(),
+        drive_epoch: 1,
         expected_connection: "synthetic".into(),
     };
     assert!(identity_only.authorization_scope(&drive).is_err());

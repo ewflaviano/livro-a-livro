@@ -82,3 +82,9 @@ ou coleta de dados do BioRotina como consequência da paridade de interface.
 Sincronização automática depende do aplicativo em execução. Ao reabrir,
 retomar pendências e conferir o Drive; não prometer execução com navegador
 fechado.
+
+## Progresso verificado
+
+- PR #55 integrada: cabeçalho global, convite separado do Drive, avisos e proteção de rascunhos. Produção `02f4b23c75af`, workflow `36341639642`, frontend/API publicados e smoke de controles aprovado. A flag pública Drive continua false.
+- Login persistente: contrato aprovado em [auth-login-persistente.md](auth-login-persistente.md); implementação e gates em andamento na fatia seguinte da #13. Não confundir contrato aprovado com validação real concluída.
+- União de bibliotecas, convite de privacidade e gates finais continuam pendentes nas etapas acima.

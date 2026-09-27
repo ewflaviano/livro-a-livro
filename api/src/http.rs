@@ -16,6 +16,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
+const LOGIN_COOKIE: &str = "__Host-lal_login";
 const SESSION_COOKIE: &str = "__Host-lal_session";
 const IDENTITY_COOKIE: &str = "__Host-lal_identity";
 const OAUTH_COOKIE: &str = "__Host-lal_oauth";
@@ -26,9 +27,15 @@ pub fn router(auth: Auth) -> Router {
         .route("/v1/auth/google/callback", get(callback))
         .route(
             "/v1/auth/google/identity",
-            get(identity).delete(cancel_identity),
+            get(legacy_identity).delete(legacy_identity),
         )
         .route("/v1/auth/google/drive/start", post(start_drive))
+        .route("/v1/login", get(login).delete(logout_login))
+        .route("/v1/login/renew", post(renew_login))
+        .route(
+            "/v1/auth/google/authorization",
+            get(authorization).delete(cancel_authorization),
+        )
         .route("/v1/session", get(session).delete(logout))
         .route("/v1/session/renew", post(renew))
         .route("/v1/auth/drive-token", post(access))
@@ -59,7 +66,7 @@ async fn guard(State(auth): State<Auth>, mut request: Request, next: Next) -> Re
             .unwrap_or("");
         if !matches!(method, Some("GET" | "POST" | "DELETE"))
             || headers.split(',').any(|h| {
-                !["", "content-type", "x-lal-csrf"]
+                !["", "content-type", "x-lal-csrf", "x-lal-attempt"]
                     .contains(&h.trim().to_ascii_lowercase().as_str())
             })
         {
@@ -104,7 +111,7 @@ async fn guard(State(auth): State<Auth>, mut request: Request, next: Next) -> Re
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
-            HeaderValue::from_static("x-lal-csrf,content-type"),
+            HeaderValue::from_static("x-lal-csrf,x-lal-attempt,content-type"),
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_METHODS,
@@ -142,50 +149,114 @@ async fn authorized(auth: &Auth, headers: &HeaderMap) -> Result<String, Error> {
         .get("x-lal-csrf")
         .and_then(|v| v.to_str().ok())
         .ok_or(Error::Forbidden)?;
+    auth.bound_session(&raw, &cookie(headers, LOGIN_COOKIE)?)
+        .await?;
     auth.authorize(&raw, csrf).await?;
     Ok(raw)
+}
+fn csrf(headers: &HeaderMap) -> Result<&str, Error> {
+    headers
+        .get("x-lal-csrf")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(Error::Forbidden)
+}
+fn attempt(headers: &HeaderMap) -> Result<&str, Error> {
+    let mut values = headers.get_all("x-lal-attempt").iter();
+    let value = values
+        .next()
+        .and_then(|v| v.to_str().ok())
+        .ok_or(Error::InvalidRequest)?;
+    if values.next().is_some() || !crate::service::attempt_id(value) {
+        return Err(Error::InvalidRequest);
+    }
+    Ok(value)
 }
 async fn start(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
     let (url, raw) = auth
         .start_sign_in(
-            cookie(&headers, IDENTITY_COOKIE).ok().as_deref(),
+            attempt(&headers)?,
+            cookie(&headers, LOGIN_COOKIE).ok().as_deref(),
             cookie(&headers, SESSION_COOKIE).ok().as_deref(),
+            cookie(&headers, OAUTH_COOKIE).ok().as_deref(),
+            csrf(&headers).ok(),
         )
         .await?;
     let mut response = Json(json!({"authorizationUrl": url})).into_response();
     set_cookie(&mut response, OAUTH_COOKIE, &raw, OAUTH_TTL);
-    set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
-    set_cookie(&mut response, SESSION_COOKIE, "", 0);
+    for name in [LOGIN_COOKIE, IDENTITY_COOKIE, SESSION_COOKIE] {
+        set_cookie(&mut response, name, "", 0);
+    }
     Ok(response)
 }
-fn identity_credentials(headers: &HeaderMap) -> Result<(String, &str), Error> {
-    let raw = cookie(headers, IDENTITY_COOKIE)?;
-    let csrf = headers
-        .get("x-lal-csrf")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(Error::Forbidden)?;
-    Ok((raw, csrf))
+async fn login(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let raw = cookie(&headers, LOGIN_COOKIE)?;
+    let login = auth.login(&raw).await?;
+    Ok(Json(json!({"connectionId":login.connection_id,"signInAttemptId":login.sign_in_attempt_id,"expiresAt":login.expires_at,"absoluteExpiresAt":login.absolute_expires_at,"csrfToken":auth.login_csrf(&raw)?})).into_response())
 }
-async fn identity(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
-    let raw = cookie(&headers, IDENTITY_COOKIE)?;
-    let identity = auth.identity(&raw).await?;
-    Ok(Json(json!({"connectionId":identity.connection_id,"expiresAt":identity.expires_at,"csrfToken":auth.identity_csrf(&raw)?})).into_response())
+async fn renew_login(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let raw = cookie(&headers, LOGIN_COOKIE)?;
+    let login = auth.renew_login(&raw, csrf(&headers)?).await?;
+    let mut response = Json(json!({"expiresAt":login.expires_at,"absoluteExpiresAt":login.absolute_expires_at,"csrfToken":auth.login_csrf(&raw)?})).into_response();
+    set_cookie(
+        &mut response,
+        LOGIN_COOKIE,
+        &raw,
+        login.expires_at.saturating_sub(auth.clock.now()),
+    );
+    Ok(response)
+}
+async fn logout_login(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    auth.logout_login(
+        &cookie(&headers, LOGIN_COOKIE)?,
+        csrf(&headers)?,
+        cookie(&headers, SESSION_COOKIE).ok().as_deref(),
+        cookie(&headers, OAUTH_COOKIE).ok().as_deref(),
+    )
+    .await?;
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    for name in [LOGIN_COOKIE, SESSION_COOKIE, IDENTITY_COOKIE, OAUTH_COOKIE] {
+        set_cookie(&mut response, name, "", 0);
+    }
+    Ok(response)
+}
+async fn authorization(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let raw = cookie(&headers, OAUTH_COOKIE)?;
+    let attempt = auth.authorization(&raw).await?;
+    let purpose = match attempt.purpose {
+        crate::ports::OAuthPurpose::SignIn => "signin",
+        _ => "drive",
+    };
+    Ok(Json(json!({"attemptId":attempt.attempt_id,"purpose":purpose,"expiresAt":attempt.expires_at,"csrfToken":auth.authorization_csrf(&raw)?})).into_response())
+}
+async fn cancel_authorization(
+    State(auth): State<Auth>,
+    headers: HeaderMap,
+) -> Result<Response, Error> {
+    auth.cancel_authorization(
+        &cookie(&headers, OAUTH_COOKIE)?,
+        csrf(&headers)?,
+        attempt(&headers)?,
+    )
+    .await?;
+    // A delayed response must not erase cookies belonging to a newer attempt.
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 async fn start_drive(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
-    let (identity, csrf) = identity_credentials(&headers)?;
-    let (url, raw) = auth.start_drive(&identity, csrf).await?;
+    let (url, raw) = auth
+        .start_drive(
+            &cookie(&headers, LOGIN_COOKIE)?,
+            csrf(&headers)?,
+            attempt(&headers)?,
+        )
+        .await?;
     let mut response = Json(json!({"authorizationUrl":url})).into_response();
     set_cookie(&mut response, OAUTH_COOKIE, &raw, OAUTH_TTL);
-    Ok(response)
-}
-async fn cancel_identity(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
-    let (identity, csrf) = identity_credentials(&headers)?;
-    auth.cancel_identity(&identity, csrf).await?;
-    let mut response = StatusCode::NO_CONTENT.into_response();
     set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
     Ok(response)
 }
-
+async fn legacy_identity() -> Error {
+    Error::IdentityExpired
+}
 #[derive(Deserialize)]
 struct Callback {
     iss: String,
@@ -220,9 +291,8 @@ async fn callback(state: State<Auth>, headers: HeaderMap, request: Request) -> R
             let html = format!(
                 "<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Conexão com Google</title><h1>{message}</h1><p>Sua biblioteca continua neste dispositivo.</p><a href=\"https://livroalivro.app.br/#/dados\">Voltar ao aplicativo</a></html>"
             );
-            let mut response = (status, axum::response::Html(html)).into_response();
-            set_cookie(&mut response, OAUTH_COOKIE, "", 0);
-            response
+            // Do not clear a newer attempt if this callback response arrives late.
+            (status, axum::response::Html(html)).into_response()
         }
     }
 }
@@ -253,10 +323,18 @@ async fn callback_inner(
     ); // Google informational fields are never trusted.
     if query.error.is_some() {
         // Consume the state even on denial; never trust or display provider error text.
-        auth.store
+        let transaction = auth
+            .store
             .take_oauth(
                 &crate::service::digest(&query.state),
                 &crate::service::digest(&cookie(&headers, OAUTH_COOKIE)?),
+                auth.clock.now(),
+            )
+            .await?;
+        auth.store
+            .cancel_authorization(
+                &crate::service::digest(&cookie(&headers, OAUTH_COOKIE)?),
+                &transaction.attempt_id,
                 auth.clock.now(),
             )
             .await?;
@@ -282,13 +360,13 @@ async fn callback_inner(
         HeaderValue::from_str(&auth.config.destination).unwrap(),
     );
     match raw {
-        CallbackResult::Identity {
+        CallbackResult::Login {
             raw_cookie,
             expires_at,
         } => {
             set_cookie(
                 &mut response,
-                IDENTITY_COOKIE,
+                LOGIN_COOKIE,
                 &raw_cookie,
                 expires_at.saturating_sub(auth.clock.now()),
             );
@@ -296,15 +374,16 @@ async fn callback_inner(
         }
         CallbackResult::Drive { raw_session } => {
             set_cookie(&mut response, SESSION_COOKIE, &raw_session, SESSION_TTL);
-            set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
         }
     }
-    set_cookie(&mut response, OAUTH_COOKIE, "", 0);
+    set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
     Ok(response)
 }
 async fn session(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
     let raw = cookie(&headers, SESSION_COOKIE)?;
-    let session = auth.session(&raw).await?;
+    let session = auth
+        .bound_session(&raw, &cookie(&headers, LOGIN_COOKIE)?)
+        .await?;
     Ok(Json(json!({"connectionId":session.connection_id,"generation":session.generation,"expiresAt":session.expires_at,"csrfToken":auth.csrf(&raw)?,"scopes":SCOPES})).into_response())
 }
 async fn renew(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
@@ -321,7 +400,16 @@ async fn renew(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response,
     Ok(response)
 }
 async fn access(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
-    let raw = authorized(&auth, &headers).await?;
+    auth.login(&cookie(&headers, LOGIN_COOKIE)?).await?;
+    if cookie(&headers, SESSION_COOKIE).is_err() {
+        return Err(Error::DriveAuthorizationRequired);
+    }
+    let raw = match authorized(&auth, &headers).await {
+        Err(Error::Unauthorized | Error::Reconnect) => {
+            return Err(Error::DriveAuthorizationRequired);
+        }
+        result => result?,
+    };
     let access = auth.access(&raw).await?;
     Ok(
         Json(json!({"accessToken":access.token.0,"expiresIn":access.expires_in,"scopes":SCOPES}))
@@ -330,7 +418,9 @@ async fn access(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response
 }
 async fn logout(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
     let raw = authorized(&auth, &headers).await?;
-    auth.store.logout(&crate::service::digest(&raw)).await?;
+    auth.store
+        .logout(&crate::service::digest(&raw), auth.clock.now())
+        .await?;
     let mut response = StatusCode::NO_CONTENT.into_response();
     set_cookie(&mut response, SESSION_COOKIE, "", 0);
     Ok(response)
@@ -346,6 +436,9 @@ async fn disconnect(State(auth): State<Auth>, headers: HeaderMap) -> Result<Resp
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, code) = match self {
+            Error::DriveAuthorizationRequired => {
+                (StatusCode::FORBIDDEN, "drive_authorization_required")
+            }
             Error::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Error::IdentityExpired => (StatusCode::UNAUTHORIZED, "identity_expired"),
             Error::AccountMismatch => (StatusCode::CONFLICT, "account_mismatch"),
@@ -354,7 +447,7 @@ impl IntoResponse for Error {
             Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid_request"),
             Error::IncompleteConsent => (StatusCode::CONFLICT, "incomplete_consent"),
             Error::Busy => (StatusCode::TOO_MANY_REQUESTS, "retry_later"),
-            Error::Reconnect | Error::InvalidGrant => {
+            Error::Reconnect | Error::InvalidGrant | Error::LegacySession => {
                 (StatusCode::UNAUTHORIZED, "reconnect_required")
             }
             Error::Provider => (StatusCode::BAD_GATEWAY, "provider_unavailable"),

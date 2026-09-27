@@ -20,7 +20,7 @@ const emit = code => process.stdout.write(`${code}\n`);
 const check = condition => { if (!condition) throw new Error('GATE_ASSERTION'); };
 let publicHeaders = {};
 let browser; let input; let violation = false; let stage = 'BUILD';
-let smokeDrive = false;
+let smokeDrive = false; let smokeDisconnectFailure = false;
 const knownOperations = new Set(); const putCounts = new Map(); const listedOperations = new Map();
 let lostPut = null; let gateSequence = 0;
 const fakeDriveFiles = [];
@@ -30,7 +30,7 @@ const contexts = {}; const pages = {}; const counters = { api: 0, drive: 0 };
 const contextDriveCounts = new WeakMap(); const identityDriveBaseline = new Map();
 const methods = new Map([
   ['/v1/auth/google/start', ['POST']], ['/v1/session', ['GET', 'DELETE']],
-  ['/v1/auth/google/identity', ['GET', 'DELETE']], ['/v1/auth/google/drive/start', ['POST']],
+  ['/v1/login', ['GET', 'DELETE']], ['/v1/login/renew', ['POST']], ['/v1/auth/google/authorization', ['GET', 'DELETE']], ['/v1/auth/google/drive/start', ['POST']],
   ['/v1/session/renew', ['POST']], ['/v1/auth/drive-token', ['POST']],
   ['/v1/drive-connection', ['DELETE']],
 ]);
@@ -70,13 +70,15 @@ async function routeRequest(route) {
   if (url.origin === api) {
     if (!apiAllowed(request)) { violation = true; return route.abort(); }
     counters.api++;
-    if (smoke && (smokeRenewal || smokeDrive)) {
+    if (smoke && (smokeRenewal || smokeDrive || smokeDisconnectFailure)) {
       const headers = { 'access-control-allow-origin': web, 'access-control-allow-credentials': 'true',
-        'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'x-lal-csrf', 'cache-control': 'no-store' };
+        'access-control-allow-methods': 'GET, POST, DELETE', 'access-control-allow-headers': 'x-lal-csrf,x-lal-attempt', 'cache-control': 'no-store' };
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      if (url.pathname === '/v1/login' && request.method() === 'GET') return route.fulfill({ status: 200, headers, json: { connectionId: 'synthetic-gate', signInAttemptId: '6f05cd15-3c0e-4b22-b126-25c8f15f1ab7', csrfToken: 'synthetic-login-csrf', expiresAt: 2000000000, absoluteExpiresAt: 2000000000 } });
       if (smokeDrive && url.pathname === '/v1/auth/drive-token') return route.fulfill({ status: 200, headers, json: { accessToken: 'synthetic-drive-token', expiresIn: 3600, scopes: ['openid', 'https://www.googleapis.com/auth/drive.appdata'] } });
-      const valid = smokeDrive || (await request.headerValue('cookie') ?? '').split(';').some(part => part.trim() === `__Host-lal_session=${syntheticSession}`);
+      const valid = smokeDrive || smokeDisconnectFailure || (await request.headerValue('cookie') ?? '').split(';').some(part => part.trim() === `__Host-lal_session=${syntheticSession}`);
       if (!valid) return route.fulfill({ status: 401, headers, json: { error: 'unauthorized' } });
+      if (smokeDisconnectFailure && url.pathname === '/v1/drive-connection' && request.method() === 'DELETE') return route.fulfill({ status: 503, headers, json: { error: 'unavailable' } });
       if (url.pathname === '/v1/session/renew' && request.method() === 'POST') {
         check(await request.headerValue('x-lal-csrf') === 'synthetic-csrf-old');
         syntheticSession = 'synthetic-new';
@@ -184,7 +186,7 @@ async function snapshot(page) {
   });
 }
 async function dataPage(page) { await page.bringToFront(); await page.goto(`${web}/#/dados`); await expect(page.getByRole('heading', { name: 'Seus dados', exact: true })).toBeVisible(); }
-async function confirm(page) { await page.getByRole('alertdialog').getByRole('button', { name: 'Confirmar', exact: true }).click(); }
+async function confirm(page) { await page.getByRole('alertdialog').getByRole('button', { name: /^(Confirmar|Entrar com Google|Autorizar Drive)$/ }).click(); }
 async function prepare() {
   stage = 'PREPARE';
   check(!pages.A);
@@ -222,16 +224,17 @@ async function localControl(page) {
 async function pauseOrDisconnect(id, kind) {
   stage = 'LOCAL_DISCONNECT';
   const page = pages[id]; const before = await snapshot(page); await dataPage(page);
-  const label = { pause: 'Pausar neste dispositivo', logout: 'Encerrar sessão neste dispositivo', revoke: 'Desconectar em todos os dispositivos' }[kind];
+  const label = { pause: 'Pausar neste dispositivo', logout: 'Sair deste navegador', revoke: 'Desconectar Google Drive' }[kind];
   stage = 'DISCONNECT_CLICK'; await page.getByRole('button', { name: label, exact: true }).click();
   stage = 'DISCONNECT_CONFIRM'; if (kind !== 'pause') await confirm(page);
   // Completion of a local command is distinct from Google's revocation acknowledgement.
-  if (kind !== 'pause') await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled();
+  if (kind !== 'pause') await expect(page.getByRole('alertdialog')).toHaveCount(0);
   else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
   stage = 'DISCONNECT_STATE'; const control = await localControl(page); check(!control.enabled);
   if (control.revocationPending) {
     await expect(page.getByRole('heading', { name: 'Revogação no Google ainda não confirmada', exact: true })).toBeVisible();
-  } else await expect(page.getByText('Sincronização pausada neste dispositivo.', { exact: false })).toBeVisible();
+  } else if (kind === 'logout') await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
+  else await expect(page.getByText('Sincronização pausada neste dispositivo.', { exact: false })).toBeVisible();
   check(isDeepStrictEqual(before, await snapshot(page)));
   stage = 'DISCONNECT_RELOAD'; await page.reload();
   const restored = await localControl(page); check(!restored.enabled && restored.revocationPending === control.revocationPending);
@@ -281,6 +284,8 @@ async function renewSession(id) {
   // Keep the app coordinator from racing the deliberate cookie rotation.
   if (control.enabled) await pauseOrDisconnect(id, 'pause');
   await dataPage(page);
+  const loginCookie = (await context.cookies(api)).find(cookie => cookie.name === '__Host-lal_login');
+  check(Boolean(loginCookie));
   const oldCookie = (await context.cookies(api)).find(cookie => cookie.name === '__Host-lal_session');
   const validCookie = cookie => cookie?.secure && cookie.httpOnly && cookie.sameSite === 'Lax' &&
     cookie.path === '/' && cookie.domain === 'api.livroalivro.app.br';
@@ -309,8 +314,8 @@ async function renewSession(id) {
   const probe = await browser.newContext({ serviceWorkers: 'block', locale: 'pt-BR', acceptDownloads: false });
   try {
     await probe.route('**/*', routeRequest);
-    // Copy only this disposable test cookie, never the Google login cookies or a storageState.
-    await probe.addCookies([oldCookie]);
+    // Copy only these disposable app cookies. Including LOGIN proves SESSION rotation, not missing login. Never copy Google cookies.
+    await probe.addCookies([oldCookie, loginCookie]);
     const oldPage = await probe.newPage(); await dataPage(oldPage);
     const rejected = await oldPage.evaluate(async origin => {
       const response = await fetch(`${origin}/v1/session`, { credentials: 'include', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' });
@@ -410,20 +415,26 @@ async function command(line) {
   if (name === 'signin') {
     await dataPage(page);
     identityDriveBaseline.set(id, contextDriveCounts.get(contexts[id]) ?? 0);
-    await page.getByRole('button', { name: 'Entrar com Google', exact: true }).click(); await confirm(page); return;
+    await page.getByRole('button', { name: 'Entrar com Google', exact: true }).first().click(); await confirm(page); return;
   }
-  if (name === 'identity') {
+  if (name === 'identity' || name === 'login') {
     // Human has returned from Google. Merely checking identity must never start Drive.
     check(identityDriveBaseline.has(id));
     const beforeDrive = identityDriveBaseline.get(id);
     await dataPage(page);
+    const invitation = page.getByRole('alertdialog');
+    if (await invitation.count()) await invitation.getByRole('button', { name: 'Agora não' }).click();
     await expect(page.getByRole('button', { name: 'Autorizar Google Drive', exact: true })).toBeVisible();
     check(!(await localControl(page)).enabled && (contextDriveCounts.get(contexts[id]) ?? 0) === beforeDrive);
     const status = await page.evaluate(async api => (await fetch(api + '/v1/session', { credentials: 'include', cache: 'no-store' })).status, api);
     check(status === 401 && (contextDriveCounts.get(contexts[id]) ?? 0) === beforeDrive);
-    emit('IDENTITY_ONLY_NO_DRIVE_SESSION'); return;
+    await page.reload(); await dataPage(page);
+    const loginValid = await page.evaluate(async origin => (await fetch(origin + '/v1/login', { credentials: 'include', cache: 'no-store' })).status === 200, api);
+    check(loginValid && !(await localControl(page)).enabled && (contextDriveCounts.get(contexts[id]) ?? 0) === beforeDrive);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    emit('LOGIN_PERSISTENT_WITHOUT_DRIVE'); return;
   }
-  if (name === 'authorize') { await page.getByRole('button', { name: 'Autorizar Google Drive', exact: true }).click(); await confirm(page); return; }
+  if (name === 'authorize') { if (!await page.getByRole('alertdialog').count()) await page.getByRole('button', { name: 'Autorizar Google Drive', exact: true }).click(); await confirm(page); return; }
   if (name === 'synced') { await expect(page.getByText('Cópia confirmada no Google Drive.', { exact: false })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 }); emit('DRIVE_CONFIRMED'); return; }
   if (name === 'remote') { await expect(page.getByRole('heading', { name: 'Escolher uma versão', exact: true })).toBeVisible(); const buttons = page.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await buttons.count() === 1); await buttons.click(); await confirm(page); return; }
   if (['pause', 'logout', 'revoke'].includes(name)) return pauseOrDisconnect(id, name);
@@ -450,7 +461,7 @@ try {
   if (distArg < 0) execFileSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist], { cwd: root, env: { ...process.env, VITE_DRIVE_ENABLED: 'true', VITE_LOCAL_MODE: 'false' }, stdio: 'ignore' });
   browser = await chromium.launch({ headless: smoke, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   if (smoke) {
-    await prepare(); await offlineCrud('A'); check(counters.api === 0 && counters.drive === 0 && !violation);
+    await prepare(); await offlineCrud('A'); check(counters.drive === 0 && !violation);
     // Expose the disconnect controls with synthetic local state; API remains unreachable.
     await pages.A.evaluate(async () => {
       const db = await new Promise((resolve, reject) => { const request = indexedDB.open('livro-a-livro'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('IDB')); });
@@ -462,11 +473,13 @@ try {
         });
       } finally { db.close(); }
     });
+    smokeDisconnectFailure = true;
     await pages.A.reload(); await dataPage(pages.A); await pauseOrDisconnect('A', 'revoke');
+    smokeDisconnectFailure = false;
     check((await localControl(pages.A)).revocationPending && counters.api > 0 && counters.drive === 0 && !violation);
     smokeRenewal = true;
     try {
-      await contexts.B.addCookies([{ name: '__Host-lal_session', value: 'synthetic-old', url: api, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+      await contexts.B.addCookies([{ name: '__Host-lal_login', value: 'synthetic-login', url: api, secure: true, httpOnly: true, sameSite: 'Lax' }, { name: '__Host-lal_session', value: 'synthetic-old', url: api, secure: true, httpOnly: true, sameSite: 'Lax' }]);
       await renewSession('B');
     } finally { smokeRenewal = false; }
     smokeDrive = true;

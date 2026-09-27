@@ -30,13 +30,14 @@ async function setup() {
   const name = crypto.randomUUID(); const repository = await openLibraryRepository({ name, channelFactory: null, focusTarget: null });
   const media = await openCoverMediaRepository({ name });
   const store = await openSyncStore({ name }); const snapshots: SyncSnapshot[] = [];
-  const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), startSignIn: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), identity: vi.fn(async () => ({ connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'identity-csrf' })), startDrive: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), cancelIdentity: vi.fn(async () => {}), disconnect: vi.fn(async () => false) };
+  let signInAttemptId = crypto.randomUUID();
+  const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), startSignIn: vi.fn(async (id: string) => { signInAttemptId = id as `${string}-${string}-${string}-${string}-${string}`; return 'https://accounts.google.com/o/oauth2/v2/auth'; }), login: vi.fn(async () => ({ connectionId: binding.connectionId, signInAttemptId, expiresAt: Date.now() / 1000 + 30 * 86400, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'login-csrf' })), startDrive: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), cancelAuthorization: vi.fn(async () => {}), logout: vi.fn(async () => {}), disconnect: vi.fn(async () => false) };
   const drive: DriveClient = { list: vi.fn(async () => snapshots.map(file)), download: vi.fn(async head => snapshots.find(item => item.snapshotId === head.header.snapshotId)!), upload: vi.fn(async value => { snapshots.push(value); }) };
   const options = { repository, media, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
   const coordinator = createSyncCoordinator(options);
   close.push(() => { coordinator.close(); repository.close(); media.close(); store.close(); });
   await store.write({ ...defaultSyncRecord, enabled: true });
-  return { ...options, options, coordinator, snapshots, remote: drive };
+  return { ...options, name, options, coordinator, snapshots, remote: drive };
 }
 
 describe('private snapshot protocol', () => {
@@ -56,6 +57,148 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it('restores login without enabling Drive, preserves dismissal on reload and offers a new login again', async () => {
+    const s = await setup(); await s.store.update({ enabled: false });
+    await s.coordinator.refreshLogin();
+    expect(s.coordinator.getSnapshot().login?.status).toBe('signed-in');
+    expect(s.remote.list).not.toHaveBeenCalled(); expect((await s.store.read()).enabled).toBe(false);
+    await s.coordinator.dismissDrivePrompt();
+    const other = createSyncCoordinator(s.options); close.push(() => other.close());
+    await other.refreshLogin(); expect(other.getSnapshot().drivePromptDismissed).toBe(true);
+    await other.connect(); await other.runNow();
+    expect(other.getSnapshot().drivePromptDismissed).toBe(false);
+    expect((await s.store.read()).enabled).toBe(false); expect(s.auth.startDrive).not.toHaveBeenCalled();
+  });
+  it('shares the Drive invitation dismissal across two open stores without granting permission', async () => {
+    const s = await setup(); await s.store.update({ enabled: false });
+    vi.mocked(s.auth.session).mockRejectedValue(new SyncError('reconnect'));
+    const store = await openSyncStore({ name: s.name });
+    const other = createSyncCoordinator({ ...s.options, store }); close.push(() => { other.close(); store.close(); });
+    await s.coordinator.refreshLogin(); await other.refreshLogin();
+    expect(other.getSnapshot()).toMatchObject({ status: 'authorize-drive', login: { status: 'signed-in', driveAuthorized: false } });
+    await s.coordinator.dismissDrivePrompt();
+    await vi.waitFor(() => expect(other.getSnapshot().drivePromptDismissed).toBe(true));
+    expect((await store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('treats Drive status network failure as unknown, not missing permission', async () => {
+    const s = await setup(); await s.store.update({ enabled: false });
+    vi.mocked(s.auth.session).mockRejectedValue(new SyncError('retry'));
+    await s.coordinator.refreshLogin();
+    expect(s.coordinator.getSnapshot()).toMatchObject({ status: 'error', login: { status: 'signed-in' } });
+    expect(s.coordinator.getSnapshot().login?.driveAuthorized).toBeUndefined();
+    expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it.each(['same', 'newer'] as const)('cancels a completed sign-in after attempt expiry while preserving a %s login correctly', async kind => {
+    const s = await setup(); const attemptId = crypto.randomUUID();
+    const loginId = kind === 'same' ? attemptId : crypto.randomUUID(); let alive = true;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith('/authorization') || !alive) return new Response('{}', { status: 401 });
+      if (path === '/v1/login' && init?.method === 'DELETE') { alive = false; return new Response(null, { status: 204 }); }
+      if (path === '/v1/login') return new Response(JSON.stringify({ connectionId: binding.connectionId, signInAttemptId: loginId, expiresAt: Date.now() / 1000 + 30 * 86400, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'captured-login' }));
+      return new Response('{}', { status: 401 });
+    });
+    const other = createSyncCoordinator({ ...s.options, auth: createAuthClient(fetcher) }); close.push(() => other.close());
+    await s.store.update({ enabled: false, authorization: { id: attemptId, stage: 'signin' } });
+    if (kind === 'same') await other.cancelAuthorization();
+    else await expect(other.cancelAuthorization()).rejects.toMatchObject({ code: 'cancelled' });
+    expect(alive).toBe(kind === 'newer');
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(kind === 'same' ? 1 : 0);
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: null });
+  });
+  it('does not publish a completed sign-in after another coordinator logs out during the final control read', async () => {
+    const s = await setup(); await s.coordinator.connect();
+    const read = s.store.read.bind(s.store); const compare = s.store.compareAuthorization.bind(s.store);
+    let completed = false;
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void; const waiting = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(s.store, 'compareAuthorization').mockImplementation(async (intent, patch) => {
+      const result = await compare(intent, patch);
+      if (intent.stage === 'signin' && patch.authorization === null) completed = true;
+      return result;
+    });
+    vi.spyOn(s.store, 'read').mockImplementation(async () => {
+      if (completed) { completed = false; entered(); await waiting; }
+      return read();
+    });
+    const other = createSyncCoordinator({ ...s.options, store: { ...s.store, read } }); close.push(() => other.close());
+    const inspection = s.coordinator.runNow(); await ready;
+    vi.mocked(s.auth.logout).mockImplementationOnce(async () => { vi.mocked(s.auth.login).mockRejectedValue(new SyncError('reconnect')); });
+    await other.disconnect(false);
+    release(); await inspection;
+    expect(s.coordinator.getSnapshot().login?.status).not.toBe('signed-in');
+    expect(s.coordinator.getSnapshot().status).not.toBe('authorize-drive');
+    expect(await read()).toMatchObject({ enabled: false, authorization: null });
+    expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('reports login renewal rejection as unavailable and does not start anonymous OAuth', async () => {
+    const s = await setup(); await s.store.update({ enabled: false });
+    const fetcher = vi.fn<typeof fetch>(async input => String(input).endsWith('/renew')
+      ? new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+      : new Response(JSON.stringify({ connectionId: binding.connectionId, signInAttemptId: crypto.randomUUID(), expiresAt: Date.now() / 1000 + 60, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'login-only' })));
+    const auth = createAuthClient(fetcher);
+    const other = createSyncCoordinator({ ...s.options, auth }); close.push(() => other.close());
+    await other.refreshLogin();
+    expect(other.getSnapshot().login?.status).toBe('unavailable');
+    await expect(auth.startSignIn(crypto.randomUUID())).rejects.toMatchObject({ code: 'invalid' });
+    expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/auth/google/start'))).toBe(false);
+    expect((await s.store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('does not accept a login callback belonging to another sign-in attempt', async () => {
+    const s = await setup(); await s.coordinator.connect();
+    const login = await s.auth.login();
+    vi.mocked(s.auth.login).mockResolvedValue({ ...login, signInAttemptId: crypto.randomUUID() });
+    await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('authorization-error');
+    expect((await s.store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('keeps an honest unavailable login offline without modifying saved sync permission', async () => {
+    const s = await setup(); await s.store.update({ enabled: false }); s.options.online = () => false;
+    await s.coordinator.refreshLogin();
+    expect(s.coordinator.getSnapshot().login?.status).toBe('unavailable');
+    expect(s.auth.login).not.toHaveBeenCalled(); expect((await s.store.read()).enabled).toBe(false);
+  });
+  it('reports unconfirmed logout on network failure and never resumes automatically on reload', async () => {
+    const s = await setup(); await s.coordinator.refreshLogin();
+    vi.mocked(s.auth.logout).mockRejectedValue(new SyncError('retry'));
+    await expect(s.coordinator.disconnect(false)).rejects.toMatchObject({ code: 'retry' });
+    expect(s.coordinator.getSnapshot()).toMatchObject({ logoutUnconfirmed: true, login: { status: 'signed-in' } });
+    const other = createSyncCoordinator(s.options); close.push(() => other.close());
+    await other.refreshLogin(); await other.runNow();
+    expect(other.getSnapshot().login?.status).toBe('signed-in'); expect((await s.store.read()).enabled).toBe(false);
+    expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('retains the known login for an explicit logout retry after a failed focus check', async () => {
+    const s = await setup(); await s.coordinator.refreshLogin(); const id = s.coordinator.getSnapshot().login?.signInAttemptId;
+    vi.mocked(s.auth.login).mockRejectedValueOnce(new SyncError('retry'));
+    await s.coordinator.refreshLogin();
+    expect(s.coordinator.getSnapshot().login).toMatchObject({ status: 'unavailable', signInAttemptId: id });
+    await s.coordinator.disconnect(false); expect(s.auth.logout).toHaveBeenCalledWith(id);
+  });
+  it('fences a login read started in another tab while logout was pending', async () => {
+    const s = await setup(); await s.coordinator.refreshLogin();
+    const login = await s.auth.login();
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    let finish!: () => void; const waiting = new Promise<void>(resolve => { finish = resolve; });
+    vi.mocked(s.auth.logout).mockImplementationOnce(async () => { entered(); await waiting; });
+    const logout = s.coordinator.disconnect(false); await ready;
+    let readEntered!: () => void; const readReady = new Promise<void>(resolve => { readEntered = resolve; });
+    let release!: () => void; const delayed = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(s.auth.login).mockImplementationOnce(async () => { readEntered(); await delayed; return login; });
+    const other = createSyncCoordinator(s.options); close.push(() => other.close());
+    const checking = other.refreshLogin(); await readReady;
+    finish(); await logout; release(); await checking;
+    expect(other.getSnapshot().login?.status).not.toBe('signed-in');
+    expect(s.coordinator.getSnapshot().login?.status).toBe('signed-out');
+    expect((await s.store.read()).enabled).toBe(false);
+  });
+  it('cancels the captured pending sign-in during logout even without a login session', async () => {
+    const s = await setup(); await s.coordinator.connect(); const intent = (await s.store.read()).authorization;
+    await s.coordinator.disconnect(false);
+    expect(s.auth.cancelAuthorization).toHaveBeenCalledWith(intent?.id);
+    expect(s.coordinator.getSnapshot().login?.status).toBe('signed-out');
+  });
+
   it.each(['connect', 'authorizeDrive'] as const)('preserves a new draft when %s finishes its request late', async action => {
     const s = await setup();
     if (action === 'authorizeDrive') await s.coordinator.connect();
@@ -83,17 +226,17 @@ describe('durable local first coordinator', () => {
     let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
     let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; });
     vi.mocked(s.auth.startSignIn).mockImplementationOnce(async () => { entered(); await wait; return 'https://accounts.google.com/o/oauth2/v2/auth'; });
-    vi.mocked(s.auth.identity).mockResolvedValue({ connectionId: 'older-account', expiresAt: Date.now() / 1000 + 600, csrfToken: 'older-csrf' });
+    vi.mocked(s.auth.login).mockResolvedValue({ connectionId: 'older-account', signInAttemptId: crypto.randomUUID(), absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, expiresAt: Date.now() / 1000 + 600, csrfToken: 'older-csrf' });
     const connecting = s.coordinator.connect(); const outcome = connecting.catch(() => {}); await ready;
     const other = createSyncCoordinator(s.options); close.push(() => other.close());
     const intent = (await s.store.read()).authorization;
-    expect(intent?.stage).toBe('identity-starting');
+    expect(intent?.stage).toBe('signin-starting');
     await other.runNow(); await other.runNow();
     expect(other.getSnapshot().status).toBe('identifying');
     expect((await s.store.read()).authorization).toEqual(intent);
-    expect(s.auth.identity).not.toHaveBeenCalled(); expect(s.auth.session).not.toHaveBeenCalled();
+    expect(s.auth.login).not.toHaveBeenCalled(); expect(s.auth.session).not.toHaveBeenCalled();
     expect(s.remote.list).not.toHaveBeenCalled(); expect(s.navigate).not.toHaveBeenCalled();
-    await expect(other.authorizeDrive()).rejects.toMatchObject({ code: 'reconnect' });
+    await expect(other.authorizeDrive()).rejects.toMatchObject({ code: 'cancelled' });
     await other.pause(); release(); await outcome;
     expect(await s.store.read()).toMatchObject({ enabled: false, authorization: null });
     expect(s.navigate).not.toHaveBeenCalled();
@@ -101,7 +244,7 @@ describe('durable local first coordinator', () => {
   it('returns to an explicit second step without reusing an existing Drive session', async () => {
     const s = await setup();
     await s.coordinator.connect();
-    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: { stage: 'identity' } });
+    expect(await s.store.read()).toMatchObject({ enabled: false, authorization: { stage: 'signin' } });
     await s.coordinator.runNow();
     expect(s.coordinator.getSnapshot().status).toBe('authorize-drive');
     expect(s.auth.session).not.toHaveBeenCalled(); expect(s.remote.list).not.toHaveBeenCalled();
@@ -125,11 +268,11 @@ describe('durable local first coordinator', () => {
     const s = await setup(); await s.coordinator.connect(); await s.coordinator.authorizeDrive();
     const intent = (await s.store.read()).authorization;
     vi.mocked(s.auth.session).mockRejectedValue(new SyncError('reconnect'));
-    vi.mocked(s.auth.identity).mockClear();
+    vi.mocked(s.auth.login).mockClear();
     const other = createSyncCoordinator(s.options); close.push(() => other.close());
     await other.runNow(); await other.runNow();
     expect((await s.store.read()).authorization).toEqual(intent);
-    expect(s.auth.identity).not.toHaveBeenCalled(); expect(s.navigate).toHaveBeenCalledTimes(2);
+    expect(s.auth.login).toHaveBeenCalledTimes(2); expect(s.navigate).toHaveBeenCalledTimes(2);
     expect(other.getSnapshot()).toMatchObject({ status: 'authorization-waiting', authorizationStage: 'drive' });
     await other.retryDriveAuthorization();
     expect((await s.store.read()).authorization?.id).not.toBe(intent?.id);
@@ -139,12 +282,12 @@ describe('durable local first coordinator', () => {
   it('preserves the incomplete intent offline and does not label temporary network failure as expiry', async () => {
     const s = await setup(); await s.coordinator.connect();
     s.options.online = () => false; await s.coordinator.runNow();
-    expect(s.coordinator.getSnapshot().status).toBe('authorization-waiting'); expect(s.auth.identity).not.toHaveBeenCalled();
-    s.options.online = () => true; vi.mocked(s.auth.identity).mockRejectedValue(new SyncError('retry'));
+    expect(s.coordinator.getSnapshot().status).toBe('authorization-waiting'); expect(s.auth.login).not.toHaveBeenCalled();
+    s.options.online = () => true; vi.mocked(s.auth.login).mockRejectedValue(new SyncError('retry'));
     await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('authorization-waiting');
     expect((await s.store.read()).enabled).toBe(false); expect(s.remote.list).not.toHaveBeenCalled();
   });
-  it.each(['startSignIn', 'identity', 'startDrive', 'session'] as const)('fences late %s after pause, logout or a new attempt in another tab', async boundary => {
+  it.each(['startSignIn', 'login', 'startDrive', 'session'] as const)('fences late %s after pause, logout or a new attempt in another tab', async boundary => {
     for (const action of ['pause', 'logout', 'new-attempt'] as const) {
       const s = await setup();
       if (boundary !== 'startSignIn') await s.coordinator.connect();
@@ -153,7 +296,7 @@ describe('durable local first coordinator', () => {
       let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
       let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; });
       if (boundary === 'startSignIn' || boundary === 'startDrive') vi.mocked(s.auth[boundary]).mockImplementationOnce(async () => { entered(); await wait; return 'https://accounts.google.com/o/oauth2/v2/auth'; });
-      else if (boundary === 'identity') vi.mocked(s.auth.identity).mockImplementationOnce(async () => { entered(); await wait; return { connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'synthetic' }; });
+      else if (boundary === 'login') vi.mocked(s.auth.login).mockImplementationOnce(async () => { entered(); await wait; return { connectionId: binding.connectionId, signInAttemptId: crypto.randomUUID(), absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, expiresAt: Date.now() / 1000 + 600, csrfToken: 'synthetic' }; });
       else vi.mocked(s.auth.session).mockImplementationOnce(async () => { entered(); await wait; return binding; });
       const operation = boundary === 'startSignIn' ? s.coordinator.connect() : boundary === 'startDrive' ? s.coordinator.authorizeDrive() : s.coordinator.runNow();
       const outcome = operation.catch(() => {}); await ready;
@@ -171,7 +314,7 @@ describe('durable local first coordinator', () => {
     expect(syncStateSchema.parse(previous)).toEqual({ ...previous, authorization: null });
   });
   it('cancels the first authorization into the optional disconnected state', async () => {
-    const s = await setup(); await s.coordinator.connect(); await s.coordinator.cancelAuthorization();
+    const s = await setup(); await s.coordinator.connect(); vi.mocked(s.auth.login).mockRejectedValue(new SyncError('reconnect')); await s.coordinator.cancelAuthorization();
     expect(s.coordinator.getSnapshot().status).toBe('disabled');
     expect(await s.store.read()).toMatchObject({ enabled: false, authorization: null });
   });
@@ -201,7 +344,7 @@ describe('durable local first coordinator', () => {
     await expect(reopened.connect()).rejects.toMatchObject({ code: 'retry' });
     expect(await s.store.read()).toMatchObject({ enabled: false, revocationPending: true });
     await reopened.connect();
-    expect(await s.store.read()).toMatchObject({ enabled: false, revocationPending: true, authorization: { stage: 'identity' } });
+    expect(await s.store.read()).toMatchObject({ enabled: false, revocationPending: true, authorization: { stage: 'signin' } });
     expect(s.navigate).toHaveBeenCalledWith('https://accounts.google.com/o/oauth2/v2/auth');
   });
 
@@ -219,7 +362,7 @@ describe('durable local first coordinator', () => {
     if (action === 'pause') await s.coordinator.pause(); else await s.coordinator.disconnect(false);
     release(); await run;
     expect((await s.store.read()).enabled).toBe(false);
-    expect(s.coordinator.getSnapshot().status).toBe('paused');
+    expect(s.coordinator.getSnapshot().status).toBe(action === 'disconnect' ? 'disabled' : 'paused');
   });
 
   it('fences a paused cycle even after another tab resumes the shared control', async () => {
@@ -444,18 +587,46 @@ describe('network boundary', () => {
     await expect(transport('https://evil.example')).rejects.toThrow('LocalHostRefused');
     vi.stubEnv('DEV', false); expect(() => localTransport()).toThrow('LocalModeUnavailable');
   });
-  it('uses separate identity CSRF and never discovers a newer identity while cancelling', async () => {
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(String(url).endsWith('/identity') ?
-      { connectionId: binding.connectionId, expiresAt: Date.now() / 1000 + 600, csrfToken: 'identity-only' } :
-      { authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth' })));
-    const auth = createAuthClient(fetcher); await auth.cancelIdentity(); expect(fetcher).not.toHaveBeenCalled();
-    await auth.startSignIn(); const identity = await auth.identity(); await auth.startDrive(identity.csrfToken); await auth.cancelIdentity();
-    const calls = fetcher.mock.calls as unknown as [string, RequestInit][];
-    expect(calls.map(([url]) => new URL(url).pathname)).toEqual(['/v1/auth/google/start', '/v1/auth/google/identity', '/v1/auth/google/drive/start', '/v1/auth/google/identity']);
-    expect(calls.every(([, init]) => init.body === undefined && init.credentials === 'include')).toBe(true);
-    expect(calls[2][1].headers).toMatchObject({ 'x-lal-csrf': 'identity-only' });
-    expect(calls[3][1]).toMatchObject({ method: 'DELETE', headers: { 'x-lal-csrf': 'identity-only' } });
-    await auth.cancelIdentity(); expect(fetcher).toHaveBeenCalledTimes(4);
+  it('uses login CSRF for Drive and cancels only the captured authorization attempt', async () => {
+    const id = crypto.randomUUID(); let current = id;
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      const path = new URL(String(url)).pathname;
+      return new Response(JSON.stringify(path === '/v1/login' ? { connectionId: binding.connectionId, signInAttemptId: id, expiresAt: Date.now() / 1000 + 30 * 86400, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'login-only' } : path.endsWith('/authorization') ? { attemptId: current, purpose: 'drive', expiresAt: Date.now() / 1000 + 600, csrfToken: 'cancel-only' } : { authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth' }));
+    });
+    const auth = createAuthClient(fetcher);
+    await auth.login(); await auth.startDrive(id); await auth.cancelAuthorization(id);
+    const calls = fetcher.mock.calls;
+    expect(calls.every(([, init]) => init?.body === undefined && init?.credentials === 'include')).toBe(true);
+    expect(calls[1][1]?.headers).toMatchObject({ 'x-lal-csrf': 'login-only', 'x-lal-attempt': id });
+    expect(calls[3][1]).toMatchObject({ method: 'DELETE', headers: { 'x-lal-csrf': 'cancel-only', 'x-lal-attempt': id } });
+    current = crypto.randomUUID(); await auth.cancelAuthorization(id);
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1);
+  });
+  it.each([403, 500])('does not confirm logout when DELETE login returns %s, and never renews to log out', async status => {
+    const id = crypto.randomUUID();
+    const fetcher = vi.fn<typeof fetch>(async (_, init) => new Response(JSON.stringify(init?.method === 'DELETE' ? { error: 'forbidden' } : { connectionId: binding.connectionId, signInAttemptId: id, expiresAt: Date.now() / 1000 + 60, absoluteExpiresAt: Date.now() / 1000 + 86400, csrfToken: 'synthetic' }), { status: init?.method === 'DELETE' ? status : 200 }));
+    await expect(createAuthClient(fetcher).logout(id)).rejects.toBeInstanceOf(SyncError);
+    expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(['/v1/login', '/v1/login']);
+  });
+  it('refuses to delete a new login discovered by a delayed logout', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ connectionId: binding.connectionId, signInAttemptId: crypto.randomUUID(), expiresAt: Date.now() / 1000 + 86400, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'new-login' })));
+    await expect(createAuthClient(fetcher).logout(crypto.randomUUID())).rejects.toMatchObject({ code: 'cancelled' });
+    expect(fetcher).toHaveBeenCalledOnce(); expect(fetcher.mock.calls[0][1]?.method).toBe('GET');
+  });
+  it('checks the local attempt again after login discovery and before a sign-in start POST', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response('{}', { status: 401 }));
+    const guard = vi.fn(async () => { throw new SyncError('cancelled'); });
+    await expect(createAuthClient(fetcher).startSignIn(crypto.randomUUID(), guard)).rejects.toMatchObject({ code: 'cancelled' });
+    expect(fetcher).toHaveBeenCalledOnce(); expect(fetcher.mock.calls[0][1]?.method).toBe('GET');
+  });
+  it('renews login before expiry with login-only CSRF and preserves the absolute deadline', async () => {
+    const id = crypto.randomUUID(); const now = Date.now() / 1000; const absolute = now + 180 * 86400;
+    const fetcher = vi.fn<typeof fetch>(async url => new Response(JSON.stringify(String(url).endsWith('/renew') ? { expiresAt: now + 30 * 86400, absoluteExpiresAt: absolute, csrfToken: 'renewed' } : { connectionId: binding.connectionId, signInAttemptId: id, expiresAt: now + 60, absoluteExpiresAt: absolute, csrfToken: 'login-only' })));
+    const login = await createAuthClient(fetcher).login();
+    expect(login.signInAttemptId).toBe(id); expect(login.absoluteExpiresAt).toBe(absolute);
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'POST', headers: { 'x-lal-csrf': 'login-only' } });
+    expect(fetcher.mock.calls.every(([url]) => !String(url).includes('/session'))).toBe(true);
   });
   it('sends only empty control requests to auth, retaining access token in memory', async () => {
     const fetcher = vi.fn<typeof fetch>(async url => new Response(JSON.stringify(String(url).endsWith('/v1/session') ?

@@ -47,6 +47,9 @@ export function DataPage() {
     <p>Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador pode remover sua estante. Instalar o aplicativo não cria backup.</p>
     <BackupPanel />
     <h2>Google Drive opcional</h2>
+    {state.login?.status === 'signed-in' && <p>Você entrou com Google. O login, sozinho, não envia sua biblioteca.</p>}
+    {state.login?.status === 'unavailable' && <p>Não foi possível verificar o login. Sua biblioteca continua disponível. <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>Verificar conexão</button></p>}
+    {state.logoutUnconfirmed && <p role="alert">A saída não foi confirmada pelo serviço. Os envios estão pausados neste dispositivo. Tente sair novamente quando houver conexão.</p>}
     <p>Ao conectar, seus livros, notas e avaliações vão diretamente para uma pasta privada do aplicativo no seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.</p>
     <p>O envio acontece enquanto o aplicativo está aberto e retoma quando você voltar com conexão. Com o navegador fechado, alterações podem continuar aguardando envio.</p>
     {!available ? <p>O conector está em preparação e será liberado após a configuração do serviço de autorização.</p> : <>
@@ -56,19 +59,19 @@ export function DataPage() {
         <p>Os envios estão pausados neste dispositivo. Remova o Livro a Livro nas <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">conexões da sua Conta Google</a>. Se a reconexão continuar bloqueada, <a href="mailto:ewanderson.flaviano@gmail.com">fale com o suporte</a> para verificar a autorização. Seus livros locais continuam aqui.</p>
       </div>}
       {initializing ? <p>Preparando conexão…</p> : !coordinator && <p>Não foi possível iniciar o conector. A biblioteca local continua disponível.</p>}
-      {state.status === 'authorize-drive' && <p>A identificação é temporária e não cria um perfil no aplicativo. Autorizar o Drive é opcional: seus livros, notas, avaliações e capas serão enviados diretamente ao seu Google Drive. O Google pode apresentar sua própria seleção de permissões.</p>}
+      {state.status === 'authorize-drive' && <p>Sua sessão Google é opcional e permanece neste navegador. Autorizar o Drive é opcional: seus livros, notas, avaliações e capas serão enviados diretamente ao seu Google Drive. O Google pode apresentar sua própria seleção de permissões.</p>}
       <div className="form-actions">
         {(state.revocationPending || ['disabled', 'reconnect', 'identifying', 'authorization-expired', 'authorization-waiting', 'authorization-error'].includes(state.status)) && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('connect')}>Entrar com Google</button>}
         {state.authorizationStage === 'drive' && ['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy || controls.busy || controls.blocked} onClick={() => controls.open('retry-authorize')}>Tentar autorizar Google Drive novamente</button>}
         {['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.retryAuthorization())}>Verificar autorização novamente</button>}
         {state.status === 'authorize-drive' && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('authorize')}>Autorizar Google Drive</button>}
-        {authorizationStates.includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.cancelAuthorization())}>Cancelar autorização</button>}
-        {!state.revocationPending && state.status === 'paused' && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Retomar sincronização</button>}
+        {authorizationStates.includes(state.status) && state.status !== 'authorize-drive' && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.cancelAuthorization())}>Cancelar autorização</button>}
+        {!state.revocationPending && state.status === 'paused' && state.login?.driveAuthorized !== false && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Retomar sincronização</button>}
         {!authorizationStates.includes(state.status) && !['disabled', 'paused'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.pause())}>Pausar neste dispositivo</button>}
         {!state.revocationPending && ['error', 'quota', 'pending', 'offline'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Tentar novamente</button>}
-        {!authorizationStates.includes(state.status) && state.status !== 'disabled' && <>
-          <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('logout')}>Encerrar sessão neste dispositivo</button>
-          <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('revoke')}>Desconectar em todos os dispositivos</button>
+        {(state.login?.status === 'signed-in' || state.logoutUnconfirmed || !authorizationStates.includes(state.status) && state.status !== 'disabled') && <>
+          <button className="button button-secondary" disabled={busy || !state.login?.signInAttemptId && state.login?.status === 'unavailable'} onClick={() => setConfirm('logout')}>Sair deste navegador</button>
+          {state.login?.driveAuthorized === true && <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('revoke')}>Desconectar Google Drive</button>}
           <button className="button button-secondary" disabled={busy} onClick={() => void act(async () => { const copy = await coordinator!.recoveryCopy(); if (copy) downloadLibrary(copy.library, 'recuperacao'); else setError('Ainda não há uma cópia anterior preservada neste dispositivo.'); })}>Baixar cópia anterior preservada</button>
         </>}
       </div>
@@ -95,12 +98,12 @@ export function DataPage() {
       <p>Quando houver métricas, elas registram apenas contadores de eventos pré-definidos — nunca livros, notas, conta ou identificadores.</p>
     </fieldset> : <p>Preparando as escolhas de privacidade neste dispositivo…</p>}
     {error && <p role="alert">{error}</p>}
-    {confirm && <ConfirmDialog title={confirm === 'revoke' ? 'Desconectar em todos os dispositivos?' : confirm === 'logout' ? 'Encerrar esta sessão?' : 'Confirmar a versão escolhida?'}
+    {confirm && <ConfirmDialog title={confirm === 'revoke' ? 'Desconectar Google Drive?' : confirm === 'logout' ? 'Sair deste navegador?' : 'Confirmar a versão escolhida?'}
       confirmLabel="Confirmar" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => void act(() => {
         if (confirm === 'revoke' || confirm === 'logout') return coordinator!.disconnect(confirm === 'revoke');
         return coordinator!.resolve(confirm);
       })}>
-      <p>{confirm === 'revoke' || confirm === 'logout' ? 'Sua biblioteca neste dispositivo e os arquivos já existentes no Drive serão preservados. Tokens já emitidos podem continuar válidos até a revogação ou expiração.' : 'A escolha substitui a versão ativa completa. Confira e baixe as duas cópias antes de continuar. Uma cópia local anterior ficará preservada para download.'}</p>
+      <p>{confirm === 'revoke' || confirm === 'logout' ? confirm === 'logout' ? 'O login e a sincronização deste navegador serão encerrados. Sua biblioteca local e os arquivos do Drive serão preservados. Outros dispositivos continuam conectados.' : 'O acesso ao Google Drive será revogado em todos os dispositivos. Seu login neste aplicativo será mantido. A biblioteca local e os arquivos existentes serão preservados; tokens já emitidos podem continuar válidos até a revogação ou expiração.' : 'A escolha substitui a versão ativa completa. Confira e baixe as duas cópias antes de continuar. Uma cópia local anterior ficará preservada para download.'}</p>
     </ConfirmDialog>}
   </section>;
 }

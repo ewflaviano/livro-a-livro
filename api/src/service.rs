@@ -46,82 +46,170 @@ pub fn opaque(value: &str) -> bool {
 }
 
 impl Auth {
+    pub async fn login(&self, raw: &str) -> Result<Login, Error> {
+        if !opaque(raw) {
+            return Err(Error::Unauthorized);
+        }
+        self.store.login(&digest(raw), self.clock.now()).await
+    }
+    pub fn login_csrf(&self, raw: &str) -> Result<String, Error> {
+        self.crypto.mac("login-csrf", raw)
+    }
+    pub fn authorization_csrf(&self, raw: &str) -> Result<String, Error> {
+        self.crypto.mac("oauth-cancel-csrf", raw)
+    }
+    pub async fn authorize_login(&self, raw: &str, csrf: &str) -> Result<Login, Error> {
+        let login = self.login(raw).await?;
+        if !equal(&self.login_csrf(raw)?, csrf) {
+            return Err(Error::Forbidden);
+        }
+        Ok(login)
+    }
+    pub async fn authorization(&self, raw: &str) -> Result<AuthorizationAttempt, Error> {
+        if !opaque(raw) {
+            return Err(Error::Unauthorized);
+        }
+        let attempt = self
+            .store
+            .authorization(&digest(raw), self.clock.now())
+            .await?;
+        if attempt.phase == AttemptPhase::Cancelled {
+            return Err(Error::Unauthorized);
+        }
+        Ok(attempt)
+    }
+    pub async fn cancel_authorization(&self, raw: &str, csrf: &str, id: &str) -> Result<(), Error> {
+        if !opaque(raw) || !attempt_id(id) {
+            return Err(Error::InvalidRequest);
+        }
+        if !equal(&self.authorization_csrf(raw)?, csrf) {
+            return Err(Error::Forbidden);
+        }
+        self.store
+            .cancel_authorization(&digest(raw), id, self.clock.now())
+            .await
+    }
+    pub async fn renew_login(&self, raw: &str, csrf: &str) -> Result<Login, Error> {
+        self.authorize_login(raw, csrf).await?;
+        let login = self
+            .store
+            .renew_login(&digest(raw), self.clock.now())
+            .await?;
+        if !login.valid(self.clock.now()) {
+            return Err(Error::Unauthorized);
+        }
+        Ok(login)
+    }
+    pub async fn logout_login(
+        &self,
+        raw: &str,
+        csrf: &str,
+        session: Option<&str>,
+        oauth: Option<&str>,
+    ) -> Result<(), Error> {
+        self.authorize_login(raw, csrf).await?;
+        let login = digest(raw);
+        let session = session.map(digest);
+        let oauth = oauth.map(digest);
+        self.store
+            .logout_login(
+                PreviousAuthorization {
+                    login_hash: Some(&login),
+                    session_hash: session.as_deref(),
+                    attempt_hash: oauth.as_deref(),
+                },
+                self.clock.now(),
+            )
+            .await
+    }
     pub async fn start_sign_in(
         &self,
-        identity: Option<&str>,
+        id: &str,
+        login: Option<&str>,
         session: Option<&str>,
+        oauth: Option<&str>,
+        csrf: Option<&str>,
     ) -> Result<(String, String), Error> {
-        if let Some(raw) = identity.filter(|v| opaque(v)) {
-            self.store.delete_identity(&digest(raw)).await?;
+        if !attempt_id(id) {
+            return Err(Error::InvalidRequest);
         }
-        if let Some(raw) = session.filter(|v| opaque(v)) {
-            self.store.logout(&digest(raw)).await?;
+        if let Some(raw) = login {
+            match self.login(raw).await {
+                Ok(_) => {
+                    self.authorize_login(raw, csrf.ok_or(Error::Forbidden)?)
+                        .await?;
+                }
+                Err(Error::Unauthorized) => {}
+                Err(error) => return Err(error),
+            }
         }
-        self.start_oauth(OAuthPurpose::SignIn, None).await
+        let (state, cookie, transaction, url) =
+            self.new_oauth(id, OAuthPurpose::SignIn, self.clock.now() + OAUTH_TTL)?;
+        let login = login.map(digest);
+        let session = session.map(digest);
+        let oauth = oauth.map(digest);
+        self.store
+            .begin_sign_in(
+                &digest(&state),
+                transaction,
+                PreviousAuthorization {
+                    login_hash: login.as_deref(),
+                    session_hash: session.as_deref(),
+                    attempt_hash: oauth.as_deref(),
+                },
+                self.clock.now(),
+            )
+            .await?;
+        Ok((url, cookie))
     }
-    async fn start_oauth(
+    fn new_oauth(
         &self,
+        id: &str,
         purpose: OAuthPurpose,
-        identity: Option<&PendingIdentity>,
-    ) -> Result<(String, String), Error> {
+        expires_at: u64,
+    ) -> Result<(String, String, Transaction, String), Error> {
         let state = random()?;
         let cookie = random()?;
         let nonce = random()?;
         let verifier = random()?;
-        let now = self.clock.now();
         let url = self
             .config
             .authorization_url(&state, &nonce, &digest(&verifier), &purpose);
         let transaction = Transaction {
+            version: 2,
+            attempt_id: id.into(),
             purpose,
             cookie_hash: digest(&cookie),
             nonce: Secret(nonce),
             verifier: Secret(verifier),
-            expires_at: identity.map_or(now + OAUTH_TTL, |i| (now + OAUTH_TTL).min(i.expires_at)),
+            expires_at,
         };
-        if let Some(expected) = identity {
-            self.store
-                .put_drive_oauth(&digest(&state), transaction, expected, now)
-                .await?;
-        } else {
-            self.store.put_oauth(&digest(&state), transaction).await?;
-        }
-        Ok((url, cookie))
+        Ok((state, cookie, transaction, url))
     }
-    pub async fn identity(&self, raw: &str) -> Result<PendingIdentity, Error> {
-        if !opaque(raw) {
-            return Err(Error::Unauthorized);
-        }
-        self.store.identity(&digest(raw), self.clock.now()).await
-    }
-    pub fn identity_csrf(&self, raw: &str) -> Result<String, Error> {
-        self.crypto.mac("identity-csrf", raw)
-    }
-    pub async fn authorize_identity(
+    pub async fn start_drive(
         &self,
         raw: &str,
         csrf: &str,
-    ) -> Result<PendingIdentity, Error> {
-        let identity = self.identity(raw).await?;
-        if !equal(&self.identity_csrf(raw)?, csrf) {
-            return Err(Error::Forbidden);
+        id: &str,
+    ) -> Result<(String, String), Error> {
+        if !attempt_id(id) {
+            return Err(Error::InvalidRequest);
         }
-        Ok(identity)
-    }
-    pub async fn start_drive(&self, raw: &str, csrf: &str) -> Result<(String, String), Error> {
-        let identity = self.authorize_identity(raw, csrf).await?;
-        self.start_oauth(
-            OAuthPurpose::Drive {
-                identity_hash: digest(raw),
-                expected_connection: identity.connection_id.clone(),
-            },
-            Some(&identity),
-        )
-        .await
-    }
-    pub async fn cancel_identity(&self, raw: &str, csrf: &str) -> Result<(), Error> {
-        self.authorize_identity(raw, csrf).await?;
-        self.store.delete_identity(&digest(raw)).await
+        let login = self.authorize_login(raw, csrf).await?;
+        let purpose = OAuthPurpose::Drive {
+            identity_hash: digest(&random()?),
+            expected_connection: login.connection_id.clone(),
+            login_hash: digest(raw),
+            drive_epoch: login.drive_epoch.checked_add(1).ok_or(Error::Unavailable)?,
+        };
+        let expires = (self.clock.now() + OAUTH_TTL)
+            .min(login.expires_at)
+            .min(login.absolute_expires_at);
+        let (state, cookie, transaction, url) = self.new_oauth(id, purpose, expires)?;
+        self.store
+            .begin_drive(&digest(&state), transaction, &login, self.clock.now())
+            .await?;
+        Ok((url, cookie))
     }
     pub async fn callback(
         &self,
@@ -136,18 +224,37 @@ impl Auth {
             .store
             .take_oauth(&digest(state), &digest(cookie), self.clock.now())
             .await?;
+        let attempt = self.authorization(cookie).await?;
+        if transaction.version != 2
+            || attempt.phase != AttemptPhase::Pending
+            || attempt.attempt_id != transaction.attempt_id
+            || attempt.purpose != transaction.purpose
+        {
+            return Err(Error::IdentityExpired);
+        }
         let pending = match &transaction.purpose {
             OAuthPurpose::SignIn => None,
             OAuthPurpose::Drive {
                 identity_hash,
                 expected_connection,
+                login_hash,
+                drive_epoch,
             } => {
                 let identity = self
                     .store
                     .identity(identity_hash, self.clock.now())
                     .await
                     .map_err(identity_error)?;
-                if !equal(&identity.connection_id, expected_connection) {
+                let login = self.store.login(login_hash, self.clock.now()).await?;
+                if identity.connection_id != *expected_connection
+                    || identity.login_hash != *login_hash
+                    || identity.drive_epoch != *drive_epoch
+                    || identity.attempt_hash != digest(cookie)
+                    || identity.attempt_id != transaction.attempt_id
+                    || login.connection_id != *expected_connection
+                    || login.drive_epoch != *drive_epoch
+                    || login.drive_attempt_id.as_deref() != Some(&transaction.attempt_id)
+                {
                     return Err(Error::IdentityExpired);
                 }
                 Some((identity, self.store.grant_epoch().await?))
@@ -172,25 +279,39 @@ impl Auth {
         match (&transaction.purpose, pending) {
             (OAuthPurpose::SignIn, None) => {
                 let raw_cookie = random()?;
-                let expires_at = self.clock.now() + OAUTH_TTL;
-                self.store
-                    .put_identity(
+                let login = self
+                    .store
+                    .finish_sign_in(
+                        &digest(cookie),
+                        &transaction.attempt_id,
                         &digest(&raw_cookie),
-                        PendingIdentity {
-                            connection_id: connection,
-                            expires_at,
-                        },
+                        &connection,
+                        self.clock.now(),
                     )
                     .await?;
-                Ok(CallbackResult::Identity {
+                if self.clock.now() >= transaction.expires_at {
+                    self.store
+                        .logout_login(
+                            PreviousAuthorization {
+                                login_hash: Some(&digest(&raw_cookie)),
+                                session_hash: None,
+                                attempt_hash: None,
+                            },
+                            self.clock.now(),
+                        )
+                        .await?;
+                    return Err(Error::IdentityExpired);
+                }
+                Ok(CallbackResult::Login {
                     raw_cookie,
-                    expires_at,
+                    expires_at: login.expires_at,
                 })
             }
             (
                 OAuthPurpose::Drive {
                     identity_hash,
                     expected_connection,
+                    ..
                 },
                 Some((identity, epoch)),
             ) => {
@@ -203,9 +324,6 @@ impl Auth {
                 let refresh = grant.refresh_token.ok_or(Error::IncompleteConsent)?;
                 if refresh.0.is_empty() {
                     return Err(Error::IncompleteConsent);
-                }
-                if self.clock.now() >= identity.expires_at {
-                    return Err(Error::IdentityExpired);
                 }
                 let encrypted = self
                     .crypto
@@ -226,7 +344,9 @@ impl Auth {
                     )
                     .await?;
                 if self.clock.now() >= identity.expires_at {
-                    self.store.logout(&digest(&raw_session)).await?;
+                    self.store
+                        .logout(&digest(&raw_session), self.clock.now())
+                        .await?;
                     return Err(Error::IdentityExpired);
                 }
                 Ok(CallbackResult::Drive { raw_session })
@@ -234,7 +354,17 @@ impl Auth {
             _ => Err(Error::Unauthorized),
         }
     }
-
+    pub async fn bound_session(&self, raw: &str, login_raw: &str) -> Result<Session, Error> {
+        let login = self.login(login_raw).await?;
+        let session = self.session(raw).await?;
+        if session.login_hash != digest(login_raw)
+            || session.connection_id != login.connection_id
+            || session.login_drive_epoch != login.drive_epoch
+        {
+            return Err(Error::Unauthorized);
+        }
+        Ok(session)
+    }
     pub async fn session(&self, raw: &str) -> Result<Session, Error> {
         if !opaque(raw) {
             return Err(Error::Unauthorized);
@@ -373,4 +503,15 @@ fn identity_error(error: Error) -> Error {
     } else {
         error
     }
+}
+
+pub fn attempt_id(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(i, c)| {
+            if [8, 13, 18, 23].contains(&i) {
+                c == b'-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        })
 }
