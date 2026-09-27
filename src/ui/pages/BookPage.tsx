@@ -111,7 +111,7 @@ function BookDetail({ id }: { id: string }) {
             <div><dt>Minha avaliação</dt><dd>{book.rating ? <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span> : 'Sem avaliação'}</dd></div>
           </dl>
           <h2>Sua nota privada</h2><p className="private-note">{book.note || 'Nenhuma anotação ainda.'}</p>
-          <p className="field-help">Só aparece neste dispositivo. Não entra na imagem compartilhada.</p>
+          <p className="field-help">Sua nota é privada. Se você conectar o Drive, ela acompanha sua biblioteca. Não entra na imagem compartilhada.</p>
           {error && <p role="alert" className="form-error">{error}</p>}
           <div className="form-actions"><button className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(''); }}>Editar livro</button>
             <button className="button button-secondary" onClick={() => setRemoving(true)}>Remover livro</button></div>

@@ -531,6 +531,8 @@ Domínios de site e API permanecem separados. `api.*` é útil desde o início p
 
 ## 14. API Rust pequena; biblioteca sincronizada diretamente com Google Drive
 
+**Frontend da issue #11:** implementado em `src/sync/` e na tela Dados; [protocolo, limites e simulador local](drive-sync.md). Habilitação de produção permanece gated pela configuração/implantação da issue #13. O simulador é exclusivamente de desenvolvimento, com dados descartáveis e sem serviços externos.
+
 **Implementação parcial da issue #10:** `api/` contém o núcleo Axum, provider Google, portas de armazenamento/criptografia e entrada Lambda reutilizável. [Contrato e gates de produção](auth-api.md). O runtime não possui store em memória: persistência DynamoDB/KMS e composição executável são parte da issue #13. Sem publicação ou conexão do frontend nesta etapa.
 
 ### 14.1 Fronteira definitiva e comparação com o BioRotina

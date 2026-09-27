@@ -40,6 +40,7 @@ export function AppShell() {
         <Link className="button button-primary" to="/adicionar" state={{ returnTo }}
           onClick={() => positions.set(returnTo, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>
       </header>
+      {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
       <div className="app-layout">
         <aside className="sidebar">
           <nav aria-label="Navegação principal">
