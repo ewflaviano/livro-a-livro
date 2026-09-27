@@ -654,7 +654,6 @@ describe('network boundary', () => {
 });
 
 describe('V2 receiving, complete comparison and explicit union', () => {
-  const choices = (preview: import('./merge').ResolutionPreview): import('./merge').ResolutionChoices => ({ books: preview.books.map(group => ({ bookId: group.id, sourceId: group.variants.find(variant => variant.sourceId === 'local')?.sourceId ?? group.variants[0].sourceId })), preferencesSourceId: 'local', includeUnbased: true });
   async function divergent() {
     const s = await setup(); await s.repository.commit({ kind: 'put', book: book('Local sintético') }, await s.repository.readRevision());
     s.snapshots.push(await snap(data([book('Remoto sintético')]))); await s.coordinator.runNow(); return s;
@@ -703,9 +702,9 @@ describe('V2 receiving, complete comparison and explicit union', () => {
   });
   it('prepares all three heads without holding a lease and commits every consumed head into one union', async () => {
     const s=await divergent(); s.snapshots.push(await snap(data([book('Terceira')]))); await s.coordinator.runNow();
-    const before=await s.repository.readBackupSnapshot(); const preview=await s.coordinator.prepareResolution(); expect(preview.sources).toHaveLength(3);
+    const before=await s.repository.readBackupSnapshot(); const preview=await s.coordinator.prepareResolution(); expect(preview).toEqual({id:expect.any(String),totalCount:3,addedCount:2,divergentCount:0,remoteOnlyDivergentCount:0,remoteSourceCount:2});
     expect(await s.store.lease('other-reader')).toBe(true); await s.store.lease('other-reader',true);
-    const result=await s.coordinator.confirmResolution(preview.id,choices(preview)); expect(result).toBe('synchronized');
+    const result=await s.coordinator.confirmResolution(preview.id); expect(result).toBe('synchronized');
     expect((await s.repository.readAll()).books).toHaveLength(3); expect(s.snapshots.at(-1)?.resolvedSnapshotIds).toHaveLength(2); expect(s.snapshots.at(-1)?.protocolVersion).toBe(2);
     expect((await s.store.recovery())?.library.books).toEqual(before.books);
   });
@@ -719,20 +718,20 @@ describe('V2 receiving, complete comparison and explicit union', () => {
     if(mutation==='pending') await s.store.acknowledge(await s.repository.readRevision());
     if(mutation==='operation') await s.store.saveOperation({binding,version:await s.repository.readRevision(),snapshot:await snap(data([book('Operação')]))});
     const before=await s.repository.readBackupSnapshot(); const operation=await s.store.operation();
-    await expect(s.coordinator.confirmResolution(preview.id,choices(preview))).rejects.toBeDefined();
+    await expect(s.coordinator.confirmResolution(preview.id)).rejects.toBeDefined();
     expect(await s.repository.readBackupSnapshot()).toEqual(before); expect(await s.store.operation()).toEqual(operation); expect(s.remote.upload).not.toHaveBeenCalled();
   });
   it('cancel or unmount during asynchronous commit preparation leaves no operation, replacement or recovery', async () => {
     const s=await divergent(); const preview=await s.coordinator.prepareResolution(); const before=await s.repository.readBackupSnapshot();
     const original=s.resolutionRepository.commit.bind(s.resolutionRepository);
     vi.spyOn(s.resolutionRepository,'commit').mockImplementation(async (...args)=>{ s.coordinator.cancelResolution(preview.id); return original(...args); });
-    await expect(s.coordinator.confirmResolution(preview.id,choices(preview))).rejects.toMatchObject({code:'cancelled'});
+    await expect(s.coordinator.confirmResolution(preview.id)).rejects.toMatchObject({code:'cancelled'});
     expect(await s.repository.readBackupSnapshot()).toEqual(before); expect(await s.store.operation()).toBeNull(); expect(await s.store.recovery()).toBeNull();
   });
   it('preserves a committed resolution and its original operation across lost PUT and later local edits', async () => {
     const s=await divergent(); const preview=await s.coordinator.prepareResolution();
     vi.mocked(s.remote.upload).mockImplementationOnce(async snapshot=>{s.snapshots.push(snapshot);throw new SyncError('retry');});
-    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    expect(await s.coordinator.confirmResolution(preview.id)).toBe('localCommittedPending');
     const operation=await s.store.operation(); expect(operation?.snapshot.protocolVersion).toBe(2);
     const newer=await s.repository.commit({kind:'put',book:book('Depois do commit')},await s.repository.readRevision());
     await s.coordinator.runNow(); expect(await s.store.operation()).toBeNull(); expect(await s.store.pending()).toEqual(newer); expect(s.remote.upload).toHaveBeenCalledOnce();
@@ -740,7 +739,7 @@ describe('V2 receiving, complete comparison and explicit union', () => {
   it('does not let a delayed upload result overwrite pause after local resolution committed', async () => {
     const s=await divergent(); const preview=await s.coordinator.prepareResolution();
     vi.mocked(s.remote.upload).mockImplementationOnce(async snapshot=>{s.snapshots.push(snapshot);await s.coordinator.pause();});
-    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    expect(await s.coordinator.confirmResolution(preview.id)).toBe('localCommittedPending');
     expect(s.coordinator.getSnapshot().status).toBe('paused'); expect(await s.store.operation()).not.toBeNull(); expect((await s.repository.readAll()).books).toHaveLength(2);
   });
   it('retries a persisted V1 operation with exactly the same object and bytes, then acknowledges only its old revision', async () => {
@@ -769,7 +768,7 @@ describe('V2 receiving, complete comparison and explicit union', () => {
     vi.mocked(s.remote.download).mockImplementationOnce(async (...args)=>{reached();await wait;return original(...args);});
     const first=s.coordinator.prepareResolution(); const firstResult=first.catch(error=>error); await ready;
     const second=await s.coordinator.prepareResolution(); release(); expect(await firstResult).toMatchObject({code:'conflict'});
-    expect(await s.coordinator.confirmResolution(second.id,choices(second))).toBe('synchronized');
+    expect(await s.coordinator.confirmResolution(second.id)).toBe('synchronized');
   });
   it('a receive committed before pause never publishes a late synced state', async () => {
     const s=await setup(); s.snapshots.push(await snap(data([book('Recebido antes pausa')])));
@@ -799,16 +798,16 @@ describe('V2 receiving, complete comparison and explicit union', () => {
     const legacy=await snap(await s.coordinator.localCopy()); await s.store.update({binding}); await s.store.saveOperation({binding,version:await s.repository.readRevision(),snapshot:legacy});
     s.snapshots.push(await snap(data([book('Ponta posterior')]))); await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('conflict'); expect((await s.store.operation())?.snapshot).toEqual(legacy);
     const preview=await s.coordinator.prepareResolution(); vi.mocked(s.remote.upload).mockRejectedValueOnce(new SyncError('retry'));
-    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    expect(await s.coordinator.confirmResolution(preview.id)).toBe('localCommittedPending');
     const replacement=await s.store.operation(); expect(replacement?.snapshot.protocolVersion).toBe(2); expect(replacement?.snapshot.operationId).not.toBe(legacy.operationId); expect(replacement?.snapshot.resolvedSnapshotIds).toEqual([s.snapshots[0].snapshotId]);
     expect((await s.store.recovery())?.library.books).toEqual(legacy.library.books);
   });
 
   it('a fresh preview can be prepared after an earlier one became stale from a local edit', async () => {
     const s=await divergent(); const first=await s.coordinator.prepareResolution(); await s.repository.updatePreferences({mode:'list'});
-    await expect(s.coordinator.confirmResolution(first.id,choices(first))).rejects.toMatchObject({code:'conflict'});
-    const next=await s.coordinator.prepareResolution(); expect(next.id).not.toBe(first.id); expect(next.sources.find(source=>source.id==='local')?.preferences.mode).toBe('list');
-    expect(await s.coordinator.confirmResolution(next.id,choices(next))).toBe('synchronized');
+    await expect(s.coordinator.confirmResolution(first.id)).rejects.toMatchObject({code:'conflict'});
+    const next=await s.coordinator.prepareResolution(); expect(next.id).not.toBe(first.id);
+    expect(await s.coordinator.confirmResolution(next.id)).toBe('synchronized'); expect((await s.repository.readBackupSnapshot()).preferences.mode).toBe('list');
   });
 
 });

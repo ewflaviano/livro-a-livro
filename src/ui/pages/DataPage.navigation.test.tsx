@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { SyncView } from '../../sync/contracts';
-import { prepareMerge } from '../../sync/merge';
+import { prepareMerge, unionPolicy } from '../../sync/merge';
 import type { LibraryExport } from '../../backup/schema';
 import { AppShell } from '../components/AppShell';
 import { DataPage } from './DataPage';
@@ -22,9 +22,9 @@ const originalScroll = HTMLElement.prototype.scrollIntoView;
 beforeEach(() => {
   sync.state = { status: 'conflict', localCount: 0, remote: [] };
   HTMLElement.prototype.scrollIntoView = scroll;
-  sync.coordinator.prepareResolution.mockResolvedValue(prepareMerge({ id: 'preview', sources: [
+  sync.coordinator.prepareResolution.mockResolvedValue(unionPolicy(prepareMerge({ id: 'preview', sources: [
     { id: 'local', library: data }, { id: 'remote', library: { ...data, preferences: { ...data.preferences, mode: 'list' } } },
-  ] }).preview);
+  ] })).preview);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); HTMLElement.prototype.scrollIntoView = originalScroll; });
 function mount(path: string, state?: object) {
@@ -44,16 +44,12 @@ it.each(['/dados', '/estante'])('reveals conflict choices from %s and on repeate
   expect(sync.coordinator.prepareResolution).not.toHaveBeenCalled();
   expect(sync.coordinator.resolve).not.toHaveBeenCalled();
 });
-it('the header reveals the existing preview without resetting its choices', async () => {
+it('keeps a single union confirmation open during repeated detail navigation', async () => {
   mount('/dados');
   await userEvent.click(screen.getByRole('button', { name: 'Juntar bibliotecas' }));
-  const remoteChoice = screen.getByRole('radio', { name: /^Preferências de / });
-  await userEvent.click(remoteChoice);
   await userEvent.click(screen.getByRole('link', { name: 'Versões diferentes — ver detalhes' }));
-  const target = screen.getByRole('heading', { name: 'Prévia da união' });
-  await waitFor(() => expect(document.activeElement).toBe(target));
-  expect(scroll.mock.contexts.at(-1)).toBe(target);
-  expect((remoteChoice as HTMLInputElement).checked).toBe(true);
+  expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+  expect(screen.getByRole('heading', { name: 'Juntar bibliotecas?' })).toBeTruthy();
   expect(sync.coordinator.prepareResolution).toHaveBeenCalledOnce();
   expect(sync.coordinator.cancelResolution).not.toHaveBeenCalled();
   expect(sync.coordinator.confirmResolution).not.toHaveBeenCalled();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBook } from '../domain/book';
 import type { LibraryExport } from '../backup/schema';
 import { encodedCover } from '../../test/fixtures/covers/helpers';
-import { materializeMerge, prepareMerge, type PreparedMerge, type ResolutionChoices } from './merge';
+import { materializeMerge, materializeUnion, unionPolicy, prepareMerge, type PreparedMerge, type ResolutionChoices } from './merge';
 const now = '2026-09-26T12:00:00Z';
 const uuid = (n: number) => `abcdef00-0000-4000-8000-${n.toString().padStart(12, '0')}`;
 const book = (n: number, note = '') => createBook({ title: `Livro ${n}`, authors: ['Autoria sintética'], status: 'read', note }, { id: uuid(n), now, shelfYear: 2026 });
@@ -93,5 +93,48 @@ describe('explicit library union', () => {
     const decision = choices(plan); expect(() => materializeMerge(plan, decision)).toThrow();
     expect(a.books).toHaveLength(51); decision.books[0].sourceId = null;
     expect(materializeMerge(plan, decision).coverMedia).toHaveLength(100);
+  });
+});
+
+describe('fixed union policy', () => {
+  it('uses the entire local book and local preferences, with every head and deterministic remote-only priority', () => {
+    const local = library([{ ...book(1, 'Nota local'), id: uuid(1).toUpperCase(), title: 'Título local' }]);
+    local.preferences = { shelfYear: 2025, mode: 'list', filter: 'reading' };
+    const sources = [
+      { id: 'local', library: local },
+      { id: uuid(30), library: library([book(1, 'Remota'), book(2, 'Terceira'), { ...book(4), title: 'Mesmo título', isbn: '9788535914849' }]) },
+      { id: uuid(10).toUpperCase(), library: library([book(2, 'Primeira'), { ...book(3), title: 'Mesmo título', isbn: '9788535914849' }]) },
+      { id: uuid(20), library: library([book(2, 'Segunda'), book(5)]) },
+    ];
+    let previous: LibraryExport | undefined;
+    for (const ordered of [sources, [...sources].reverse(), [sources[2], sources[0], sources[3], sources[1]]]) {
+      const plan = prepareMerge({ id: 'p', sources: ordered }); const result = materializeUnion(plan);
+      expect(result.books).toHaveLength(5); expect(result.books[0]).toEqual(local.books[0]);
+      expect(result.books[1]).toEqual(book(2, 'Primeira')); expect(result.preferences).toEqual(local.preferences);
+      expect(unionPolicy(plan).preview).toEqual({ id: 'p', totalCount: 5, addedCount: 4, divergentCount: 2, remoteOnlyDivergentCount: 1, remoteSourceCount: 3 });
+      if (previous) expect(result).toEqual(previous); previous = result;
+    }
+  });
+  it('includes surviving books even after deletion, but never restores a book absent in all heads and local', () => {
+    const plan = prepareMerge({ id: 'p', base: library([book(1), book(2), book(3)]), sources: [
+      { id: 'local', library: library([book(1)]) }, { id: uuid(10), library: library([book(2)]) },
+    ] });
+    expect(materializeUnion(plan).books.map(row => row.id)).toEqual([uuid(1), uuid(2)]);
+    expect(unionPolicy(plan).preview).toMatchObject({ addedCount: 1, divergentCount: 0 });
+  });
+  it('retains exact cover provenance for local precedence and colliding media across three heads', () => {
+    const local = library([book(1)]), a = library([book(1), book(2)]), b = library([book(2), book(3)]), c = library([book(4)]);
+    for (const data of [local, a, b, c]) { data.coverMedia = [encodedCover()]; data.books.forEach(row => { row.cover = { provider: 'local', mediaId: encodedCover().id }; }); }
+    a.coverMedia = [{ ...encodedCover('image/jpeg'), id: encodedCover().id }];
+    b.coverMedia[0].createdAt = '2026-09-27T12:00:00Z';
+    let id = 100;
+    const plan = prepareMerge({ id: 'p', sources: [{ id: uuid(20), library: b }, { id: uuid(30), library: c }, { id: 'local', library: local }, { id: uuid(10), library: a }], newId: () => uuid(id++) });
+    const result = materializeUnion(plan);
+    const selected = result.books.map(row => result.coverMedia.find(media => row.cover?.provider === 'local' && media.id === row.cover.mediaId));
+    expect(selected.map(media => media?.bytes)).toEqual([local, a, b, c].map(data => data.coverMedia[0].bytes));
+    expect(selected[2]?.createdAt).toBe(b.coverMedia[0].createdAt);
+    expect(selected[0]?.id).toBe(selected[3]?.id); expect(result.coverMedia).toHaveLength(3);
+    expect(unionPolicy(plan).preview).toMatchObject({ divergentCount: 2, remoteOnlyDivergentCount: 1 });
+    expect(materializeUnion(plan)).toEqual(result);
   });
 });

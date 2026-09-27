@@ -1,12 +1,12 @@
 # Issue 13 — recebimento inicial e união explícita de bibliotecas
 
-Contrato de arquitetura da fatia iniciada após integrar a PR 56. Referência BioRotina: f6fb6667f0c025a5bc02e7e6bde2960721a041aa, merge por união de IDs e preferência de registro inteiro. Leitura: docs/paridade-biorotina.md; src/sync/{contracts,snapshot,drive-client,coordinator,outbox}; backup/schema/media; repositório IndexedDB e portas.
+Contrato de arquitetura da fatia iniciada após integrar a PR 56, atualizado pela decisão de simplificação de 27 set 2026 após a PR 60. Referência BioRotina: f6fb6667f0c025a5bc02e7e6bde2960721a041aa, merge por união de IDs e preferência de registro inteiro. Leitura: docs/paridade-biorotina.md; src/sync/{contracts,snapshot,drive-client,coordinator,outbox}; backup/schema/media; repositório IndexedDB e portas.
 
 ## 1. Escopo e invariantes
 
 - IndexedDB continua autoridade local. Login, biblioteca local, backup e edição offline conservam seus contratos. API/OAuth/IAM não mudam nesta fatia.
 - Sincronização já automática durante execução: preservar debounce, foco/online/polling e limites atuais. Novo comportamento: receber primeira biblioteca em instalação vazia segura e oferecer união explícita nas divergências.
-- Opções: Juntar bibliotecas; Manter esta biblioteca; Usar uma versão do Drive; Decidir depois. Nenhuma união ocorre sem prévia e confirmação. Escolha é de livro inteiro, nunca campo a campo, relógio vencedor ou CRDT.
+- Opções: Juntar bibliotecas; Manter esta biblioteca; Usar uma versão do Drive; Decidir depois. Nenhuma união ocorre sem prévia e confirmação. Juntar conserva o livro local inteiro quando o mesmo ID difere; não usa merge de campos, relógio vencedor ou CRDT.
 - Toda resolução cobre local e TODAS as pontas remotas conhecidas. Não esconder uma terceira ponta ao mostrar apenas duas versões. Conta/geração diferente exige confirmação explícita antes de enviar dados locais.
 - Biblioteca, capas, hashes, prévias e escolhas ficam no navegador/Drive. Sem payloads em API, logs, URLs de navegação, métricas, fixtures pessoais ou PR.
 
@@ -54,11 +54,11 @@ Portas conceituais mínimas (nomes ajustáveis, responsabilidades não):
 
 `prepareResolution() -> ResolutionPreview`
 
-`confirmResolution(previewId, choices) -> localCommittedPending | synchronized`
+`confirmResolution(previewId) -> localCommittedPending | synchronized`
 
 `cancelResolution(previewId) -> void`
 
-Prévia em memória, de uso único, com UUID técnico: revisão local, authRevision, binding completo, fingerprint de headers de TODAS as pontas (não apenas IDs), conteúdo local/remoto validado, base confiável opcional, decisões requeridas e orçamento projetado. Nenhum token/CSRF/URL. Não persisti-la como autoridade; reload refaz a prévia. UUID não entra no Drive como metadado de usuário.
+Prévia em memória, de uso único, com UUID técnico: revisão local, authRevision, binding completo, fingerprint de headers de TODAS as pontas (não apenas IDs), conteúdo local/remoto validado, base confiável opcional, política fixa de união e orçamento projetado. Nenhum token/CSRF/URL. Não persisti-la como autoridade; reload refaz a prévia. UUID não entra no Drive como metadado de usuário.
 
 Fontes são `local` e cada snapshotId de ponta validada. Não fundir/remover registros por título/ISBN; UUID minúsculo é chave de comparação. Mesmo título com IDs distintos continua sendo dois livros, explicado na prévia. Não alterar timestamps de um livro só porque foi escolhido na resolução.
 
@@ -66,24 +66,21 @@ Preparação de união tem orçamento agregado próprio: no máximo 100 MiB de J
 
 ### Livros
 
-1. Mesmo ID e conteúdo inteiro equivalente entre todas as versões presentes: uma cópia. A igualdade inclui a capa efetiva; mesmo Book com mesmo mediaId mas bytes distintos NÃO é equivalente.
-2. IDs distintos/adições únicas: incluir na proposta de união. Usuário vê contagem e pode excluir antes de confirmar; não gravar ainda.
-3. Mesmo ID com versões divergentes: escolha explícita de UMA versão inteira entre fontes presentes, ou excluir o livro. Mostrar título, autores, estado, datas/ano, páginas, nota/avaliação e capa com distinções legíveis. Nenhum default silencioso por data. A ação opcional “Preferir todos deste dispositivo/desta versão” é escolha explícita em lote, com contagem e confirmação; não obrigar milhares de cliques.
-4. Sem base confiável, ausência não prova exclusão. Exibir grupo “Presentes só em algumas versões” com aviso que juntar pode trazer de volta algo removido. Exigir confirmação explícita de incluir esse grupo (ou escolhas de exclusão) antes de habilitar confirmação. Não rotular como “novos” com certeza.
-5. Base confiável: somente snapshot exato da base local, mesma conta/geração, baixado/validado, ancestral de TODAS as pontas. Não procurar uma base comum arbitrária nem inventar ancestral a partir de tempos. Se um ID existia nessa base e está ausente em alguma fonte, destacar “Removido em uma versão” e exigir manter uma versão presente ou excluir. Mesmo quando a outra versão está igual à base, a resolução da união continua explícita; a base serve para explicar, não para apagar automaticamente.
-6. Ausente em todas as fontes continua ausente. IDs que não existiam na base e aparecem numa fonte são adições únicas; podem entrar na proposta. Caso livro criado/apagado sem deixar histórico conhecido, não há promessa de detectar essa intenção.
-
-Escolhas devem citar somente IDs/fontes presentes na prévia. Validar lista exata de decisões requeridas, sem entradas duplicadas/desconhecidas. Nunca aceitar LibraryExport arbitrário vindo da UI como resultado confiável: o serviço produz o resultado a partir de escolhas restritas.
+1. Juntar inclui todos os IDs presentes no local e em TODAS as pontas remotas. Cada ID comparado em minúsculas gera um único registro; IDs diferentes permanecem distintos mesmo com título/ISBN iguais.
+2. Quando o ID existe localmente, conservar o registro local inteiro, inclusive nota, avaliação e capa. Conteúdo equivalente gera uma cópia; divergência não pede escolhas individuais.
+3. Sem versão local, conservar o livro inteiro da primeira ponta que contém o ID, na ordem canônica binária de UUID minúsculo já usada pelo serviço. Não usar data como critério nem chamar essa versão de mais recente. Se pontas remotas divergem entre si, o resumo explica essa regra.
+4. Um livro presente em qualquer fonte entra na união, inclusive se removido em outra versão. A confirmação explica que livros removidos podem reaparecer. Ausente em todas as fontes continua ausente. A base validada continua sendo evidência histórica, sem tombstones ou exclusão automática nesta política.
+5. O serviço calcula a seleção fixa internamente. A UI recebe somente resumo e devolve seu identificador; não recebe catálogo de livros nem envia escolhas/payload arbitrário.
 
 ### Preferências
 
-Tratar `{shelfYear, mode, filter}` como um conjunto portátil indivisível nesta fatia. Se todos iguais, conservar. Se divergentes, escolha explícita “Preferências deste dispositivo” ou de uma versão Drive, com prévia dos três valores. Não usar preferência de login, lastExport ou timestamp. Não introduzir merge por campo.
+Conservar sempre o conjunto portátil local `{shelfYear, mode, filter}`, inclusive valores padrão. Não há seleção de preferências ou merge por campo. Login, consentimentos e lastExport continuam fora desse conjunto.
 
 ### Capas e colisões
 
 Primeiro selecionar os livros, depois resolver a mídia de cada livro pela MESMA fonte escolhida. Referências Open Library continuam referências existentes; não baixar imagens externas para realizar união. Local media exige bytes/imagem/dimensões válidos antes da prévia.
 
-Se dois livros selecionados de fontes distintas usam mesmo mediaId e mídias diferentes, manter ambas: reservar novo UUID para uma mídia, reescrever somente referências dos livros daquela proveniência, conservar bytes e metadados. UUID novo deve evitar TODOS os IDs de mídia reservados nas fontes e já alocados na prévia, comparados em minúsculas; colisão gera outro UUID antes de congelar a proposta. UUIDs gerados uma vez na materialização da prévia e congelados até confirmação; novo retry de upload usa snapshot já persistido. Não sobrescrever mídia por ordem de iteração. Fonte/ordem canônica determina qual conserva o ID, sem valor semântico. Mídia idêntica significa todo o conteúdo canônico sem id: bytes+mimeType+width+height+createdAt, não somente bytes. Com mesmo ID pode ser compartilhada; não deduplicar IDs diferentes nesta fatia. Excluir órfãs após escolhas. Contagem/bytes pós-renomeação precisam passar 100 mídias/2MiB cada/12MiB total/50MiB backup/envelope sync. Se exceder, informar limite e permitir rever escolhas; sem truncamento ou remoção silenciosa.
+Se dois livros selecionados de fontes distintas usam mesmo mediaId e mídias diferentes, manter ambas: reservar novo UUID para uma mídia, reescrever somente referências dos livros daquela proveniência, conservar bytes e metadados. UUID novo deve evitar TODOS os IDs de mídia reservados nas fontes e já alocados na prévia, comparados em minúsculas; colisão gera outro UUID antes de congelar a proposta. UUIDs gerados uma vez na materialização da prévia e congelados até confirmação; novo retry de upload usa snapshot já persistido. Não sobrescrever mídia por ordem de iteração. Fonte/ordem canônica determina qual conserva o ID, sem valor semântico. Mídia idêntica significa todo o conteúdo canônico sem id: bytes+mimeType+width+height+createdAt, não somente bytes. Com mesmo ID pode ser compartilhada; não deduplicar IDs diferentes nesta fatia. Excluir órfãs após escolhas. Contagem/bytes pós-renomeação precisam passar 100 mídias/2MiB cada/12MiB total/50MiB backup/envelope sync. Se exceder, informar limite e manter backup e escolha de biblioteca inteira; sem truncamento ou remoção silenciosa.
 
 ## 5. Commit, recuperação e concorrência
 
@@ -135,7 +132,7 @@ interface SyncResolutionRepository {
 
 Preparação valida previamente library versus snapshot.library, hash/versão, blobs versus mídias e recuperação versus snapshot local capturado. A guarda síncrona efêmera `assertReady`, fornecida pelo coordenador e não pela UI, verifica cancelamento, coordenador encerrado, rascunho e aplicação de atualização PWA após o preparo, após a leitura da revisão antes do primeiro write e antes de finalizar a transação. Se falhar, aborta; não substitui os fences persistidos. Hash/decodificação ficam fora da transação; CAS da revisão (incluindo prefs) comprova que a recuperação ainda corresponde ao local. A transação revalida schemas/referências/orçamento e todos os fences antes dos writes. `receive` só aceita o mesmo binding ou a primeira vinculação segura; conta diferente exige `resolution` explícita. A porta devolve a revisão realmente gravada; notificações acontecem após commit pelo mecanismo existente. Serviço/coordenador revalida SESSION/head remoto antes de chamar a porta; a porta nunca faz rede e não alega transação distribuída.
 
-Handoff UI independente do adaptador: `ResolutionPreview` expõe id técnico, contagens, lista paginável de livros/variantes com `sourceId`, decisões de ausência/exclusão, opções de preferência e erro de orçamento. `ResolutionChoices` contém `books: {bookId: bookIdLower, sourceId: string | null}[]`, `preferencesSourceId` e `includeUnbased: boolean`; `null` significa excluir; grupos idênticos/adições conhecidas são propostos pelo serviço. Confirmação recebe somente previewId+choices. Labels/números são projeção, jamais base de autoridade. Serviço rejeita sourceId/bookId desconhecido, decisão faltante/duplicada ou prévia vencida; UI não monta snapshots nem blobs.
+Handoff UI independente do adaptador: `ResolutionPreview` expõe somente id técnico e contagens (`totalCount`, `addedCount`, `divergentCount`, `remoteOnlyDivergentCount`, `remoteSourceCount`). O plano validado, livros e mídia permanecem privados no serviço. `confirmResolution(previewId)` aplica a política fixa ao plano correspondente. Labels/números são projeção, jamais autoridade. Prévia vencida é rejeitada; UI não monta snapshots nem blobs.
 
 Manter local ou usar Drive também passa pelo mesmo commit de resolução, para consistência de recuperação/operação/conta. Se não houver alteração efetiva do conteúdo, pode conservar revisão; operação recebe a revisão efetiva retornada. A cópia de recuperação descreve o estado imediatamente anterior desta resolução, não a versão já modificada.
 
@@ -158,7 +155,7 @@ Definir instalação vazia segura: books=0, base=null, nenhuma operação/outbox
 
 ## 7. UX mínima
 
-Painel existente de conflito em Seus dados ganha Juntar bibliotecas; aviso global/Decidir depois continua. Prévia é uma tela/painel acessível, não uma pilha de modais com milhares de registros. Paginar/lazy render opções de livros; mostrar totais, decisões pendentes, preferências e orçamento, com botão confirmar desabilitado até decisões completas. Dados sensíveis são texto escapado, sem HTML recebido.
+Painel existente de conflito em Seus dados oferece Juntar bibliotecas, manter local e usar Drive; aviso global/Decidir depois continua. Juntar abre uma única confirmação acessível com total resultante, quantidade acrescentada e IDs divergentes. Explicar preferência pelo livro inteiro local, preservação das preferências locais e possível retorno de removidos. Divergência somente remota recebe explicação condicional da ordem das versões. Sem catálogo, radios por livro, checkbox adicional ou segunda confirmação. Ações: Cancelar / Juntar bibliotecas. Com múltiplas pontas, Usar Drive continua exigindo escolher uma versão inteira explicitamente.
 
 Oferecer exportar biblioteca local e cada versão Drive antes de substituir. Resolver/confirmação usa o ConfirmDialog e guard de edição/backup/PWA. Escape/Cancelar/Decidir depois não gravam biblioteca nem operação. Erro de rede/quota/mídia/corrida preserva tudo e mostra ação adequada. Após commit local com falha de upload, mostrar pendente e permitir retomada; nunca afirmar que a escolha foi desfeita se já houve commit.
 
@@ -170,8 +167,8 @@ O estado do topo distingue Salvo aqui, Recebendo, Enviando, Pendência, Conflito
 
 - Golden V1 hash/serialized bytes intactos; V2 order de books/media/chaves indiferente, prefs e cada campo/bytes afetam digest; casos UUIDmaiúsculo, órfãs, caps malformadas/limites/futureversion.
 - Cross-version: hashV1igual+preferencesdiferentes NÃO equal; baseV1 hidratada por conteúdo validado; localprefs-only dispara pending/revisão e impede remote overwrite; lastExport/no-op não disparam.
-- União IDs distintos; mesmoIDidêntico; registros divergentes; escolha em lote explícita; excluir/keep com base; sem base confirmação de ausências; três pontas, conta alterada, prefsdivergentes.
-- Mesmo mediaId com bytes diferentes inclusive mesmo Book: distinção na prévia, cloneID/rewrite correto, referências compartilhadas, órfãs, limite excedido aborta sem perda. Resultado exporta/importa com bytes exatos.
+- União de IDs distintos; mesmo ID equivalente; prioridade local de registro inteiro/capa; preferências locais inclusive padrão; reinclusão de removidos; três pontas em ordens permutadas, precedência remota determinística e conta alterada.
+- Mesmo mediaId com bytes diferentes inclusive mesmo Book: prioridade local e cloneID/rewrite correto, referências compartilhadas, órfãs, limite excedido aborta sem perda. Resultado exporta/importa com bytes exatos.
 - Confirmação invalida com livro/prefs/importação/conta/heads/authRevision alterados; pause/logout/lease perdido em cada await relevante; opções antigas não aplicam em nova prévia.
 - Falha em cada write da transação resolução/download (incluindo quota) mantém livros/mídias/prefs/base/outbox/recuperação anteriores; sucesso grava todos juntos. Fechar após commit antesPOST, apósPOST antesPUT, apósPUT aceito/resposta perdida: retoma mesmaoperação, sem novoUUID indevido.
 - V1pendente antesmigração nunca convertido; respostaPUTincerta reconciliada commesmosbytes/IDs; edição posterior mantém pending; V2 parent/resolution apontaV1 sem reescreverhistória; clienteV1 encontraV2 pelo nome antigo e falha fechado.
@@ -179,13 +176,15 @@ O estado do topo distingue Salvo aqui, Recebendo, Enviando, Pendência, Conflito
 
 ### Navegador hermético e normal
 
-- Fixture sintética com livros/notas/avaliações/prefs e PNG: Aenvia, Bvazio recebe semconflito; ambosalteram → préviaJuntar → escolhasinteiras → convergência e recuperaçãoexata.
+- Fixture sintética com livros/notas/avaliações/prefs e PNG: Aenvia, Bvazio recebe semconflito; ambosalteram → confirmaçãoJuntar → política local fixa → convergência e recuperaçãoexata.
 - Casoslimite UI320px, teclado/foco, leitura/notalongas, cancelarsemalteração, rascunhobloqueia, offline CRUD/JSON intactos. PUTperdido/reload preserva IDs.
 - Gate Google real com consentimento humano e QA isolada: repetir bootstrapvazio, divergência/união/prefs/capas e lostPUT. Snapshots sintéticos V1 já existentes QA504 podem ser reutilizados SOMENTE com allowlist técnica de operações conhecida; não deletar arquivos para forçar estado vazio e não baixar biblioteca pessoal. Uma conta/pasta realmente vazia pode ser necessária para o gate de primeiro envio; fixtureV1 existente serve ao gate migração/recebimento.
 - Mesmo perfil A/B prova bancos separados, não sessões independentes. Manter gates pendentes de logout/revogação entre perfis do contrato de login sem fingir que esta fatia os substitui. Nenhum bypass Google/Playwright bloqueado.
 
 ## 9. Sequência e decisões
 
-Após PR56 integrada: uma branch/PR da fatia #13. Primeiro protocol/hash+prefs+portatransacional com testes, depois serviço de prévia/união+UI, por fim gates. Mesma issue; não iniciar #47/#46. Atualizar docs/drive-sync/architecture/release-gate/privacidade apenas onde comportamento mudou. Flag pública permanece false até gates acordados.
+Após PR56 integrada: uma branch/PR da fatia #13. Primeiro protocol/hash+prefs+portatransacional com testes, depois serviço de prévia/união+UI, por fim gates. Mesma issue; não iniciar #47/#46. Atualizar docs/drive-sync/architecture/release-gate/privacidade apenas onde comportamento mudou. A PR #59 ativou a flag pública para o ensaio manual explicitamente autorizado pelo responsável; gates pendentes continuam documentados em drive-release-gate.md. A disponibilidade não equivale à aprovação de todos os gates.
 
 Não há pergunta de produto indispensável. O controlador aprovou nome histórico estável para descoberta failclosed, porta específica de sync com helper de commit compartilhado e orçamento de fontes de 100 MiB. Este documento incorpora a revisão independente de aliases/casefold, igualdade completa de mídia, base=null e escopo real do orçamento. Contrato firme para handoff; mudanças nesses pontos exigem revisão de arquitetura, sem pedir consentimento de produto novamente. Nenhum merge por campo, CRDT, tombstone global, banco por conta ou limpeza histórica nesta fatia.
+
+A simplificação após PR #60 reproduz a regra de `mergeAppData(current, remote)` do BioRotina: união por ID e preferência pelo registro local inteiro. A extensão a múltiplas pontas usa ordem canônica explícita. Mantém protocolo, orçamentos, recuperação, commit atômico, revalidação e reconciliação de envio incerto.
