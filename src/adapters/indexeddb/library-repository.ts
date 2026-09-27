@@ -24,7 +24,9 @@ function prepare(change: LibraryChange): LibraryChange {
   switch (change.kind) {
     case 'put': return { kind: 'put', book: parseBook(change.book) };
     case 'delete': return { kind: 'delete', id: keyOf(change.id) };
-    case 'replace': return { kind: 'replace', books: parseLibrary(change.books) };
+    case 'replace': return { kind: 'replace', books: parseLibrary(change.books),
+      ...(change.preferences === undefined ? {} : { preferences: parseDomain(
+        preferencesSchema.omit({ lastExport: true }), change.preferences, 'InvalidBackup') }) };
     default: throw new DomainError('InvalidLibrary');
   }
 }
@@ -68,6 +70,17 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   }
 
   const repository: LibraryRepository = {
+    readBackupSnapshot: () => transaction(['books', 'meta', 'preferences'], 'readonly', async (tx) => {
+      const [values, rawMeta, rawPreferences] = await Promise.all([
+        tx.objectStore('books').getAll(), tx.objectStore('meta').get('library'),
+        tx.objectStore('preferences').get('ui'),
+      ]);
+      const books = parseLibrary(values);
+      const meta = parseMetadata(rawMeta);
+      if (meta.bookCount !== books.length || meta.serializedBytes !== bytes(books)) throw new DomainError('InvalidLibrary');
+      const { shelfYear, mode, filter } = parseDomain(preferencesSchema, rawPreferences, 'InvalidLibrary');
+      return { books, version: versionOf(meta), preferences: { shelfYear, mode, filter } };
+    }),
     readAll: () => transaction(['books', 'meta'], 'readonly', async (tx) => {
       const [values, rawMeta, keys] = await Promise.all([
         tx.objectStore('books').getAll(), tx.objectStore('meta').get('library'), tx.objectStore('books').getAllKeys(),
@@ -107,7 +120,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       const replacementBytes = prepared.kind === 'replace' ? bytes(prepared.books) : 0;
       const putBytes = prepared.kind === 'put' ? bytes(prepared.book) : 0;
       const generation = prepared.kind === 'replace' ? globalThis.crypto.randomUUID() : null;
-      const version = await transaction(['books', 'meta'], 'readwrite', async (tx) => {
+      const version = await transaction(['books', 'meta', 'preferences'], 'readwrite', async (tx) => {
         const books = tx.objectStore('books');
         const meta = parseMetadata(await tx.objectStore('meta').get('library'));
         if (!sameRevision(meta, expectedVersion)) throw new DomainError('StaleRevision');
@@ -119,6 +132,9 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
           serializedBytes = replacementBytes;
           await books.clear();
           await Promise.all(prepared.books.map(async (book) => books.add(book, book.id.toLowerCase())));
+          if (prepared.preferences) {
+            await tx.objectStore('preferences').put({ ...prepared.preferences, lastExport: null }, 'ui');
+          }
         } else {
           const key = prepared.kind === 'put' ? prepared.book.id.toLowerCase() : prepared.id;
           const previous = await books.get(key);

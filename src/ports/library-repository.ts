@@ -5,7 +5,9 @@ export type Snapshot = { books: Book[]; version: LocalRevision };
 export type LibraryChange =
   | { kind: 'put'; book: Book }
   | { kind: 'delete'; id: string }
-  | { kind: 'replace'; books: Book[] };
+  | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences };
+
+export type PortablePreferences = Pick<LibraryPreferences, 'shelfYear' | 'mode' | 'filter'>;
 
 export type LibraryPreferences = {
   shelfYear: number | null;
@@ -16,6 +18,7 @@ export type LibraryPreferences = {
 
 export interface LibraryRepository {
   readAll(): Promise<Snapshot>;
+  readBackupSnapshot(): Promise<Snapshot & { preferences: PortablePreferences }>;
   readYear(year: number): Promise<Snapshot>;
   readBook(id: string): Promise<{ book: Book | null; version: LocalRevision }>;
   readRevision(): Promise<LocalRevision>;

@@ -207,6 +207,7 @@ type LibraryExport = {
   schemaVersion: 1;
   exportedAt: string;
   books: Book[];
+  preferences: { shelfYear: number | null; mode: 'grid' | 'list'; filter: ReadingStatus | 'all' };
 };
 ```
 
@@ -321,7 +322,9 @@ Exportar: snapshot consistente → validação → serialização determinístic
 
 ### Contrato portátil V1
 
-`LibraryExport` contém todos os anos, inclusive notas, avaliações, datas, UUIDs e referências de capa. Não inclui cache, diagnósticos, preferências, geração/revisão local, credenciais ou campos derivados. Ordem de `books` é por `id`, campos têm ordem definida pelo serializer, UTF-8 com JSON válido e newline final. Preservar ordem de autores e todos os valores semânticos; `exportedAt` naturalmente muda a cada exportação. O teste compara os livros por ID/campo, não os bytes dos dois envelopes.
+`LibraryExport` contém todos os anos, inclusive notas, avaliações, datas, UUIDs e referências de capa. **Ajuste na issue #3 para restauração integral:** inclui preferências portáveis (`shelfYear`, `mode`, `filter`). Não inclui cache, diagnósticos, geração/revisão local, credenciais ou campos derivados. O histórico `lastExport` é local: referencia uma geração/revisão do dispositivo e é zerado na restauração, evitando afirmar um download que não ocorreu ali. Ordem de `books` é por `id`, campos têm ordem definida pelo serializer, UTF-8 com JSON válido e newline final. Preservar ordem de autores e todos os valores semânticos; `exportedAt` naturalmente muda a cada exportação. O teste compara os livros por ID/campo, não os bytes dos dois envelopes.
+
+**Implementado na issue #3:** `src/backup/` valida o envelope estrito V1, recusa outras versões explicitamente e serializa de forma determinística. `createBackupService` prepara um arquivo local, fornece prévia imutável com contagens/anos atuais e recebidos, e confirma uma única substituição condicionada à revisão. Selecionar outro arquivo ou cancelar invalida a prévia anterior. Livros e preferências são lidos/exportados consistentemente e restaurados na mesma transação. O serviço gera Blob/nome de arquivo; a UI futura iniciará download e registrará esse início separadamente. A execução do parser em Worker deverá ser conectada pela composição da UI através do parser assíncrono injetável; nesta etapa o parser padrão executa localmente no thread chamador. Não há upload ou interface nesta entrega.
 
 Exemplo mínimo válido:
 
@@ -330,7 +333,8 @@ Exemplo mínimo válido:
   "format": "livro-a-livro",
   "schemaVersion": 1,
   "exportedAt": "2026-09-26T15:00:00.000Z",
-  "books": []
+  "books": [],
+  "preferences": { "shelfYear": null, "mode": "grid", "filter": "all" }
 }
 ```
 
