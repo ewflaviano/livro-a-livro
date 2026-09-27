@@ -46,7 +46,8 @@ function apiAllowed(request) {
   if (request.postDataBuffer()?.length || url.username || url.password) return false;
   if (url.pathname === '/v1/auth/google/callback') {
     return request.method() === 'GET' && request.isNavigationRequest() &&
-      [...url.searchParams.keys()].every(key => ['state', 'code', 'error', 'error_description', 'scope', 'authuser', 'prompt'].includes(key));
+      [...url.searchParams.keys()].every(key => ['state', 'iss', 'code', 'error', 'error_description', 'scope', 'authuser', 'prompt'].includes(key)) &&
+      url.searchParams.getAll('iss').length === 1 && url.searchParams.get('iss') === 'https://accounts.google.com';
   }
   return !url.search && methods.has(url.pathname) &&
     (methods.get(url.pathname).includes(request.method()) || request.method() === 'OPTIONS');

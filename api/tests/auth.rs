@@ -393,6 +393,7 @@ impl Clock for Time {
 }
 #[derive(Default)]
 struct FakeGoogle {
+    exchanges: AtomicU64,
     mode: AtomicU64,
     revoke_during_exchange: Option<Arc<Memory>>,
 }
@@ -405,6 +406,7 @@ impl Provider for FakeGoogle {
         nonce: &str,
         _: &OAuthPurpose,
     ) -> Result<Grant, Error> {
+        self.exchanges.fetch_add(1, Ordering::Relaxed);
         if let Some(store) = &self.revoke_during_exchange {
             store.0.lock().unwrap().epoch += 1;
         }
@@ -569,7 +571,7 @@ async fn callback_sets_host_only_cookies_and_redirects_without_secrets() {
         .into_owned();
     let request = Request::builder()
         .uri(format!(
-            "/v1/auth/google/callback?state={state}&code=synthetic-code"
+            "/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state={state}&code=synthetic-code"
         ))
         .header("cookie", cookie)
         .body(Body::empty())
@@ -841,6 +843,7 @@ async fn callback_crossing_revocation_epoch_cannot_create_a_session() {
     auth.provider = Arc::new(FakeGoogle {
         mode: AtomicU64::new(0),
         revoke_during_exchange: Some(store.clone()),
+        ..Default::default()
     });
     let (url, cookie) = drive_start(&auth).await;
     let url = url::Url::parse(&url).unwrap();
@@ -867,7 +870,7 @@ async fn deadline_crossed_during_finish_never_publishes_access_token() {
 #[tokio::test]
 async fn callback_failure_is_static_human_readable_and_never_echoes_query() {
     let (auth, _, _, _) = setup();
-    let response=router(auth).oneshot(Request::builder().uri("/v1/auth/google/callback?state=private-state&error=access_denied&code=private-code").body(Body::empty()).unwrap()).await.unwrap();
+    let response=router(auth).oneshot(Request::builder().uri("/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state=private-state&error=access_denied&code=private-code").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(
         response.headers()["content-type"]
@@ -1048,7 +1051,7 @@ async fn callback_errors_are_specific_static_and_denial_consumes_state() {
         let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
         let state = &params(&url)["state"];
         let response = router(auth.clone()).oneshot(Request::builder()
-            .uri(format!("/v1/auth/google/callback?state={state}&error={provider_error}&error_description=DO_NOT_ECHO"))
+            .uri(format!("/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state={state}&error={provider_error}&error_description=DO_NOT_ECHO"))
             .header("cookie", format!("__Host-lal_oauth={cookie}")).body(Body::empty()).unwrap()).await.unwrap();
         let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
         let html = std::str::from_utf8(&bytes).unwrap();
@@ -1136,7 +1139,7 @@ async fn http_identity_and_explicit_drive_start_issue_only_the_correct_cookies()
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/v1/auth/google/callback?state={}&code=synthetic",
+                    "/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state={}&code=synthetic",
                     values["state"]
                 ))
                 .header("cookie", oauth_cookie)
@@ -1185,4 +1188,112 @@ async fn http_identity_and_explicit_drive_start_issue_only_the_correct_cookies()
             .contains("Max-Age=0")
     );
     assert!(auth.identity(&next).await.is_err());
+}
+
+#[tokio::test]
+async fn callback_requires_one_exact_google_issuer_before_exchange_or_denial() {
+    let (auth, store, _, provider) = setup();
+    for issuer in [
+        "",
+        "iss=&",
+        "iss=https%3A%2F%2Fevil.example&",
+        "iss=accounts.google.com&",
+        "iss=https%3A%2F%2Faccounts.google.com%2F&",
+        "iss=https%3A%2F%2FACCOUNTS.google.com&",
+        "iss=https%3A%2F%2Faccounts.google.com&iss=https%3A%2F%2Faccounts.google.com&",
+        "iss=https%3A%2F%2Faccounts.google.com&iss=https%3A%2F%2Fevil.example&",
+    ] {
+        for result in [
+            "code=synthetic-private-code",
+            "error=access_denied&error_description=synthetic-private-description",
+        ] {
+            let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
+            let state = &params(&url)["state"];
+            let response = router(auth.clone())
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/v1/auth/google/callback?{issuer}state={state}&{result}"
+                        ))
+                        .header("cookie", format!("__Host-lal_oauth={cookie}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            let html =
+                String::from_utf8(to_bytes(response.into_body(), 4096).await.unwrap().to_vec())
+                    .unwrap();
+            assert!(html.contains("Não foi possível concluir a conexão com Google."));
+            for private in [
+                state.as_str(),
+                "synthetic-private-code",
+                "synthetic-private-description",
+                "evil.example",
+                "cancelada ou negada",
+            ] {
+                assert!(!html.contains(private));
+            }
+            assert_eq!(provider.exchanges.load(Ordering::Relaxed), 0);
+            assert!(store.0.lock().unwrap().oauth.contains_key(&digest(state)));
+        }
+    }
+}
+
+#[tokio::test]
+async fn callback_with_google_issuer_cannot_replay_consumed_state() {
+    let (auth, _, _, provider) = setup();
+    let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
+    let state = &params(&url)["state"];
+    for expected in [StatusCode::SEE_OTHER, StatusCode::UNAUTHORIZED] {
+        let response = router(auth.clone()).oneshot(Request::builder()
+            .uri(format!("/v1/auth/google/callback?state={state}&iss=https%3A%2F%2Faccounts.google.com&code=synthetic&scope=malicious-scope&authuser=0&prompt=select_account&redirect_uri=https%3A%2F%2Fevil.example&access_token=synthetic-untrusted&future_parameter=ignored"))
+            .header("cookie", format!("__Host-lal_oauth={cookie}"))
+            .body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::SEE_OTHER {
+            assert_eq!(
+                response.headers()["location"],
+                "https://livroalivro.app.br/#/dados"
+            );
+            assert!(
+                response
+                    .headers()
+                    .get_all("set-cookie")
+                    .iter()
+                    .any(|v| v.to_str().unwrap().starts_with("__Host-lal_identity="))
+            );
+            assert!(
+                !response.headers().get_all("set-cookie").iter().any(|v| v
+                    .to_str()
+                    .unwrap()
+                    .starts_with("__Host-lal_session=")
+                    && !v.to_str().unwrap().contains("Max-Age=0"))
+            );
+        }
+    }
+    assert_eq!(provider.exchanges.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn callback_rejects_duplicate_known_fields_even_when_issuer_is_valid() {
+    let (auth, store, _, provider) = setup();
+    for duplicate in [
+        "state=other-state",
+        "code=other-code",
+        "scope=other-scope",
+        "error=server_error",
+    ] {
+        let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
+        let state = &params(&url)["state"];
+        let response = router(auth.clone()).oneshot(Request::builder()
+            .uri(format!("/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state={state}&code=synthetic&scope=openid&error=access_denied&{duplicate}"))
+            .header("cookie", format!("__Host-lal_oauth={cookie}"))
+            .body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(store.0.lock().unwrap().oauth.contains_key(&digest(state)));
+    }
+    assert_eq!(provider.exchanges.load(Ordering::Relaxed), 0);
 }
