@@ -1,3 +1,4 @@
+import { createBackupWorkerParser } from '../backup/worker-parser';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { createShelfService } from '../services/shelf-service';
 import { createSearchCache } from '../adapters/indexeddb/search-cache';
@@ -17,6 +18,6 @@ export async function openShelfService() {
     onDatabaseEvent: () => { void service?.refresh(); },
     onObservationError: () => { void service?.refresh(); },
   });
-  service = createShelfService(repository);
+  service = createShelfService(repository, createBackupWorkerParser());
   return service;
 }

@@ -1,3 +1,4 @@
+import { BackupPanel } from '../components/BackupPanel';
 import { useEffect, useState } from 'react';
 import { useSync } from '../../app/SyncProvider';
 import { serializeBackup } from '../../backup/serialize';
@@ -50,6 +51,7 @@ export function DataPage() {
     {local && <p className="notice-panel" role="status">Modo local de teste: Google e Drive são simulados neste computador. Use somente dados descartáveis.</p>}
     <p className="page-description">Sua biblioteca pertence a você.</p>
     <p>Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador pode remover sua estante. Instalar o aplicativo não cria backup.</p>
+    <BackupPanel />
     <h2>Google Drive opcional</h2>
     <p>Ao conectar, seus livros, notas e avaliações vão diretamente para uma pasta privada do aplicativo no seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.</p>
     <p>O envio acontece enquanto o aplicativo está aberto e retoma quando você voltar com conexão. Com o navegador fechado, alterações podem continuar aguardando envio.</p>
@@ -64,7 +66,6 @@ export function DataPage() {
         {state.status !== 'disabled' && <>
           <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('logout')}>Encerrar sessão neste dispositivo</button>
           <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('revoke')}>Desconectar em todos os dispositivos</button>
-          <button className="button button-secondary" disabled={busy} onClick={() => void act(async () => downloadLibrary(await coordinator!.localCopy(), 'local'))}>Baixar biblioteca local</button>
           <button className="button button-secondary" disabled={busy} onClick={() => void act(async () => { const copy = await coordinator!.recoveryCopy(); if (copy) downloadLibrary(copy.library, 'recuperacao'); else setError('Ainda não há uma cópia anterior preservada neste dispositivo.'); })}>Baixar cópia anterior preservada</button>
         </>}
       </div>

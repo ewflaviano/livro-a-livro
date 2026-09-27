@@ -174,7 +174,7 @@ Cadastro mínimo: título obrigatório; autor opcional (“Autoria não informad
 
 ## 10. Página do livro
 
-Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado editável; avaliação opcional; campo “Sua nota privada”; Salvar alterações e ação de exclusão secundária. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Nota tem largura de leitura confortável e cresce com o conteúdo. Rótulo “Só aparece neste dispositivo. Não entra na imagem compartilhada.” deve acompanhar a nota, sem alegar criptografia.
+Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado editável; avaliação opcional; campo “Sua nota privada”; Salvar alterações e ação de exclusão secundária. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Nota tem largura de leitura confortável e cresce com o conteúdo. Rótulo “Sua nota é privada e acompanha o backup. Não entra na imagem compartilhada.” deve acompanhar a nota, sem alegar criptografia.
 
 Datas, quando informadas, usam “26 set 2026”; datas exatas ficam disponíveis, sem depender de “ontem”. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Nota e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
 
@@ -206,7 +206,7 @@ Margem segura de 8% nas laterais, 12% no topo/rodapé do Story e 8% no Quadrado.
 
 Não afirmar “backup concluído” quando só foi possível observar o início do download. Não usar selo verde de sincronização para estado local. JSON contém notas e avaliações privadas; dizer “Guarde o arquivo em um lugar de confiança.” Nome proposto: `livro-a-livro-2026-09-26.json`, incluindo todos os anos, não só a estante visível.
 
-**Importação:** selecionar arquivo local → validar formato/versão sem modificar estante → mostrar quantidade de livros e anos do arquivo e da biblioteca atual → explicar a operação → confirmar. Proposta V1: substituir biblioteca inteira, sem prometer mesclagem inteligente. Antes de substituir, oferecer exportar a atual; botão final “Substituir por 8 livros”, com Cancelar. Arquivo inválido, versão incompatível ou falha não altera registros existentes. Só anunciar “8 livros importados neste dispositivo” após conclusão atômica. Não enviar arquivo ao servidor. O catálogo não executa importação; a revisão descrita aqui é um contrato para a implementação.
+**Importação:** selecionar arquivo local → validar formato/versão sem modificar estante → mostrar quantidade de livros e anos do arquivo e da biblioteca atual → explicar a operação → confirmar. Proposta V1: substituir biblioteca inteira, sem prometer mesclagem inteligente. Antes de substituir, oferecer exportar a atual; botão final “Substituir por 8 livros”, com Cancelar. Arquivo inválido, versão incompatível ou falha não altera registros existentes. Só anunciar “8 livros importados neste dispositivo” após conclusão atômica. Não enviar arquivo ao servidor. O catálogo não executa importação. Na aplicação, a issue #40 entrega esse fluxo como primeira seção de Seus dados, com o título Backup local e ações Exportar JSON/Importar JSON sempre independentes do Drive.
 
 ### Sincronização opcional — contrato visual e gate de produção
 
@@ -267,3 +267,9 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 A [auditoria](audit-2026-09-27.md) e a solicitação do responsável pelo produto orientam uma próxima entrega com barra inferior **Estante · Adicionar · Mais**. Mais dá acesso a Seus dados, Configurações e Apoiar; Lendo e Quero ler permanecem filtros da estante. Desktop conserva navegação lateral.
 
 Essa direção ainda não está implementada e não altera os tokens ou o catálogo histórico nesta entrega documental. Ao implementá-la, atualizar guia, catálogo e testes juntos: rótulos visíveis, estado ativo acessível, alvos de 44 px, área segura inferior e espaço no conteúdo para evitar sobreposição. Validar teclado virtual, foco, diálogos, rascunhos e paisagem. Remover a navegação superior duplicada no mobile e corrigir o truncamento observado no tablet.
+
+### Backup local — estados entregues na issue #40
+
+A seção vem antes de Google Drive e privacidade. Exibe destino local, conteúdo privado do JSON e limite de 50 MiB; não apresenta autenticação como requisito. Seleção inicia “Validando o arquivo e as capas neste dispositivo…”, depois mostra contagens/anos do arquivo e deste dispositivo. Prévia permite Exportar biblioteca atual e Cancelar importação; a substituição abre diálogo de confirmação com rótulo explícito e singular/plural correto.
+
+Cancelar diálogo retorna ao acionador; cancelar importação, concluir ou recusar restauração retorna ao seletor. Preparação/substituição têm estado anunciado e confirmação fica indisponível durante o commit. Exportação anuncia “Download iniciado; confira se ele foi salvo”, sem afirmar backup concluído. Formato, versão, excesso, quota e conflito têm mensagens distintas. A nota privada acompanha o JSON/Drive quando a pessoa escolhe essas ações, e permanece excluída da imagem anual.

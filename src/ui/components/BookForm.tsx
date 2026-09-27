@@ -153,7 +153,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
               <span aria-hidden="true">{'★'.repeat(rating)}</span><span className="visually-hidden">{rating} de 5 estrelas</span></label>)}
           </div></fieldset>
           <label className="form-field">Sua nota privada<textarea {...attributes('note')} aria-describedby={invalid.includes('note') ? 'note-help note-error' : 'note-help'} rows={6} maxLength={BOOK_LIMITS.note} value={draft.note} onChange={(event) => change('note', event.target.value)} />{fieldError('note')}</label>
-          <p className="field-help" id="note-help">Só aparece neste dispositivo. Não entra na imagem compartilhada.</p>
+          <p className="field-help" id="note-help">Sua nota é privada e acompanha o backup. Não entra na imagem compartilhada.</p>
         </details>
       </fieldset>
       {error && <p className="form-error" role="alert">{error}</p>}

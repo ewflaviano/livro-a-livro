@@ -10,6 +10,7 @@ type LibraryContext = {
   updatePreferences: (patch: Partial<PortablePreferences>) => void;
   positions: Map<string, number>;
   books: LibraryService | null;
+  backup: ShelfService['backup'] | null;
 };
 const Context = createContext<LibraryContext | null>(null);
 const loading: ShelfState = { status: 'loading' };
@@ -39,7 +40,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const state = useSyncExternalStore(service?.subscribe ?? subscribeNothing, service?.getSnapshot ?? loadingSnapshot);
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
-    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, books: service?.books ?? null,
+    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, books: service?.books ?? null, backup: service?.backup ?? null,
   }}>{children}</Context.Provider>;
 }
 
