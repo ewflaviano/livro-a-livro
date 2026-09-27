@@ -18,8 +18,14 @@ const distArg = process.argv.indexOf('--dist');
 const dist = distArg < 0 ? join(temporary, 'dist') : resolve(process.argv[distArg + 1]);
 const emit = code => process.stdout.write(`${code}\n`);
 const check = condition => { if (!condition) throw new Error('GATE_ASSERTION'); };
+let publicHeaders = {};
 let browser; let input; let violation = false; let stage = 'BUILD';
+let smokeDrive = false;
+const knownOperations = new Set(); const putCounts = new Map(); const listedOperations = new Map();
+let lostPut = null; let gateSequence = 0;
+const fakeDriveFiles = [];
 let smokeRenewal = false; let syntheticSession = 'synthetic-old';
+const offlineContexts = new WeakSet();
 const contexts = {}; const pages = {}; const counters = { api: 0, drive: 0 };
 const methods = new Map([
   ['/v1/auth/google/start', ['POST']], ['/v1/session', ['GET', 'DELETE']],
@@ -44,7 +50,9 @@ function apiAllowed(request) {
     (methods.get(url.pathname).includes(request.method()) || request.method() === 'OPTIONS');
 }
 async function routeRequest(route) {
+  if (violation) return route.abort();
   const request = route.request(); const url = new URL(request.url());
+  if (url.origin !== web && offlineContexts.has(request.frame().page().context())) return route.abort();
   if (url.origin === web) {
     const allowed = !url.search && (['/', '/index.html', '/privacidade.html', '/manifest.webmanifest'].includes(url.pathname) ||
       /^\/(assets|icons)\/[a-zA-Z0-9_.-]+$/.test(url.pathname));
@@ -53,17 +61,18 @@ async function routeRequest(route) {
     try {
       const body = await readFile(join(dist, name));
       const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' }[extname(name)] || 'application/octet-stream';
-      return route.fulfill({ status: 200, contentType: mime, body });
+      return route.fulfill({ status: 200, contentType: mime, headers: publicHeaders, body });
     } catch { violation = true; return route.abort(); }
   }
   if (url.origin === api) {
     if (!apiAllowed(request)) { violation = true; return route.abort(); }
     counters.api++;
-    if (smoke && smokeRenewal) {
+    if (smoke && (smokeRenewal || smokeDrive)) {
       const headers = { 'access-control-allow-origin': web, 'access-control-allow-credentials': 'true',
         'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'x-lal-csrf', 'cache-control': 'no-store' };
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-      const valid = (await request.headerValue('cookie') ?? '').split(';').some(part => part.trim() === `__Host-lal_session=${syntheticSession}`);
+      if (smokeDrive && url.pathname === '/v1/auth/drive-token') return route.fulfill({ status: 200, headers, json: { accessToken: 'synthetic-drive-token', expiresIn: 3600, scopes: ['openid', 'https://www.googleapis.com/auth/drive.appdata'] } });
+      const valid = smokeDrive || (await request.headerValue('cookie') ?? '').split(';').some(part => part.trim() === `__Host-lal_session=${syntheticSession}`);
       if (!valid) return route.fulfill({ status: 401, headers, json: { error: 'unauthorized' } });
       if (url.pathname === '/v1/session/renew' && request.method() === 'POST') {
         check(await request.headerValue('x-lal-csrf') === 'synthetic-csrf-old');
@@ -78,9 +87,80 @@ async function routeRequest(route) {
     }
     return smoke ? route.abort() : route.continue();
   }
-  if (url.origin === 'https://www.googleapis.com') counters.drive++;
+  if (url.origin === 'https://www.googleapis.com') { counters.drive++; return driveRequest(route); }
   // Smoke mode is hermetic. Real mode leaves Google login/consent entirely to the human.
   return smoke ? route.abort() : route.continue();
+}
+function syntheticLibrary(library) {
+  check(library?.books?.length === fixture.books.length && library.coverMedia?.length === fixture.coverMedia.length);
+  for (const value of library.books) {
+    const original = fixture.books.find(book => book.id === value.id); check(Boolean(original));
+    const { note, updatedAt, ...rest } = value; const { note: originalNote, updatedAt: _, ...expected } = original;
+    check(isDeepStrictEqual(rest, expected) && typeof updatedAt === 'string');
+    check(note === originalNote || /^Gate sintético (A|B|PUT) [0-9]+$/.test(note));
+  }
+  check(isDeepStrictEqual(library.coverMedia, fixture.coverMedia) && isDeepStrictEqual(library.preferences, fixture.preferences));
+}
+async function driveRequest(route) {
+  const request = route.request(); const url = new URL(request.url());
+  try {
+    check(!url.username && !url.password && ['/drive/v3/files', '/upload/drive/v3/files'].some(path => url.pathname === path || url.pathname.startsWith(`${path}/`)));
+    if (smoke && !smokeDrive) return route.abort();
+    let upload;
+    if (request.method() === 'POST') {
+      const metadata = request.postDataJSON();
+      check(url.pathname === '/upload/drive/v3/files' && metadata.name === 'livro-a-livro-snapshot-v1.json' && metadata.parents?.[0] === 'appDataFolder');
+      check(typeof metadata.appProperties?.operationId === 'string'); knownOperations.add(metadata.appProperties.operationId);
+    }
+    if (request.method() === 'PUT') {
+      upload = request.postDataJSON(); syntheticLibrary(upload.library);
+      check(knownOperations.has(upload.operationId));
+      putCounts.set(upload.operationId, (putCounts.get(upload.operationId) ?? 0) + 1);
+    }
+    let response;
+    if (smokeDrive) {
+      const headers = { 'access-control-allow-origin': web, 'access-control-expose-headers': 'location', 'content-type': 'application/json' };
+      if (request.method() === 'POST') response = { status: 200, headers: { ...headers, location: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=synthetic' }, body: '{}' };
+      else if (upload) {
+        const id = `synthetic_${fakeDriveFiles.length + 1}`; fakeDriveFiles.push({ id, snapshot: upload });
+        response = { status: 200, headers, body: JSON.stringify({ id }) };
+      } else if (url.pathname === '/drive/v3/files') {
+        response = { status: 200, headers, body: JSON.stringify({ files: fakeDriveFiles.map(({ id, snapshot }) => ({ id, size: String(Buffer.byteLength(JSON.stringify(snapshot))), appProperties: {
+          protocolVersion: '1', snapshotId: snapshot.snapshotId, operationId: snapshot.operationId, parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt, resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0',
+        } })) }) };
+      } else {
+        const file = fakeDriveFiles.find(file => url.pathname === `/drive/v3/files/${file.id}`); check(Boolean(file));
+        response = { status: 200, headers, body: JSON.stringify(file.snapshot) };
+      }
+    } else {
+      // Forward only the validated Drive request, never follow redirects with its bearer.
+      const upstream = await route.fetch({ maxRedirects: 0, timeout: 30_000 });
+      response = { status: upstream.status(), headers: upstream.headers(), body: await upstream.body() };
+    }
+    check(response.status < 300 || response.status >= 400);
+    if (response.status >= 200 && response.status < 300) {
+      if (request.method() === 'GET' && url.pathname === '/drive/v3/files') {
+        const listing = JSON.parse(response.body.toString()); check(Array.isArray(listing.files) && !listing.nextPageToken);
+        listedOperations.clear();
+        for (const file of listing.files) {
+          check(knownOperations.has(file.appProperties?.operationId));
+          listedOperations.set(file.appProperties.operationId, (listedOperations.get(file.appProperties.operationId) ?? 0) + 1);
+        }
+      } else if (request.method() === 'GET') {
+        const snapshot = JSON.parse(response.body.toString());
+        check(knownOperations.has(snapshot.operationId)); syntheticLibrary(snapshot.library);
+      }
+      if (upload && lostPut) {
+        const pending = lostPut; lostPut = null;
+        await route.abort('failed'); pending.resolve(upload.operationId); return;
+      }
+    }
+    return route.fulfill(response);
+  } catch {
+    violation = true; emit('UNKNOWN_OR_INVALID_REMOTE_STOP');
+    lostPut?.reject(new Error('GATE_ASSERTION')); lostPut = null;
+    return route.abort().catch(() => {});
+  }
 }
 async function snapshot(page) {
   return page.evaluate(async () => {
@@ -154,10 +234,14 @@ async function pauseOrDisconnect(id, kind) {
   check(isDeepStrictEqual(before, await snapshot(page)));
   emit('LOCAL_PRESERVED_AND_PAUSED');
 }
+async function setOffline(id, value) {
+  if (value) offlineContexts.add(contexts[id]); else offlineContexts.delete(contexts[id]);
+  await contexts[id].setOffline(value);
+}
 async function offlineCrud(id) {
   stage = 'OFFLINE_CRUD';
   const page = pages[id]; const before = await snapshot(page);
-  await contexts[id].setOffline(true);
+  await setOffline(id, true);
   try {
     await page.goto(`${web}/#/adicionar`);
     await page.getByRole('button', { name: 'Adicionar manualmente', exact: true }).click();
@@ -174,7 +258,7 @@ async function offlineCrud(id) {
     await expect.poll(async () => (await snapshot(page)).books.length).toBe(before.books.length);
     check(isDeepStrictEqual(before, await snapshot(page)));
     emit('OFFLINE_CRUD_PRESERVED');
-  } finally { await contexts[id].setOffline(false); await dataPage(page); }
+  } finally { await setOffline(id, false); await dataPage(page); }
 }
 async function renewSession(id) {
   stage = 'SESSION_RENEW';
@@ -224,23 +308,116 @@ async function renewSession(id) {
     emit('SESSION_ROTATED_OLD_COOKIE_REJECTED');
   } finally { await probe.close(); await page.bringToFront(); }
 }
+async function waitLeaseReleased(page) {
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const r = indexedDB.open('livro-a-livro'); r.onsuccess = () => resolve(r.result); r.onerror = reject; });
+    try { return await new Promise((resolve, reject) => { const r = db.transaction('syncState').objectStore('syncState').get('lease'); r.onsuccess = () => resolve(!r.result || r.result.until <= Date.now()); r.onerror = reject; }); }
+    finally { db.close(); }
+  }), { timeout: 50_000 }).toBe(true);
+}
+async function synced(id) {
+  await dataPage(pages[id]);
+  try { await expect(pages[id].getByText('Cópia confirmada no Google Drive.', { exact: false })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 }); }
+  catch (error) {
+    for (const [code, text] of [['CONFLICT', 'Escolher uma versão'], ['ERROR', 'Não foi possível sincronizar. Seus dados locais continuam aqui.'], ['OFFLINE', 'Salvo aqui. Aguardando conexão para sincronizar.'], ['PENDING', 'Salvo aqui. Alterações aguardando envio ao Drive.'], ['RECONNECT', 'Reconecte o Google Drive para continuar os envios. Seus dados locais continuam aqui.']]) {
+      if (await pages[id].getByText(text, { exact: true }).isVisible()) emit(`SYNC_STATE_${code}`);
+    }
+    throw error;
+  }
+  await waitLeaseReleased(pages[id]); check(!violation);
+}
+async function editSyntheticNote(id, label) {
+  const page = pages[id]; await page.bringToFront();
+  await page.goto(`${web}/#/livro/${fixture.books[0].id}`);
+  stage = 'EDIT_OPEN'; await page.getByRole('button', { name: 'Editar livro', exact: true }).click();
+  stage = 'EDIT_DETAILS'; await page.locator('textarea[name="note"]').waitFor({ state: 'attached' }); if (!await page.locator('textarea[name="note"]').isVisible()) await page.locator('details').filter({ has: page.locator('textarea[name="note"]') }).locator('summary').click();
+  stage = 'EDIT_NOTE'; await page.locator('textarea[name="note"]').fill(label);
+  stage = 'EDIT_SAVE'; await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+  stage = 'EDIT_SAVED'; await expect(page.getByRole('button', { name: 'Editar livro', exact: true })).toBeVisible();
+}
+async function recovery(page) {
+  const library = await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const r = indexedDB.open('livro-a-livro'); r.onsuccess = () => resolve(r.result); r.onerror = reject; });
+    try { return await new Promise((resolve, reject) => { const r = db.transaction('syncState').objectStore('syncState').get('recovery'); r.onsuccess = () => resolve(r.result?.library); r.onerror = reject; }); }
+    finally { db.close(); }
+  });
+  syntheticLibrary(library);
+  return { books: library.books.sort((a, b) => a.id.localeCompare(b.id)), preferences: library.preferences,
+    coverMedia: library.coverMedia.map(item => ({ ...item, bytes: Array.from(Buffer.from(item.bytes, 'base64')) })).sort((a, b) => a.id.localeCompare(b.id)) };
+}
+async function conflictGate() {
+  stage = 'DIVERGENT_CONFLICT';
+  stage = 'CONFLICT_BASE_SYNC'; await pages.A.reload(); await synced('A'); await pages.B.reload(); await synced('B');
+  stage = 'CONFLICT_BASE_EQUAL'; check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
+  check((await localControl(pages.A)).enabled && (await localControl(pages.B)).enabled);
+  await pauseOrDisconnect('A', 'pause'); await pauseOrDisconnect('B', 'pause');
+  await setOffline('A', true); await setOffline('B', true);
+  try {
+    const sequence = ++gateSequence;
+    stage = 'CONFLICT_EDIT_A'; await editSyntheticNote('A', `Gate sintético A ${sequence}`);
+    stage = 'CONFLICT_EDIT_B'; await editSyntheticNote('B', `Gate sintético B ${sequence}`);
+    const a = await snapshot(pages.A); const b = await snapshot(pages.B); check(!isDeepStrictEqual(a, b));
+    stage = 'CONFLICT_SYNC_A'; await setOffline('A', false); await dataPage(pages.A); await pages.A.getByRole('button', { name: 'Retomar sincronização', exact: true }).click(); await synced('A');
+    stage = 'CONFLICT_REQUIRE_B'; await setOffline('B', false); await dataPage(pages.B); await pages.B.getByRole('button', { name: 'Retomar sincronização', exact: true }).click();
+    await expect(pages.B.getByRole('heading', { name: 'Escolher uma versão', exact: true })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 });
+    check(isDeepStrictEqual(b, await snapshot(pages.B)));
+    const choice = pages.B.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await choice.count() === 1);
+    stage = 'CONFLICT_CHOICE'; await choice.click(); await confirm(pages.B); await synced('B');
+    stage = 'CONFLICT_RECOVERY'; check(isDeepStrictEqual(a, await snapshot(pages.B)) && isDeepStrictEqual(b, await recovery(pages.B)));
+    await pages.A.reload(); await synced('A'); check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
+    emit('DIVERGENT_CONFLICT_RECOVERY_PASS');
+  } finally { await setOffline('A', false); await setOffline('B', false); }
+}
+async function lostPutGate(id) {
+  stage = 'LOST_PUT'; await synced(id); check(!lostPut);
+  let timeout;
+  const accepted = new Promise((resolve, reject) => { lostPut = { resolve, reject }; timeout = setTimeout(() => reject(new Error('GATE_TIMEOUT')), 120_000); });
+  // Attach a rejection handler immediately while UI editing is still in progress.
+  void accepted.catch(() => {});
+  try {
+    await editSyntheticNote(id, `Gate sintético PUT ${++gateSequence}`);
+    const expected = await snapshot(pages[id]);
+    const operation = await accepted; clearTimeout(timeout);
+    await waitLeaseReleased(pages[id]);
+    await pages[id].close(); // Preserve cookies + IndexedDB, discard in-flight client state.
+    pages[id] = await contexts[id].newPage(); pages[id].setDefaultTimeout(30_000);
+    await synced(id);
+    check(putCounts.get(operation) === 1 && listedOperations.get(operation) === 1);
+    check(isDeepStrictEqual(expected, await snapshot(pages[id])) && !violation);
+    emit('LOST_PUT_RECONCILED_WITHOUT_DUPLICATE');
+  } finally { clearTimeout(timeout); lostPut = null; }
+}
 async function command(line) {
   const [name, id] = line.trim().split(/\s+/);
   if (name === 'prepare') return prepare();
+  if (name === 'conflict') return conflictGate();
   if (name === 'audit') { check(!violation); emit('API_BOUNDARY_PASS'); return; }
   if (name === 'compare') { check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B))); emit('CONTEXTS_EQUAL'); return; }
   check(['A', 'B'].includes(id) && pages[id]); const page = pages[id];
   if (name === 'connect') { await dataPage(page); await page.getByRole('button', { name: /^(Conectar|Reconectar) Google Drive$/ }).click(); await confirm(page); return; }
-  if (name === 'synced') { await expect(page.getByText('Cópia confirmada no Google Drive.', { exact: false })).toBeVisible({ timeout: 120_000 }); emit('DRIVE_CONFIRMED'); return; }
+  if (name === 'synced') { await expect(page.getByText('Cópia confirmada no Google Drive.', { exact: false })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 }); emit('DRIVE_CONFIRMED'); return; }
   if (name === 'remote') { await expect(page.getByRole('heading', { name: 'Escolher uma versão', exact: true })).toBeVisible(); const buttons = page.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await buttons.count() === 1); await buttons.click(); await confirm(page); return; }
   if (['pause', 'logout', 'revoke'].includes(name)) return pauseOrDisconnect(id, name);
   if (name === 'resume') { await page.getByRole('button', { name: 'Retomar sincronização', exact: true }).click(); return; }
   if (name === 'offline-crud') return offlineCrud(id);
   if (name === 'renew') return renewSession(id);
+  if (name === 'lost-put') return lostPutGate(id);
   if (name === 'reconnect-required') { await page.reload(); await expect(page.getByRole('button', { name: 'Reconectar Google Drive', exact: true })).toBeVisible(); emit('RECONNECT_REQUIRED'); return; }
   throw new Error('UNKNOWN_COMMAND');
 }
 try {
+  if (smoke) {
+    const template = await readFile(join(root, 'infra/frontend.yml'), 'utf8');
+    const csp = template.match(/ContentSecurityPolicy: "([^"\n]+)"/); check(Boolean(csp));
+    publicHeaders = { 'content-security-policy': csp[1], 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
+  } else {
+    const response = await fetch(web, { credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
+    check(response.status === 200);
+    for (const name of ['content-security-policy', 'x-content-type-options', 'referrer-policy']) {
+      const value = response.headers.get(name); check(Boolean(value)); publicHeaders[name] = value;
+    }
+    await response.body?.cancel();
+  }
   if (distArg < 0) execFileSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist], { cwd: root, env: { ...process.env, VITE_DRIVE_ENABLED: 'true', VITE_LOCAL_MODE: 'false' }, stdio: 'ignore' });
   browser = await chromium.launch({ headless: smoke, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   if (smoke) {
@@ -263,6 +440,18 @@ try {
       await contexts.B.addCookies([{ name: '__Host-lal_session', value: 'synthetic-old', url: api, secure: true, httpOnly: true, sameSite: 'Lax' }]);
       await renewSession('B');
     } finally { smokeRenewal = false; }
+    smokeDrive = true;
+    for (const id of ['A', 'B']) {
+      await pages[id].evaluate(async () => {
+        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('livro-a-livro'); r.onsuccess = () => resolve(r.result); r.onerror = reject; });
+        try { await new Promise((resolve, reject) => { const tx = db.transaction('syncState', 'readwrite'); tx.objectStore('syncState').put({ enabled: true, binding: null, base: null, attempts: 0, nextAttempt: 0, lastSyncedAt: null, revocationPending: false }, 'control'); tx.oncomplete = resolve; tx.onerror = reject; }); }
+        finally { db.close(); }
+      });
+    }
+    await pages.A.reload(); await synced('A');
+    await pages.B.reload(); await dataPage(pages.B);
+    await pages.B.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }).click(); await confirm(pages.B); await synced('B');
+    await conflictGate(); await lostPutGate('A'); smokeDrive = false;
     const invalid = { url: () => `${api}/v1/session`, method: () => 'POST', postDataBuffer: () => Buffer.from('synthetic'), isNavigationRequest: () => false };
     check(!apiAllowed(invalid)); check(!apiAllowed({ ...invalid, postDataBuffer: () => null, method: () => 'GET', url: () => `${api}/v1/session?library=synthetic` }));
     emit('SMOKE_PASS');

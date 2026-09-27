@@ -113,5 +113,5 @@ jobs:
             KEY="releases/$RELEASE_ID/$FUNCTION.zip"
             aws s3 cp "release/$FUNCTION/bootstrap.zip" "s3://$ARTIFACT_BUCKET/$KEY" --only-show-errors
             aws lambda update-function-code --function-name "livro-a-livro-$FUNCTION" --s3-bucket "$ARTIFACT_BUCKET" --s3-key "$KEY" --query '{State:State,LastUpdateStatus:LastUpdateStatus}'
-            aws lambda wait function-updated-v2 --function-name "livro-a-livro-$FUNCTION"
+            aws lambda wait function-updated --function-name "livro-a-livro-$FUNCTION"
           done
