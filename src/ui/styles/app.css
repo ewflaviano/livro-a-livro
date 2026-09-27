@@ -106,6 +106,12 @@ h2 { font-size: var(--text-h2); }
 .book-facts dd { margin: 0; }
 .book-facts .book-rating { margin: 0; }
 .private-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-entry { margin-block: var(--space-5); }
+.share-preview { margin-block: var(--space-6); }
+.share-preview h2 { margin-top: 0; }
+.share-consent { display: flex; align-items: center; gap: var(--space-3); min-height: var(--target-min); margin-block: var(--space-5); }
+.share-canvas { display: block; width: 100%; height: auto; max-width: 30rem; margin: var(--space-6) auto; border: var(--border-width) solid var(--color-border); }
+.share-canvas--story { max-width: 22rem; }
 @media (max-width: 63.999rem) {
   .app-layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-8); padding-top: var(--space-6); }
   .sidebar nav { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
