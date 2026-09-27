@@ -2,12 +2,14 @@ import { createContext, useContext, useEffect, useRef, useState, useSyncExternal
 import type { ShelfService, ShelfState } from '../services/shelf-service';
 import type { PortablePreferences } from '../ports/library-repository';
 import { openShelfService } from './composition';
+import type { LibraryService } from '../services/library-service';
 
 type LibraryContext = {
   state: ShelfState;
   retry: () => void;
   updatePreferences: (patch: Partial<PortablePreferences>) => void;
   positions: Map<string, number>;
+  books: LibraryService | null;
 };
 const Context = createContext<LibraryContext | null>(null);
 const loading: ShelfState = { status: 'loading' };
@@ -37,7 +39,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const state = useSyncExternalStore(service?.subscribe ?? subscribeNothing, service?.getSnapshot ?? loadingSnapshot);
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
-    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current,
+    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, books: service?.books ?? null,
   }}>{children}</Context.Provider>;
 }
 
