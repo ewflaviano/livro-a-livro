@@ -24,7 +24,7 @@ Os certificados devem estar com status `ISSUED` antes de serem associados aos re
 
 Em 27/09/2026, `livroalivro.app.br` foi verificado como propriedade de domínio no Google Search Console, na conta responsável pelo projeto `livro-a-livro`, via registro TXT no ápice da zona Route 53. Preserve o registro `google-site-verification`: removê-lo pode invalidar a propriedade exigida pelo Branding OAuth. Ele é separado dos CNAMEs de validação dos certificados ACM.
 
-O consentimento Google está em produção, com escopos `openid` e `drive.appdata`; os links públicos apontam para a raiz do site e `/privacidade.html`. O ícone de Branding está em [`docs/branding`](branding/README.md). Publicação do consentimento, aprovação visual da marca pelo Google e ativação da flag Drive no frontend são estados separados. Os gates e o estado de ativação devem ser conferidos antes de anunciar disponibilidade.
+O consentimento Google está em produção, com escopos `openid` e `drive.appdata`; os links públicos apontam para a raiz do site e `/privacidade.html`. O ícone de Branding está em [`docs/branding`](branding/README.md). Após a comprovação do domínio, a marca foi verificada e publicada pelo Google em 27/09/2026. Publicação do consentimento, aprovação visual da marca pelo Google e ativação da flag Drive no frontend são estados separados. Os gates e o estado de ativação devem ser conferidos antes de anunciar disponibilidade.
 
 ## Publicação do site
 
