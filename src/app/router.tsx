@@ -1,3 +1,4 @@
+import { AnalyticsProvider } from '../analytics/AnalyticsProvider';
 import { useEffect } from 'react';
 import { armPwaStartup, reevaluatePwaStartup } from '../pwa/register';
 import { getUiOccupancy, subscribeUiOccupancy } from '../ui/interaction-guard';
@@ -19,7 +20,7 @@ import { SupportPage } from '../ui/pages/SupportPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
-    <LibraryProvider openService={openService}><SyncProvider><PwaStartup />
+    <LibraryProvider openService={openService}><SyncProvider><AnalyticsProvider><PwaStartup />
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
@@ -36,7 +37,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
-    </SyncProvider></LibraryProvider>
+    </AnalyticsProvider></SyncProvider></LibraryProvider>
   );
 }
 

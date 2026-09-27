@@ -1,3 +1,4 @@
+import { AnalyticsBanner } from './AnalyticsBanner';
 import { useEffect, useRef } from 'react';
 import { BookOpen, Bookmark, Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -47,6 +48,7 @@ function Shell() {
         <GlobalSyncHeader />
       </header>
       <PwaUpdateBanner />
+      <AnalyticsBanner />
       <GlobalSyncAttention />
       {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
       <div className="app-layout">

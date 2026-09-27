@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useGlobalSyncControls } from '../components/GlobalSyncControls';
 import { authorizationStates, syncLabels as labels } from '../components/sync-presentation';
 import type { LibraryExport } from '../../backup/schema';
-import { openExperimentStore } from '../../experiments/store';
+import { useAnalytics } from '../../analytics/AnalyticsProvider';
 
 export function downloadLibrary(data: LibraryExport, suffix: string) {
   const url = URL.createObjectURL(new Blob([serializeBackup(data)], { type: 'application/json;charset=utf-8' }));
@@ -20,6 +20,7 @@ export function DataPage() {
   const location = useLocation();
   const { coordinator, state, available, local, initializing } = useSync();
   const controls = useGlobalSyncControls();
+  const analytics = useAnalytics();
   const [confirm, setConfirm] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const [merge, setMerge] = useState<ResolutionPreview | null>(null);
   const [preparingMerge, setPreparingMerge] = useState(false);
@@ -39,25 +40,7 @@ export function DataPage() {
     return () => { active = false; };
   }, [location.key, location.state?.focus]);
   useEffect(() => () => { mergeEpoch.current++; if (mergeRef.current) coordinator?.cancelResolution(mergeRef.current.id); }, [coordinator]);
-  const [preferences, setPreferences] = useState<{ experiments: boolean; telemetry: boolean } | null>(null);
   useEffect(() => { document.title = 'Seus dados · Livro a Livro'; }, []);
-  useEffect(() => {
-    let active = true; let close = () => {};
-    void openExperimentStore().then(async (store) => {
-      close = store.close;
-      const current = await store.read();
-      if (active) setPreferences({ experiments: current.experimentsConsent, telemetry: current.telemetryConsent });
-    }).catch(() => { if (active) setPreferences(null); });
-    return () => { active = false; close(); };
-  }, []);
-  async function changePreference(kind: 'experiments' | 'telemetry', value: boolean) {
-    try {
-      const store = await openExperimentStore();
-      const next = await store.patch(kind === 'experiments' ? { experimentsConsent: value } : { telemetryConsent: value });
-      store.close();
-      setPreferences({ experiments: next.experimentsConsent, telemetry: next.telemetryConsent });
-    } catch { setError('Não foi possível salvar essa escolha neste dispositivo.'); }
-  }
   async function act(action: () => Promise<unknown>) {
     setBusy(true); setError('');
     try { await action(); } catch { setError('Não foi possível concluir. Sua biblioteca local foi preservada. Tente novamente.'); }
@@ -138,18 +121,10 @@ export function DataPage() {
     {preparingMerge && <p role="status">Preparando as versões… <button className="button button-secondary" onClick={closeMerge}>Cancelar preparação</button></p>}
     {merge && <MergePreview key={merge.id} preview={merge} busy={busy} error={mergeError} accountChanged={state.accountChanged} onCancel={closeMerge} onConfirm={() => void confirmMerge()} />}
     {mergeNotice && <p role="status">{mergeNotice}</p>}
-    <h2>Experimentos e métricas</h2>
-    <p>Essas escolhas não dependem do Google Drive e não mudam sua biblioteca. São desligadas por padrão.</p>
-    {preferences ? <fieldset className="privacy-choices">
-      <label><input type="checkbox" checked={preferences.experiments}
-        onChange={(event) => void changePreference('experiments', event.currentTarget.checked)} />
-        Participar de pequenos experimentos de interface</label>
-      <p>Experimentos só podem alterar fluxos reversíveis. Você pode sair quando quiser.</p>
-      <label><input type="checkbox" checked={preferences.telemetry}
-        onChange={(event) => void changePreference('telemetry', event.currentTarget.checked)} />
-        Enviar métricas técnicas agregadas</label>
-      <p>Quando houver métricas, elas registram apenas contadores de eventos pré-definidos — nunca livros, notas, conta ou identificadores.</p>
-    </fieldset> : <p>Preparando as escolhas de privacidade neste dispositivo…</p>}
+    <h2>Visitas ao site</h2>
+    <p>O Google Analytics conta visitas somente se você aceitar. Essa escolha não depende do Google Drive e não envia seus livros.</p>
+    <p>Escolha atual: {analytics.loading ? 'Verificando…' : analytics.error ? 'Não foi possível verificar' : analytics.choice === 'accepted' ? 'Aceito' : analytics.choice === 'rejected' ? 'Recusado' : 'Ainda não escolhida'}.</p>
+    <button className="button button-secondary" onClick={analytics.review}>Revisar escolha de Analytics</button>
     {error && <p role="alert">{error}</p>}
     {confirm && <ConfirmDialog title={confirm === 'revoke' ? 'Desconectar Google Drive?' : confirm === 'logout' ? 'Sair deste navegador?' : 'Confirmar a versão escolhida?'}
       confirmLabel="Confirmar" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => void act(() => {
