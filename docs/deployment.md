@@ -20,6 +20,12 @@ Os CNAMEs de validação DNS do ACM já existem na zona. Após a delegação se 
 
 Os certificados devem estar com status `ISSUED` antes de serem associados aos recursos de produção.
 
+### Propriedade do domínio no Google
+
+Em 27/09/2026, `livroalivro.app.br` foi verificado como propriedade de domínio no Google Search Console, na conta responsável pelo projeto `livro-a-livro`, via registro TXT no ápice da zona Route 53. Preserve o registro `google-site-verification`: removê-lo pode invalidar a propriedade exigida pelo Branding OAuth. Ele é separado dos CNAMEs de validação dos certificados ACM.
+
+O consentimento Google está em produção, com escopos `openid` e `drive.appdata`; os links públicos apontam para a raiz do site e `/privacidade.html`. O ícone de Branding está em [`docs/branding`](branding/README.md). Publicação do consentimento, aprovação visual da marca pelo Google e ativação da flag Drive no frontend são estados separados. Os gates e o estado de ativação devem ser conferidos antes de anunciar disponibilidade.
+
 ## Publicação do site
 
 `infra/frontend.yml` cria uma distribuição CloudFront com origem S3 privada/OAC, o alias `A`/`AAAA` da raiz e os cabeçalhos de segurança. O bucket recebe somente o build estático; não recebe bibliotecas, backups, capas enviadas ou arquivos de Drive.
