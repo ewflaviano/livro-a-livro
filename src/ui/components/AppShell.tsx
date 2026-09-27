@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { BookOpen, Bookmark, Library, Plus, Settings, ShieldCheck } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
+import { PwaStatus } from './PwaStatus';
 
 const navigation = [
   { to: '/estante', label: 'Estante', icon: Library },
@@ -52,6 +53,7 @@ export function AppShell() {
         </aside>
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
+      <PwaStatus />
       <footer className="app-footer">Sua história em livros. Privada, por princípio.</footer>
     </>
   );

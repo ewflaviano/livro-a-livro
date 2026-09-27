@@ -10,6 +10,7 @@ import { sameRevision } from '../../services/library-service';
 import { BookForm, storageMessage } from '../components/BookForm';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LibraryState } from '../components/LibraryState';
+import { blockPwaUpdate } from '../../pwa/register';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
@@ -65,6 +66,7 @@ function BookDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
+  useEffect(() => { if (busy || removing) return blockPwaUpdate(); }, [busy, removing]);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   const observed = state.status === 'ready' ? state.snapshot.version : null;
