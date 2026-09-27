@@ -32,4 +32,4 @@ O certificado regional de `sa-east-1` continua reservado para o domínio `api.li
 
 ## CI/CD
 
-`.github/workflows/ci.yml` testa frontend e Rust em jobs independentes. Publicações da `main` assumem a role OIDC limitada definida em `infra/github-oidc.yml`; não usam chaves AWS estáticas. A role só pode ler os outputs da stack, publicar os assets no bucket deste site e invalidar sua distribuição.
+`.github/workflows/ci.yml` testa frontend e Rust em jobs independentes. Publicações da `main` assumem a role OIDC limitada definida em `infra/github-oidc.yml`; não usam chaves AWS estáticas. A confiança usa o identificador imutável do repositório no GitHub e a referência `main`, para que uma renomeação não abra a role a outro repositório. A role só pode ler os outputs da stack, publicar os assets no bucket deste site e invalidar sua distribuição.

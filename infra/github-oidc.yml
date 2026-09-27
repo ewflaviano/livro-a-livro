@@ -16,10 +16,11 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-              # GitHub can encode either a ref or a protected environment in
-              # `sub`. The workflow itself only grants id-token to releases.
+              # This repository uses GitHub's immutable OIDC subject template.
+              # Keep the stable owner/repository IDs and restrict credentials
+              # to releases from main.
               StringLike:
-                token.actions.githubusercontent.com:sub: repo:ewflaviano/livro-a-livro:*
+                token.actions.githubusercontent.com:sub: repo:ewflaviano@324998515/livro-a-livro@1389905851:ref:refs/heads/main
       Policies:
         - PolicyName: publish-static-release
           PolicyDocument:
