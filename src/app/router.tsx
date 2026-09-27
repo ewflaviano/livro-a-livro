@@ -5,10 +5,12 @@ import { ShelfPage } from '../ui/pages/ShelfPage';
 import { AddBookPage, BookPage } from '../ui/pages/BookPage';
 import { LibraryProvider } from './LibraryProvider';
 import type { ShelfService } from '../services/shelf-service';
+import { SyncProvider } from './SyncProvider';
+import { DataPage } from '../ui/pages/DataPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
-    <LibraryProvider openService={openService}>
+    <LibraryProvider openService={openService}><SyncProvider>
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
@@ -17,12 +19,12 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="quero-ler" element={<ShelfPage key="want" status="want-to-read" />} />
         <Route path="adicionar" element={<AddBookPage />} />
         <Route path="livro/:id" element={<BookPage />} />
-        <Route path="dados" element={<PlaceholderPage title="Seus dados" description="Sua biblioteca pertence a você." detail="Seus livros ficarão neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. A exportação e a importação de uma cópia JSON estarão disponíveis aqui." />} />
+        <Route path="dados" element={<DataPage />} />
         <Route path="configuracoes" element={<PlaceholderPage title="Configurações" description="Simples, privado e do seu jeito." detail="As preferências do aplicativo estão em preparação. Você poderá usar sua estante sem criar uma conta." />} />
         <Route path="*" element={<PlaceholderPage title="Página não encontrada" description="Este endereço não faz parte da sua estante." detail="Volte para continuar navegando." back />} />
       </Route>
     </Routes>
-    </LibraryProvider>
+    </SyncProvider></LibraryProvider>
   );
 }
 

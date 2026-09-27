@@ -5,7 +5,11 @@ import { createOpenLibraryClient } from '../adapters/open-library/client';
 import { createSearchService } from '../services/search-service';
 import { openLibraryCoverUrl } from '../adapters/open-library/covers';
 
-export function openBookSearch() { return { ...createSearchService(createOpenLibraryClient(createSearchCache())), coverUrl: openLibraryCoverUrl }; }
+export function openBookSearch() {
+  const local = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true';
+  const source = local ? { async search() { return { candidates: [], page: 1, hasMore: false, cached: false }; } } : createOpenLibraryClient(createSearchCache());
+  return { ...createSearchService(source), coverUrl: local ? () => null : openLibraryCoverUrl };
+}
 
 export async function openShelfService() {
   let service: ReturnType<typeof createShelfService> | undefined;

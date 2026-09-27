@@ -120,7 +120,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       const replacementBytes = prepared.kind === 'replace' ? bytes(prepared.books) : 0;
       const putBytes = prepared.kind === 'put' ? bytes(prepared.book) : 0;
       const generation = prepared.kind === 'replace' ? globalThis.crypto.randomUUID() : null;
-      const version = await transaction(['books', 'meta', 'preferences'], 'readwrite', async (tx) => {
+      const version = await transaction(['books', 'meta', 'preferences', 'syncOutbox'], 'readwrite', async (tx) => {
         const books = tx.objectStore('books');
         const meta = parseMetadata(await tx.objectStore('meta').get('library'));
         if (!sameRevision(meta, expectedVersion)) throw new DomainError('StaleRevision');
@@ -156,6 +156,9 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
           bookCount, serializedBytes,
         };
         await tx.objectStore('meta').put(parseMetadata(next), 'library');
+        // Durable intent is atomic with the library, even while disconnected or the app closes.
+        // Contains a revision only; credentials never belong in this store.
+        await tx.objectStore('syncOutbox').put({ version: versionOf(next) }, 'pending');
         return versionOf(next);
       });
       notify(version);

@@ -6,6 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "local": "node scripts/local.mjs",
+    "local:api": "node scripts/local-api.mjs",
+    "local:reset": "node scripts/local-reset.mjs",
+    "test:local": "node --test scripts/local-api.check.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b",

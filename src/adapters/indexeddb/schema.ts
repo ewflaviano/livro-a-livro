@@ -6,7 +6,7 @@ import { DomainError, parseDomain } from '../../domain/errors';
 import { LIBRARY_LIMITS } from '../../domain/library';
 import type { LibraryPreferences, LocalRevision } from '../../ports/library-repository';
 
-export const DATABASE_NAME = 'livro-a-livro';
+export const DATABASE_NAME = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' ? 'livro-a-livro-local' : 'livro-a-livro';
 export const DATABASE_VERSION = 1;
 export const RECORD_VERSION = 1;
 export const revisionSchema = z.strictObject({

@@ -1,0 +1,90 @@
+import { z } from 'zod';
+import { headerSchema, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SnapshotHeader } from './contracts';
+import { limitedJson, request } from './network';
+import { MAX_SYNC_BYTES, parseSnapshot } from './snapshot';
+
+const origin = 'https://www.googleapis.com';
+const fileSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/u), size: z.string().regex(/^\d+$/u), appProperties: z.record(z.string(), z.string()) });
+const pageSchema = z.object({ nextPageToken: z.string().max(4000).optional(), files: z.array(fileSchema).max(1000) });
+const name = 'livro-a-livro-snapshot-v1.json';
+
+export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: typeof fetch = fetch): DriveClient {
+  const resolutionHeaders = new Map<string, SnapshotHeader>();
+  async function google(url: string, init: RequestInit, signal: AbortSignal) {
+    const parsed = new URL(url);
+    if (parsed.origin !== origin || parsed.username || parsed.password ||
+      !['/drive/v3/files', '/upload/drive/v3/files'].some(path => parsed.pathname === path || parsed.pathname.startsWith(path + '/'))) throw new SyncError('invalid');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await request(fetcher, url, { ...init, signal, credentials: 'omit', headers: { ...init.headers,
+          Authorization: `Bearer ${await auth.token(binding, signal)}` } });
+      } catch (error) {
+        if (!(error instanceof SyncError) || error.code !== 'reconnect' || attempt > 0) throw error;
+        auth.invalidate();
+      }
+    }
+    throw new SyncError('reconnect');
+  }
+  async function download(file: DriveFile, signal: AbortSignal) {
+    if (file.size > MAX_SYNC_BYTES) throw new SyncError('invalid');
+    const snapshot = await parseSnapshot(await limitedJson(await google(`${origin}/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`, {}, signal), MAX_SYNC_BYTES));
+    const { library: _, ...header } = snapshot;
+    if (header.snapshotId !== file.header.snapshotId || header.hash !== file.header.hash || header.operationId !== file.header.operationId ||
+      header.parentSnapshotId !== file.header.parentSnapshotId || header.createdAt !== file.header.createdAt) throw new SyncError('invalid');
+    return snapshot;
+  }
+  return {
+    async list(signal) {
+      const files: DriveFile[] = []; const tokens = new Set<string>(); let pageToken: string | undefined;
+      do {
+        const query = new URLSearchParams({ spaces: 'appDataFolder',
+          q: `name = '${name}' and 'appDataFolder' in parents and trashed = false`,
+          fields: 'nextPageToken,files(id,size,appProperties)', pageSize: '1000' });
+        if (pageToken) query.set('pageToken', pageToken);
+        const response = pageSchema.safeParse(await limitedJson(await google(`${origin}/drive/v3/files?${query}`, {}, signal), 2 * 1024 * 1024));
+        if (!response.success) throw new SyncError('invalid');
+        for (const raw of response.data.files) {
+          const p = raw.appProperties;
+          const parsed = headerSchema.safeParse({ format: 'livro-a-livro-sync', protocolVersion: Number(p.protocolVersion),
+            snapshotId: p.snapshotId, operationId: p.operationId, parentSnapshotId: p.parentSnapshotId === 'root' ? null : p.parentSnapshotId,
+            hash: p.hash, createdAt: p.createdAt, resolvedSnapshotIds: [] });
+          if (!parsed.success || !['0', '1'].includes(p.resolution) || Number(raw.size) > MAX_SYNC_BYTES) throw new SyncError('invalid');
+          const file: DriveFile = { id: raw.id, size: Number(raw.size), header: parsed.data };
+          if (p.resolution === '1') {
+            let header = resolutionHeaders.get(raw.id);
+            if (!header) {
+              const { library: _, ...downloaded } = await download(file, signal);
+              header = downloaded; resolutionHeaders.set(raw.id, header);
+            }
+            file.header = header;
+          }
+          files.push(file);
+        }
+        if (files.length > 10_000) throw new SyncError('invalid');
+        pageToken = response.data.nextPageToken;
+        if (pageToken && tokens.has(pageToken)) throw new SyncError('invalid');
+        if (pageToken) tokens.add(pageToken);
+      } while (pageToken);
+      return files;
+    },
+    download,
+    async upload(input: SyncSnapshot, signal) {
+      const snapshot = await parseSnapshot(input);
+      const content = JSON.stringify(snapshot);
+      const metadata = { name, mimeType: 'application/json', parents: ['appDataFolder'], appProperties: {
+        protocolVersion: '1', snapshotId: snapshot.snapshotId, operationId: snapshot.operationId,
+        parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt,
+        resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0',
+      } };
+      // A new resumable session for each attempt. Reconcile operationId before retrying uploads.
+      const start = await google(`${origin}/upload/drive/v3/files?uploadType=resumable&fields=id`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': 'application/json',
+          'X-Upload-Content-Length': String(new TextEncoder().encode(content).length) }, body: JSON.stringify(metadata),
+      }, signal);
+      const location = start.headers.get('location');
+      if (!location) throw new SyncError('invalid');
+      // google() validates the exact HTTPS origin/path before adding a bearer token.
+      await google(location, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: content }, signal);
+    },
+  };
+}
