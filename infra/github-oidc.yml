@@ -16,7 +16,10 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:ewflaviano/livro-a-livro:ref:refs/heads/main
+              # GitHub can encode either a ref or a protected environment in
+              # `sub`. The workflow itself only grants id-token to releases.
+              StringLike:
+                token.actions.githubusercontent.com:sub: repo:ewflaviano/livro-a-livro:*
       Policies:
         - PolicyName: publish-static-release
           PolicyDocument:
