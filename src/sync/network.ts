@@ -25,8 +25,9 @@ export async function checkedResponse(response: Response) {
     throw new SyncError('retry', Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0);
   }
   if (response.status === 403) {
-    const payload = await limitedJson(response, 16 * 1024).catch(() => null) as { error?: { errors?: { reason?: string }[] } } | null;
-    const reasons = payload?.error?.errors?.map(error => error.reason) ?? [];
+    const payload = await limitedJson(response, 16 * 1024).catch(() => null) as { error?: string | { errors?: { reason?: string }[] } } | null;
+    if (payload?.error === 'drive_authorization_required') throw new SyncError('drive-required');
+    const reasons = typeof payload?.error === 'object' ? payload.error.errors?.map(error => error.reason) ?? [] : [];
     if (reasons.some(reason => ['rateLimitExceeded', 'userRateLimitExceeded'].includes(reason ?? ''))) throw new SyncError('retry', 60_000);
     if (reasons.includes('storageQuotaExceeded')) throw new SyncError('quota');
     throw new SyncError('reconnect');

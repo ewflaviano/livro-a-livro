@@ -298,7 +298,7 @@ A preparação offline inicial nunca usa a mensagem de atualização. Versão no
 
 O cabeçalho reúne Apoiar, conexão/estado do Drive e Configurações em todas as rotas. No celular, as ações podem ocupar uma segunda linha sem ocultar os rótulos. Adicionar continua na barra inferior; desktop mantém seu botão no cabeçalho. Preparando conexão e indisponibilidade real têm mensagens distintas.
 
-Entrar com Google abre a confirmação compartilhada com Seus dados. Após identificação, o convite Autorizar Drive oferece Agora não; não inicia a segunda autorização por conta própria. Nesta fatia, a identificação ainda é temporária e o texto informa esse limite. Login persistente e a lembrança de Agora não entre aberturas pertencem à próxima fatia.
+Entrar com Google abre a confirmação compartilhada com Seus dados. Após identificação, o convite Autorizar Drive oferece Agora não; não inicia a segunda autorização por conta própria. O login é global e recuperado ao abrir ou voltar ao aplicativo, sem abrir OAuth automaticamente. Agora não é lembrado localmente para esse login, inclusive entre aberturas; o botão explícito do topo continua disponível. Pausar mantém login. Sair só anuncia conclusão após confirmação; falha mantém sync pausada e permite nova tentativa.
 
 Formulário aberto, operação de backup, atualização em aplicação ou outro diálogo adiam o convite. Rascunho/backup/update também são conferidos imediatamente antes de sair para Google, depois da resposta de autorização. Fechar devolve o foco a um acionador disponível. Autorização usa o estilo de ação primária; ações destrutivas conservam seu estilo próprio.
 

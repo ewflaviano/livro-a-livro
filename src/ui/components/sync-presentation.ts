@@ -1,8 +1,8 @@
 export const authorizationStates = ['identifying', 'authorize-drive', 'authorization-expired', 'authorization-waiting', 'authorization-error'];
 export const syncLabels = {
   identifying: 'Conclua a identificação no Google. Os envios continuam desabilitados.',
-  'authorize-drive': 'Conta Google confirmada por alguns minutos. O Drive ainda não foi autorizado.',
-  'authorization-expired': 'Não foi possível confirmar a autorização temporária. Entre com Google novamente. Sua biblioteca continua aqui.',
+  'authorize-drive': 'Você entrou com Google. O Drive ainda não foi autorizado.',
+  'authorization-expired': 'Não foi possível confirmar esta autorização. Entre com Google novamente. Sua biblioteca continua aqui.',
   'authorization-error': 'Não foi possível verificar a autorização. Sua biblioteca continua aqui e os envios estão desabilitados.',
   'authorization-waiting': 'A autorização ainda não foi confirmada. Conclua no Google ou verifique novamente. Sua biblioteca e seu backup continuam disponíveis offline.',
   disabled: 'Seus dados estão apenas neste dispositivo.', paused: 'Sincronização pausada neste dispositivo.',

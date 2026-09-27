@@ -8,18 +8,25 @@ import type { LocalRevision } from '../ports/library-repository';
 
 export async function openSyncStore(options: DatabaseOptions = {}) {
   const connection = await openDatabase(options); const db = connection.db;
+  const listeners = new Set<() => void>();
+  const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
+  const notify = () => listeners.forEach(listener => listener());
+  if (channel) channel.onmessage = notify;
+  const changed = () => { channel?.postMessage('control'); };
   return {
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     async read(): Promise<SyncRecord> {
       const value = await db.get('syncState', 'control');
       return value === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(value);
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
     /** Patch current control and fence cycle writes in the same transaction. */
-    async update(patch: Partial<SyncRecord>, owner?: string, revokeLease = false, acknowledged?: LocalRevision) {
+    async update(patch: Partial<SyncRecord>, owner?: string, revokeLease = false, acknowledged?: LocalRevision, expectedRevision?: number) {
       const tx = db.transaction(['syncState', 'syncOutbox'], 'readwrite');
       const control = tx.objectStore('syncState');
       const raw = await control.get('control');
       const current = raw === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(raw);
+      if (expectedRevision !== undefined && current.authRevision !== expectedRevision) { await tx.done; throw new SyncError('cancelled'); }
       if (patch.enabled === true && current.authorization) { await tx.done; throw new SyncError('cancelled'); }
       if (owner) {
         const lease = await control.get('lease') as { owner: string; until: number } | undefined;
@@ -27,7 +34,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
           await tx.done; throw new SyncError('cancelled');
         }
       }
-      const next = syncStateSchema.parse({ ...current, ...patch });
+      const next = syncStateSchema.parse({ ...current, ...patch, authRevision: current.authRevision + (revokeLease ? 1 : 0) });
       await control.put(next, 'control');
       if (revokeLease) await control.delete('lease');
       if (acknowledged) {
@@ -37,6 +44,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
         await outbox.delete('operation');
       }
       await tx.done;
+      if (revokeLease || patch.drivePromptDismissedForSignIn !== undefined) changed();
       return next;
     },
     /** Authorization responses may commit only while the exact persisted intent still exists. */
@@ -113,7 +121,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const value = await db.get('syncState', 'lease') as { owner: string; until: number } | undefined;
       if (value?.owner !== owner || value.until <= Date.now()) throw new SyncError('cancelled');
     },
-    close() { connection.close(); },
+    close() { channel?.close(); listeners.clear(); connection.close(); },
   };
 }
 export type SyncStore = Awaited<ReturnType<typeof openSyncStore>>;

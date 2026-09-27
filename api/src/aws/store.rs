@@ -257,7 +257,7 @@ impl DynamoStore {
                 .build())
         }
     }
-    fn oauth_put(&self, hash: &str, transaction: Transaction) -> Result<TransactWriteItem, Error> {
+    fn oauth_put(&self, hash: &str, transaction: &Transaction) -> Result<TransactWriteItem, Error> {
         let purpose =
             serde_json::to_string(&transaction.purpose).map_err(|_| Error::Unavailable)?;
         Ok(TransactWriteItem::builder()
@@ -265,8 +265,10 @@ impl DynamoStore {
                 Put::builder()
                     .table_name(&self.table)
                     .item("pk", s(format!("OAUTH#{hash}")))
+                    .item("version", n(2))
+                    .item("attemptId", s(&transaction.attempt_id))
                     .item("purpose", s(purpose))
-                    .item("cookieHash", s(transaction.cookie_hash))
+                    .item("cookieHash", s(&transaction.cookie_hash))
                     .item("nonce", s(transaction.nonce.0.clone()))
                     .item("verifier", s(transaction.verifier.0.clone()))
                     .item("expiresAt", n(transaction.expires_at))
@@ -276,6 +278,200 @@ impl DynamoStore {
                     .map_err(|_| Error::Unavailable)?,
             )
             .build())
+    }
+    fn put_row<T: Serialize>(
+        &self,
+        pk: String,
+        value: &T,
+        ttl: u64,
+    ) -> Result<TransactWriteItem, Error> {
+        let mut item = data(pk, value)?;
+        item.insert("deleteAfter".into(), n(ttl));
+        Ok(TransactWriteItem::builder()
+            .put(
+                Put::builder()
+                    .table_name(&self.table)
+                    .set_item(Some(item))
+                    .condition_expression("attribute_not_exists(pk)")
+                    .build()
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .build())
+    }
+    fn cas_row<T: Serialize>(
+        &self,
+        pk: String,
+        old: &T,
+        next: &T,
+        ttl: u64,
+    ) -> Result<TransactWriteItem, Error> {
+        Ok(TransactWriteItem::builder()
+            .update(
+                Update::builder()
+                    .table_name(&self.table)
+                    .key("pk", s(pk))
+                    .update_expression("SET #d = :next, deleteAfter = :ttl")
+                    .condition_expression("#d = :old")
+                    .expression_attribute_names("#d", "data")
+                    .expression_attribute_values(
+                        ":old",
+                        s(serde_json::to_string(old).map_err(|_| Error::Unavailable)?),
+                    )
+                    .expression_attribute_values(
+                        ":next",
+                        s(serde_json::to_string(next).map_err(|_| Error::Unavailable)?),
+                    )
+                    .expression_attribute_values(":ttl", n(ttl))
+                    .build()
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .build())
+    }
+    fn delete_row(&self, pk: String) -> Result<TransactWriteItem, Error> {
+        Ok(TransactWriteItem::builder()
+            .delete(
+                Delete::builder()
+                    .table_name(&self.table)
+                    .key("pk", s(pk))
+                    .build()
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .build())
+    }
+    fn login_check(&self, hash: &str, login: &Login, now: u64) -> Result<TransactWriteItem, Error> {
+        if !login.valid(now) {
+            return Err(Error::Unauthorized);
+        }
+        Ok(TransactWriteItem::builder()
+            .condition_check(
+                ConditionCheck::builder()
+                    .table_name(&self.table)
+                    .key("pk", s(format!("LOGIN#{hash}")))
+                    .condition_expression("#d = :d AND deleteAfter > :now")
+                    .expression_attribute_names("#d", "data")
+                    .expression_attribute_values(
+                        ":d",
+                        s(serde_json::to_string(login).map_err(|_| Error::Unavailable)?),
+                    )
+                    .expression_attribute_values(":now", n(now))
+                    .build()
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .build())
+    }
+    async fn attempt_record(&self, hash: &str) -> Result<Option<AuthorizationAttempt>, Error> {
+        self.get(&format!("AUTH_ATTEMPT#{hash}"))
+            .await?
+            .map(|item| {
+                let value: AuthorizationAttempt = decode(&item).map_err(|_| Error::Unauthorized)?;
+                if value.version != 1 {
+                    return Err(Error::Unauthorized);
+                }
+                Ok(value)
+            })
+            .transpose()
+    }
+    fn pending_attempt(transaction: &Transaction) -> AuthorizationAttempt {
+        AuthorizationAttempt {
+            version: 1,
+            attempt_id: transaction.attempt_id.clone(),
+            purpose: transaction.purpose.clone(),
+            phase: AttemptPhase::Pending,
+            expires_at: transaction.expires_at,
+            record_version: 1,
+        }
+    }
+    async fn completed_attempt(
+        &self,
+        hash: &str,
+        id: &str,
+        purpose: &OAuthPurpose,
+        login_hash: &str,
+        now: u64,
+    ) -> Result<TransactWriteItem, Error> {
+        let old = self.authorization(hash, now).await?;
+        if old.phase != AttemptPhase::Pending || old.attempt_id != id || &old.purpose != purpose {
+            return Err(Error::Unauthorized);
+        }
+        let mut next = old.clone();
+        next.phase = AttemptPhase::Completed {
+            login_hash: login_hash.into(),
+        };
+        next.record_version = add(old.record_version, 1)?;
+        self.cas_row(format!("AUTH_ATTEMPT#{hash}"), &old, &next, old.expires_at)
+    }
+    async fn cancellation_plan(
+        &self,
+        hash: &str,
+        old: &AuthorizationAttempt,
+    ) -> Result<std::collections::BTreeMap<String, TransactWriteItem>, Error> {
+        let mut plan = std::collections::BTreeMap::new();
+        if old.phase == AttemptPhase::Cancelled {
+            return Ok(plan);
+        }
+        let mut next = old.clone();
+        next.phase = AttemptPhase::Cancelled;
+        next.record_version = add(old.record_version, 1)?;
+        let key = format!("AUTH_ATTEMPT#{hash}");
+        plan.insert(key.clone(), self.cas_row(key, old, &next, old.expires_at)?);
+        match &old.purpose {
+            OAuthPurpose::SignIn => {
+                if let AttemptPhase::Completed { login_hash } = &old.phase {
+                    let key = format!("LOGIN#{login_hash}");
+                    plan.insert(key.clone(), self.delete_row(key)?);
+                }
+            }
+            OAuthPurpose::Drive {
+                login_hash,
+                drive_epoch,
+                identity_hash,
+                ..
+            } => {
+                if let Some(item) = self.get(&format!("LOGIN#{login_hash}")).await? {
+                    let login: Login = decode(&item).map_err(|_| Error::Unauthorized)?;
+                    if login.version == 1
+                        && login.drive_epoch == *drive_epoch
+                        && login.drive_attempt_id.as_deref() == Some(&old.attempt_id)
+                    {
+                        let mut changed = login.clone();
+                        changed.drive_epoch = add(login.drive_epoch, 1)?;
+                        changed.drive_attempt_id = None;
+                        changed.record_version = add(login.record_version, 1)?;
+                        let key = format!("LOGIN#{login_hash}");
+                        plan.insert(
+                            key.clone(),
+                            self.cas_row(key, &login, &changed, login.absolute_expires_at)?,
+                        );
+                    }
+                }
+                let key = format!("IDENTITY#{identity_hash}");
+                plan.insert(key.clone(), self.delete_row(key)?);
+            }
+        }
+        Ok(plan)
+    }
+    async fn previous_plan(
+        &self,
+        previous: &PreviousAuthorization<'_>,
+    ) -> Result<std::collections::BTreeMap<String, TransactWriteItem>, Error> {
+        let mut plan = std::collections::BTreeMap::new();
+        if let Some(hash) = previous.attempt_hash
+            && let Some(attempt) = self.attempt_record(hash).await?
+        {
+            plan = self.cancellation_plan(hash, &attempt).await?;
+        }
+        // A LOGIN deletion supersedes any cancellation epoch update on the same key.
+        // DynamoDB rejects multiple actions targeting one item in a transaction.
+        for (prefix, hash) in [
+            ("LOGIN", previous.login_hash),
+            ("SESSION", previous.session_hash),
+        ] {
+            if let Some(hash) = hash {
+                let key = format!("{prefix}#{hash}");
+                plan.insert(key.clone(), self.delete_row(key)?);
+            }
+        }
+        Ok(plan)
     }
     fn put_session(&self, hash: &str, session: &Session) -> Result<TransactWriteItem, Error> {
         let mut item = data(format!("SESSION#{hash}"), session)?;
@@ -375,17 +571,21 @@ impl DynamoStore {
                 }
             })
     }
-    async fn pair(&self, hash: &str, now: u64) -> Result<(Session, Connection), Error> {
+    async fn pair(&self, hash: &str, now: u64) -> Result<(Session, Connection, Login), Error> {
         let first: Session = decode(
             &self
                 .get(&format!("SESSION#{hash}"))
                 .await?
                 .ok_or(Error::Unauthorized)?,
         )?;
+        if first.version != 2 || first.login_hash.is_empty() {
+            return Err(Error::LegacySession);
+        }
         let mut gets = Vec::new();
         for pk in [
             format!("SESSION#{hash}"),
             format!("CONNECTION#{}", first.connection_id),
+            format!("LOGIN#{}", first.login_hash),
         ] {
             gets.push(
                 TransactGetItem::builder()
@@ -413,7 +613,9 @@ impl DynamoStore {
                 .and_then(|r| r.item.as_ref())
                 .ok_or(Error::Unauthorized)?,
         )?;
-        if session.connection_id != first.connection_id
+        if session.version != 2
+            || session.login_hash != first.login_hash
+            || session.connection_id != first.connection_id
             || session.expires_at <= now
             || session.absolute_expires_at <= now
         {
@@ -426,7 +628,20 @@ impl DynamoStore {
                 .ok_or(Error::Unauthorized)?,
         )?;
         connection.active(session.generation, now)?;
-        Ok((session, connection))
+        let login: Login = decode(
+            records
+                .get(2)
+                .and_then(|r| r.item.as_ref())
+                .ok_or(Error::Unauthorized)?,
+        )
+        .map_err(|_| Error::Unauthorized)?;
+        if !login.valid(now)
+            || login.connection_id != session.connection_id
+            || login.drive_epoch != session.login_drive_epoch
+        {
+            return Err(Error::Unauthorized);
+        }
+        Ok((session, connection, login))
     }
     fn begin_revocation(connection: &mut Connection, now: u64) -> Result<(), Error> {
         connection.generation = add(connection.generation, 1)?;
@@ -476,69 +691,216 @@ impl Store for DynamoStore {
             "epoch",
         )
     }
-    async fn put_identity(&self, hash: &str, identity: PendingIdentity) -> Result<(), Error> {
-        let mut item = data(format!("IDENTITY#{hash}"), &identity)?;
-        item.insert("deleteAfter".into(), n(identity.expires_at));
-        self.client
-            .put_item()
-            .table_name(&self.table)
-            .set_item(Some(item))
-            .condition_expression("attribute_not_exists(pk)")
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|_| Error::Unavailable)
+    async fn login(&self, hash: &str, now: u64) -> Result<Login, Error> {
+        let item = self
+            .get(&format!("LOGIN#{hash}"))
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        let value: Login = decode(&item).map_err(|_| Error::Unauthorized)?;
+        if !value.valid(now) {
+            return Err(Error::Unauthorized);
+        }
+        Ok(value)
+    }
+    async fn renew_login(&self, hash: &str, now: u64) -> Result<Login, Error> {
+        for _ in 0..3 {
+            let old = self.login(hash, now).await?;
+            let mut next = old.clone();
+            next.expires_at = add(now, SESSION_TTL)?.min(old.absolute_expires_at);
+            next.record_version = add(old.record_version, 1)?;
+            match self
+                .write(vec![self.cas_row(
+                    format!("LOGIN#{hash}"),
+                    &old,
+                    &next,
+                    next.absolute_expires_at,
+                )?])
+                .await
+            {
+                Ok(()) => return Ok(next),
+                Err(Error::Busy) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(Error::Busy)
+    }
+    async fn logout_login(
+        &self,
+        previous: PreviousAuthorization<'_>,
+        _now: u64,
+    ) -> Result<(), Error> {
+        for _ in 0..3 {
+            let plan = self.previous_plan(&previous).await?;
+            if plan.is_empty() {
+                return Ok(());
+            }
+            match self.write(plan.into_values().collect()).await {
+                Err(Error::Busy) => continue,
+                result => return result,
+            }
+        }
+        Err(Error::Busy)
+    }
+    async fn begin_sign_in(
+        &self,
+        hash: &str,
+        transaction: Transaction,
+        previous: PreviousAuthorization<'_>,
+        now: u64,
+    ) -> Result<(), Error> {
+        if transaction.version != 2
+            || transaction.purpose != OAuthPurpose::SignIn
+            || transaction.expires_at <= now
+        {
+            return Err(Error::InvalidRequest);
+        }
+        for _ in 0..3 {
+            let mut plan = self.previous_plan(&previous).await?;
+            plan.insert(format!("OAUTH#{hash}"), self.oauth_put(hash, &transaction)?);
+            let key = format!("AUTH_ATTEMPT#{}", transaction.cookie_hash);
+            plan.insert(
+                key.clone(),
+                self.put_row(
+                    key,
+                    &Self::pending_attempt(&transaction),
+                    transaction.expires_at,
+                )?,
+            );
+            match self.write(plan.into_values().collect()).await {
+                Err(Error::Busy) => continue,
+                result => return result,
+            }
+        }
+        Err(Error::Busy)
+    }
+    async fn finish_sign_in(
+        &self,
+        hash: &str,
+        id: &str,
+        login_hash: &str,
+        connection: &str,
+        now: u64,
+    ) -> Result<Login, Error> {
+        let completed = self
+            .completed_attempt(hash, id, &OAuthPurpose::SignIn, login_hash, now)
+            .await?;
+        let login = Login {
+            version: 1,
+            connection_id: connection.into(),
+            sign_in_attempt_id: id.into(),
+            expires_at: add(now, SESSION_TTL)?,
+            absolute_expires_at: add(now, ABSOLUTE_TTL)?,
+            drive_epoch: 0,
+            drive_attempt_id: None,
+            record_version: 1,
+        };
+        self.write(vec![
+            completed,
+            self.put_row(
+                format!("LOGIN#{login_hash}"),
+                &login,
+                login.absolute_expires_at,
+            )?,
+        ])
+        .await?;
+        Ok(login)
+    }
+    async fn authorization(&self, hash: &str, now: u64) -> Result<AuthorizationAttempt, Error> {
+        let value = self
+            .attempt_record(hash)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        if value.expires_at <= now {
+            return Err(Error::Unauthorized);
+        }
+        Ok(value)
+    }
+    async fn cancel_authorization(&self, hash: &str, id: &str, now: u64) -> Result<(), Error> {
+        for _ in 0..3 {
+            let old = self.authorization(hash, now).await?;
+            if old.attempt_id != id {
+                return Err(Error::Forbidden);
+            }
+            let plan = self.cancellation_plan(hash, &old).await?;
+            if plan.is_empty() {
+                return Ok(());
+            }
+            match self.write(plan.into_values().collect()).await {
+                Err(Error::Busy) => continue,
+                result => return result,
+            }
+        }
+        Err(Error::Busy)
+    }
+    async fn begin_drive(
+        &self,
+        hash: &str,
+        transaction: Transaction,
+        expected: &Login,
+        now: u64,
+    ) -> Result<(), Error> {
+        let OAuthPurpose::Drive {
+            identity_hash,
+            expected_connection,
+            login_hash,
+            drive_epoch,
+        } = &transaction.purpose
+        else {
+            return Err(Error::InvalidRequest);
+        };
+        if transaction.version != 2
+            || !expected.valid(now)
+            || expected_connection != &expected.connection_id
+            || *drive_epoch != add(expected.drive_epoch, 1)?
+            || transaction.expires_at <= now
+            || transaction.expires_at > expected.expires_at.min(expected.absolute_expires_at)
+        {
+            return Err(Error::Unauthorized);
+        }
+        let mut login = expected.clone();
+        login.drive_epoch = *drive_epoch;
+        login.drive_attempt_id = Some(transaction.attempt_id.clone());
+        login.record_version = add(expected.record_version, 1)?;
+        let identity = PendingIdentity {
+            version: 2,
+            login_hash: login_hash.clone(),
+            drive_epoch: *drive_epoch,
+            attempt_id: transaction.attempt_id.clone(),
+            attempt_hash: transaction.cookie_hash.clone(),
+            connection_id: expected_connection.clone(),
+            expires_at: transaction.expires_at,
+        };
+        self.write(vec![
+            self.cas_row(
+                format!("LOGIN#{login_hash}"),
+                expected,
+                &login,
+                login.absolute_expires_at,
+            )?,
+            self.put_row(
+                format!("IDENTITY#{identity_hash}"),
+                &identity,
+                identity.expires_at,
+            )?,
+            self.oauth_put(hash, &transaction)?,
+            self.put_row(
+                format!("AUTH_ATTEMPT#{}", transaction.cookie_hash),
+                &Self::pending_attempt(&transaction),
+                transaction.expires_at,
+            )?,
+        ])
+        .await
     }
     async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error> {
         let item = self
             .get(&format!("IDENTITY#{hash}"))
             .await?
             .ok_or(Error::Unauthorized)?;
-        let identity: PendingIdentity = decode(&item)?;
-        if identity.expires_at <= now {
-            return Err(Error::Unauthorized);
-        }
-        Ok(identity)
-    }
-    async fn delete_identity(&self, hash: &str) -> Result<(), Error> {
-        self.client
-            .delete_item()
-            .table_name(&self.table)
-            .key("pk", s(format!("IDENTITY#{hash}")))
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|_| Error::Unavailable)
-    }
-    async fn put_oauth(&self, hash: &str, transaction: Transaction) -> Result<(), Error> {
-        if !matches!(transaction.purpose, OAuthPurpose::SignIn) {
-            return Err(Error::InvalidRequest);
-        }
-        self.write(vec![self.oauth_put(hash, transaction)?]).await
-    }
-    async fn put_drive_oauth(
-        &self,
-        hash: &str,
-        transaction: Transaction,
-        expected: &PendingIdentity,
-        now: u64,
-    ) -> Result<(), Error> {
-        let OAuthPurpose::Drive {
-            identity_hash,
-            expected_connection,
-        } = &transaction.purpose
-        else {
-            return Err(Error::InvalidRequest);
-        };
-        if expected_connection != &expected.connection_id
-            || transaction.expires_at > expected.expires_at
-            || transaction.expires_at <= now
-        {
+        let identity: PendingIdentity = decode(&item).map_err(|_| Error::IdentityExpired)?;
+        if identity.version != 2 || identity.expires_at <= now {
             return Err(Error::IdentityExpired);
         }
-        let check = self.identity_check(identity_hash, expected, now, false)?;
-        self.write(vec![check, self.oauth_put(hash, transaction)?])
-            .await
+        Ok(identity)
     }
     async fn take_oauth(&self, hash: &str, cookie: &str, now: u64) -> Result<Transaction, Error> {
         let result = self
@@ -570,7 +932,12 @@ impl Store for DynamoStore {
             Err(_) => return Err(Error::Unavailable),
         };
         let item = result.attributes.ok_or(Error::Unauthorized)?;
+        if number(&item, "version").unwrap_or(0) != 2 {
+            return Err(Error::IdentityExpired);
+        }
         Ok(Transaction {
+            version: 2,
+            attempt_id: string(&item, "attemptId").map_err(|_| Error::IdentityExpired)?,
             purpose: serde_json::from_str(
                 &string(&item, "purpose").map_err(|_| Error::Unauthorized)?,
             )
@@ -594,6 +961,29 @@ impl Store for DynamoStore {
             return Err(Error::AccountMismatch);
         }
         let consume = self.identity_check(identity.hash, identity.expected, now, true)?;
+        let login = self.login(&identity.expected.login_hash, now).await?;
+        if identity.expected.version != 2
+            || login.connection_id != id
+            || login.drive_epoch != identity.expected.drive_epoch
+            || login.drive_attempt_id.as_deref() != Some(&identity.expected.attempt_id)
+        {
+            return Err(Error::Unauthorized);
+        }
+        let purpose = OAuthPurpose::Drive {
+            identity_hash: identity.hash.into(),
+            expected_connection: id.into(),
+            login_hash: identity.expected.login_hash.clone(),
+            drive_epoch: identity.expected.drive_epoch,
+        };
+        let completed = self
+            .completed_attempt(
+                &identity.expected.attempt_hash,
+                &identity.expected.attempt_id,
+                &purpose,
+                &identity.expected.login_hash,
+                now,
+            )
+            .await?;
         let old = self.connection(id).await?;
         if old.as_ref().is_some_and(|c| {
             !matches!(c.status, Status::Active | Status::Revoked) || c.lease_until > now
@@ -617,6 +1007,9 @@ impl Store for DynamoStore {
             encrypted,
         };
         let session = Session {
+            version: 2,
+            login_hash: identity.expected.login_hash.clone(),
+            login_drive_epoch: identity.expected.drive_epoch,
             connection_id: id.into(),
             generation,
             expires_at: add(now, SESSION_TTL)?,
@@ -625,6 +1018,8 @@ impl Store for DynamoStore {
         self.write(vec![
             self.epoch_check(epoch)?,
             consume,
+            completed,
+            self.login_check(&identity.expected.login_hash, &login, now)?,
             self.put_connection(id, &connection, old.map(|c| c.version))?,
             self.put_session(hash, &session)?,
         ])
@@ -635,13 +1030,14 @@ impl Store for DynamoStore {
         Ok(self.pair(hash, now).await?.0)
     }
     async fn renew(&self, old: &str, new: &str, now: u64) -> Result<Session, Error> {
-        let (session, mut connection) = self.pair(old, now).await?;
+        let (session, mut connection, login) = self.pair(old, now).await?;
         let mut next = session.clone();
         next.expires_at = add(now, SESSION_TTL)?.min(next.absolute_expires_at);
         let version = connection.version;
         connection.version = add(version, 1)?;
         connection.activity = now;
         self.write(vec![
+            self.login_check(&session.login_hash, &login, now)?,
             self.session_check(old, &session, true)?,
             self.put_session(new, &next)?,
             self.put_connection(&session.connection_id, &connection, Some(version))?,
@@ -649,18 +1045,25 @@ impl Store for DynamoStore {
         .await?;
         Ok(next)
     }
-    async fn logout(&self, hash: &str) -> Result<(), Error> {
-        self.client
-            .delete_item()
-            .table_name(&self.table)
-            .key("pk", s(format!("SESSION#{hash}")))
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|_| Error::Unavailable)
+    async fn logout(&self, hash: &str, now: u64) -> Result<(), Error> {
+        let (session, _, login) = self.pair(hash, now).await?;
+        let mut next = login.clone();
+        next.drive_epoch = add(login.drive_epoch, 1)?;
+        next.drive_attempt_id = None;
+        next.record_version = add(login.record_version, 1)?;
+        self.write(vec![
+            self.cas_row(
+                format!("LOGIN#{}", session.login_hash),
+                &login,
+                &next,
+                login.absolute_expires_at,
+            )?,
+            self.session_check(hash, &session, true)?,
+        ])
+        .await
     }
     async fn claim(&self, hash: &str, owner: &str, now: u64) -> Result<Lease, Error> {
-        let (session, mut c) = self.pair(hash, now).await?;
+        let (session, mut c, login) = self.pair(hash, now).await?;
         if c.lease_until > now
             || c.last_attempt
                 .is_some_and(|v| v.saturating_add(LEASE_TTL) > now)
@@ -673,16 +1076,21 @@ impl Store for DynamoStore {
         c.lease_until = add(now, LEASE_TTL)?;
         c.last_attempt = Some(now);
         self.write(vec![
+            self.login_check(&session.login_hash, &login, now)?,
             self.session_check(hash, &session, false)?,
             self.put_connection(&session.connection_id, &c, Some(version))?,
         ])
         .await?;
         Ok(Lease {
+            login_hash: session.login_hash.clone(),
+            login_drive_epoch: session.login_drive_epoch,
             session_hash: hash.into(),
             authorization_until: c
                 .lease_until
                 .min(session.expires_at)
                 .min(session.absolute_expires_at)
+                .min(login.expires_at)
+                .min(login.absolute_expires_at)
                 .min(add(c.activity, ABSOLUTE_TTL)?),
             connection_id: session.connection_id,
             generation: c.generation,
@@ -691,8 +1099,12 @@ impl Store for DynamoStore {
         })
     }
     async fn finish(&self, lease: &Lease, rotated: Option<Vec<u8>>, now: u64) -> Result<(), Error> {
-        let (session, mut c) = self.pair(&lease.session_hash, now).await?;
-        if session.connection_id != lease.connection_id || session.generation != lease.generation {
+        let (session, mut c, login) = self.pair(&lease.session_hash, now).await?;
+        if session.login_hash != lease.login_hash
+            || session.login_drive_epoch != lease.login_drive_epoch
+            || session.connection_id != lease.connection_id
+            || session.generation != lease.generation
+        {
             return Err(Error::Unauthorized);
         }
         c.active(lease.generation, now)?;
@@ -708,6 +1120,7 @@ impl Store for DynamoStore {
             c.encrypted = value;
         }
         self.write(vec![
+            self.login_check(&session.login_hash, &login, now)?,
             self.session_check(&lease.session_hash, &session, false)?,
             self.put_connection(&lease.connection_id, &c, Some(version))?,
         ])
@@ -738,10 +1151,12 @@ impl Store for DynamoStore {
         reason: InvalidationReason,
         now: u64,
     ) -> Result<(), Error> {
-        let mut c = self
-            .connection(&lease.connection_id)
-            .await?
-            .ok_or(Error::Unauthorized)?;
+        let (session, mut c, login) = self.pair(&lease.session_hash, now).await?;
+        if session.login_hash != lease.login_hash
+            || session.login_drive_epoch != lease.login_drive_epoch
+        {
+            return Err(Error::Unauthorized);
+        }
         c.active(lease.generation, now)?;
         if c.owner.as_deref() != Some(&lease.owner) || c.lease_until <= now {
             return Err(Error::Unauthorized);
@@ -760,16 +1175,19 @@ impl Store for DynamoStore {
             }
         }
         self.write(vec![
+            self.login_check(&session.login_hash, &login, now)?,
+            self.session_check(&lease.session_hash, &session, false)?,
             self.put_connection(&lease.connection_id, &c, Some(version))?,
             self.bump_epoch()?,
         ])
         .await
     }
     async fn disable(&self, hash: &str, now: u64) -> Result<RevocationKey, Error> {
-        let (session, mut c) = self.pair(hash, now).await?;
+        let (session, mut c, login) = self.pair(hash, now).await?;
         let version = c.version;
         Self::begin_revocation(&mut c, now)?;
         self.write(vec![
+            self.login_check(&session.login_hash, &login, now)?,
             self.session_check(hash, &session, false)?,
             self.put_connection(&session.connection_id, &c, Some(version))?,
             self.bump_epoch()?,

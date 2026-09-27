@@ -15,11 +15,13 @@ pub enum Error {
     Unauthorized,
     InvalidRequest,
     IncompleteConsent,
+    DriveAuthorizationRequired,
     IdentityExpired,
     AccountMismatch,
     ConsentDenied,
     Busy,
     Reconnect,
+    LegacySession,
     InvalidGrant,
     Provider,
     Unavailable,
@@ -73,23 +75,68 @@ impl Clock for SystemClock {
     }
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum OAuthPurpose {
     SignIn,
     Drive {
         identity_hash: String,
         expected_connection: String,
+        login_hash: String,
+        drive_epoch: u64,
     },
 }
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PendingIdentity {
+    pub version: u8,
+    pub login_hash: String,
+    pub drive_epoch: u64,
+    pub attempt_id: String,
+    pub attempt_hash: String,
     pub connection_id: String,
     pub expires_at: u64,
 }
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Login {
+    pub version: u8,
+    pub connection_id: String,
+    pub sign_in_attempt_id: String,
+    pub expires_at: u64,
+    pub absolute_expires_at: u64,
+    pub drive_epoch: u64,
+    pub drive_attempt_id: Option<String>,
+    pub record_version: u64,
+}
+impl Login {
+    pub fn valid(&self, now: u64) -> bool {
+        self.version == 1 && self.expires_at > now && self.absolute_expires_at > now
+    }
+}
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AttemptPhase {
+    Pending,
+    Completed { login_hash: String },
+    Cancelled,
+}
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationAttempt {
+    pub version: u8,
+    pub attempt_id: String,
+    pub purpose: OAuthPurpose,
+    pub phase: AttemptPhase,
+    pub expires_at: u64,
+    pub record_version: u64,
+}
+pub struct PreviousAuthorization<'a> {
+    pub login_hash: Option<&'a str>,
+    pub session_hash: Option<&'a str>,
+    pub attempt_hash: Option<&'a str>,
+}
 pub enum CallbackResult {
-    Identity { raw_cookie: String, expires_at: u64 },
+    Login { raw_cookie: String, expires_at: u64 },
     Drive { raw_session: String },
 }
 pub struct IdentityConsumption<'a> {
@@ -97,6 +144,8 @@ pub struct IdentityConsumption<'a> {
     pub expected: &'a PendingIdentity,
 }
 pub struct Transaction {
+    pub version: u8,
+    pub attempt_id: String,
     pub purpose: OAuthPurpose,
     pub cookie_hash: String,
     pub nonce: Secret,
@@ -105,12 +154,20 @@ pub struct Transaction {
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Session {
+    #[serde(default)]
+    pub version: u8,
+    #[serde(default)]
+    pub login_hash: String,
+    #[serde(default)]
+    pub login_drive_epoch: u64,
     pub connection_id: String,
     pub generation: u64,
     pub expires_at: u64,
     pub absolute_expires_at: u64,
 }
 pub struct Lease {
+    pub login_hash: String,
+    pub login_drive_epoch: u64,
     pub session_hash: String,
     pub authorization_until: u64,
     pub connection_id: String,
@@ -149,18 +206,44 @@ pub enum InvalidationReason {
 /// Implementations MUST verify deadlines inside the transaction, not rely on TTL cleanup.
 #[async_trait]
 pub trait Store: Send + Sync {
-    async fn put_identity(&self, hash: &str, identity: PendingIdentity) -> Result<(), Error>;
-    async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error>;
-    async fn delete_identity(&self, hash: &str) -> Result<(), Error>;
-    async fn put_drive_oauth(
+    async fn login(&self, hash: &str, now: u64) -> Result<Login, Error>;
+    async fn renew_login(&self, hash: &str, now: u64) -> Result<Login, Error>;
+    async fn logout_login(
         &self,
-        hash: &str,
-        transaction: Transaction,
-        expected: &PendingIdentity,
+        previous: PreviousAuthorization<'_>,
         now: u64,
     ) -> Result<(), Error>;
+    async fn begin_sign_in(
+        &self,
+        state_hash: &str,
+        transaction: Transaction,
+        previous: PreviousAuthorization<'_>,
+        now: u64,
+    ) -> Result<(), Error>;
+    async fn finish_sign_in(
+        &self,
+        attempt_hash: &str,
+        attempt_id: &str,
+        login_hash: &str,
+        connection: &str,
+        now: u64,
+    ) -> Result<Login, Error>;
+    async fn authorization(&self, hash: &str, now: u64) -> Result<AuthorizationAttempt, Error>;
+    async fn cancel_authorization(
+        &self,
+        hash: &str,
+        attempt_id: &str,
+        now: u64,
+    ) -> Result<(), Error>;
+    async fn begin_drive(
+        &self,
+        state_hash: &str,
+        transaction: Transaction,
+        expected_login: &Login,
+        now: u64,
+    ) -> Result<(), Error>;
+    async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error>;
     async fn grant_epoch(&self) -> Result<u64, Error>;
-    async fn put_oauth(&self, state_hash: &str, transaction: Transaction) -> Result<(), Error>;
     /// Atomically check cookie hash + expiry and delete; wrong cookie must not consume it.
     async fn take_oauth(
         &self,
@@ -184,7 +267,7 @@ pub trait Store: Send + Sync {
     async fn session(&self, hash: &str, now: u64) -> Result<Session, Error>;
     /// Atomic rotation: old hash removed, same connection/generation and absolute deadline.
     async fn renew(&self, old_hash: &str, new_hash: &str, now: u64) -> Result<Session, Error>;
-    async fn logout(&self, hash: &str) -> Result<(), Error>;
+    async fn logout(&self, hash: &str, now: u64) -> Result<(), Error>;
     /// Distributed lease, revalidate session/generation, rate limit to one refresh/30s per
     /// connection, lease timeout 30s and unpredictable owner as fencing token.
     async fn claim(&self, session_hash: &str, owner: &str, now: u64) -> Result<Lease, Error>;

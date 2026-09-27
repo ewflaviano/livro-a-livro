@@ -15,7 +15,7 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 | Tema | Decisão V1 | Consequência |
 | --- | --- | --- |
 | Execução | SPA estática, sem SSR; API opcional separada | Leitura/escrita local não esperam servidor |
-| Identidade atual | Sem conta para uso local; identificação Google temporária e consentimento Drive em ações separadas | Vínculo técnico do conector; login persistente opcional planejado na correção de paridade abaixo |
+| Identidade | Sem conta para uso local; contrato de LOGIN persistente opcional e consentimento Drive em ações separadas | Vínculo técnico sem perfil; implantação/gates registrados no plano de paridade |
 | Fonte de verdade | IndexedDB; React mantém apenas projeções e rascunhos | Sucesso de escrita somente depois do commit local |
 | Fronteiras | Domínio puro → serviços → portas; adaptadores no ponto de composição | UI não conhece IndexedDB, JSON bruto nem respostas da Open Library |
 | Dados portáveis | `LibraryExport`, `schemaVersion: 1`, validado com Zod | Exportar e restaurar todos os anos sem rede é critério de release |
@@ -29,7 +29,7 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 
 ## 2. Comparação com o BioRotina: repetir, adaptar, não trazer
 
-**Correção de direção em 27 set 2026:** o usuário definiu paridade da mecânica de uso com o BioRotina, mantendo o design e o domínio do Livro. O [plano de paridade](paridade-biorotina.md) passa a orientar cabeçalho/conexão global, login opcional persistente, união explícita de bibliotecas e consentimentos iniciais. A entrega ocorrerá em fatias revisadas nas issues #13, #47 e #46; estes requisitos ainda não devem ser confundidos com disponibilidade em produção. A identidade temporária atual e a resolução por biblioteca inteira serão revistas antes da liberação pública do Drive.
+**Correção de direção em 27 set 2026:** o usuário definiu paridade da mecânica de uso com o BioRotina, mantendo o design e o domínio do Livro. O [plano de paridade](paridade-biorotina.md) passa a orientar cabeçalho/conexão global, login opcional persistente, união explícita de bibliotecas e consentimentos iniciais. A entrega ocorrerá em fatias revisadas nas issues #13, #47 e #46; estes requisitos ainda não devem ser confundidos com disponibilidade em produção. O contrato de login persistente substitui a identificação temporária; a resolução por biblioteca inteira ainda será ampliada antes da liberação pública do Drive.
 
 A comparação foi feita no checkout `/home/eflaviano/code/biodrive`, consultando `docs/architecture.md`, `docs/deployment.md`, `package.json`, `src/main.tsx`, `src/domain/data.ts`, `src/storage/indexedDb.ts`, `src/observability/client.ts`, `public/sw.js`, `.github/workflows/ci.yml`, `push/Cargo.toml` e `serverless.yml`.
 
@@ -547,9 +547,9 @@ Domínios de site e API permanecem separados. `api.*` é útil desde o início p
 
 ## 14. API Rust pequena; biblioteca sincronizada diretamente com Google Drive
 
-**Frontend da issue #11:** implementado em `src/sync/` e na tela Dados; [protocolo, limites e simulador local](drive-sync.md). Habilitação de produção permanece gated pela configuração/implantação da issue #13. O simulador é exclusivamente de desenvolvimento, com dados descartáveis e sem serviços externos.
+**Frontend da issue #11:** implementado em `src/sync/` e na tela Dados; [protocolo, limites e simulador local](drive-sync.md). A API já está implantada; a habilitação pública do Drive permanece condicionada aos gates e à correção de paridade da issue #13. O simulador é exclusivamente de desenvolvimento, com dados descartáveis e sem serviços externos.
 
-**Implementação parcial da issue #10:** `api/` contém o núcleo Axum, provider Google, portas de armazenamento/criptografia e entrada Lambda reutilizável. A issue #12 acrescenta contratos isolados de catálogo público e telemetria agregada, sem importar OAuth ou contratos de livros. [Contrato e gates de produção](auth-api.md). O runtime não possui store em memória: persistência DynamoDB/KMS e composição executável são parte da issue #13. Sem publicação ou conexão do frontend nesta etapa.
+**API das issues #10/#13:** `api/` contém o núcleo Axum, provider Google, portas de armazenamento/criptografia e entrada Lambda reutilizável. A issue #12 acrescenta contratos isolados de catálogo público e telemetria agregada, sem importar OAuth ou contratos de livros. [Contrato e gates de produção](auth-api.md). O runtime não possui store em memória: persistência DynamoDB/KMS e composição executável da issue #13 já estão publicadas. O Drive público permanece desabilitado durante a revisão e os gates; ver o plano de paridade para distinguir fatias integradas das pendentes.
 
 ### 14.1 Fronteira definitiva e comparação com o BioRotina
 
@@ -557,7 +557,7 @@ Domínios de site e API permanecem separados. `api.*` é útil desde o início p
 
 Foram consultados `push/src/bin/auth_api.rs`, `src/sync/google.ts`, `src/sync/decision.ts`, `src/sync/DriveSyncContext.tsx`, `src/experiments/registry.ts`, `src/experiments/ExperimentContext.tsx`, `push/src/bin/experiments_api.rs`, `push/src/bin/telemetry.rs` e `docs/experiments.md` no BioRotina.
 
-Reaproveitar o desenho do BioRotina: troca de código no servidor, sessão opaca HttpOnly, refresh token apenas no servidor, access token curto em memória do cliente, transferência direta para `appDataFolder`, snapshots versionados e comparação de base/hash. Adaptar contratos ao domínio de livros, isolando credenciais e experimentos em tabelas/roles próprias, sem trazer cobrança, IA, push ou perfis de saúde. O código do BioRotina consultado armazena o token como atributo protegido pela criptografia em repouso da tabela; Livro a Livro propõe também cifrar o atributo por aplicação com KMS para restringir sua leitura a auth.
+Reaproveitar o desenho do BioRotina: troca de código no servidor, sessão opaca HttpOnly, refresh token apenas no servidor, access token curto em memória do cliente, transferência direta para `appDataFolder`, snapshots versionados e comparação de base/hash. Adaptar contratos ao domínio de livros, isolando credenciais e experimentos em tabelas/roles próprias, sem trazer cobrança, IA, push ou perfis de saúde. O código do BioRotina consultado armazena o token como atributo protegido pela criptografia em repouso da tabela; Livro a Livro propõe também cifrar o atributo por aplicação com KMS para restringir sua leitura às funções de autenticação e revogação.
 
 O BioRotina dispara sincronização em efeitos React após alteração (1.200 ms), online, foco e visibility. Isso **depende do navegador em execução** e não é substituído pela presença de um refresh token no servidor. Não transportar suas bibliotecas para resolver essa limitação.
 
@@ -581,11 +581,11 @@ Web Background Sync ou Periodic Background Sync podem ser melhoria progressiva d
 
 Identificação opcional acionada por “Entrar com Google”, sem login na entrada do app. Após retornar à interface, o segundo botão “Autorizar Google Drive” explica: “Seus livros, notas e avaliações serão enviados diretamente deste dispositivo para o seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.” Conectar Drive não autoriza experimentos ou telemetria.
 
-Fluxo por código de cliente confidencial com redirect exato para callback da API. Estado de uso único e nonce vinculados a cookie temporário protegem a transação; usar PKCE S256 quando suportado pelo fluxo escolhido. Validar assinatura/JWKS, issuer, audience, expiração e nonce do ID token, além dos escopos realmente concedidos. Solicitar somente `openid` na identificação e, em uma segunda ação explícita, `openid` com `https://www.googleapis.com/auth/drive.appdata`; não pedir Drive completo, e-mail ou perfil por padrão. Usar `sub` validado apenas para vínculo técnico interno; se um rótulo de e-mail for necessário no futuro, justificar e consentir com o escopo específico.
+Fluxo por código de cliente confidencial com redirect exato para callback da API. Estado de uso único e nonce vinculados a cookie temporário protegem a transação; usar PKCE S256 obrigatoriamente. Validar assinatura/JWKS, issuer, audience, expiração e nonce do ID token, além dos escopos realmente concedidos. Solicitar somente `openid` na identificação e, em uma segunda ação explícita, `openid` com `https://www.googleapis.com/auth/drive.appdata`; não pedir Drive completo, e-mail ou perfil por padrão. Usar `sub` validado apenas para vínculo técnico interno; se um rótulo de e-mail for necessário no futuro, justificar e consentir com o escopo específico.
 
-OAuth client secret fica no Secrets Manager. Refresh token fica em atributo cifrado com KMS no DynamoDB, além da criptografia em repouso da tabela; contexto de criptografia amarra ambiente/conexão. Somente role de autenticação pode decifrar. Nunca devolver refresh token, client secret ou credencial AWS ao navegador. Chave interna pode ser HMAC do `sub` com segredo do serviço: é identificador pseudônimo protegido, não dado anônimo e nunca dimensão de telemetria.
+OAuth client secret fica no Secrets Manager. Refresh token fica em atributo cifrado com KMS no DynamoDB, além da criptografia em repouso da tabela; contexto de criptografia amarra ambiente/conexão. Somente as roles de autenticação e de revogação podem decifrar, com finalidades e permissões limitadas. Nunca devolver refresh token, client secret ou credencial AWS ao navegador. Chave interna pode ser HMAC do `sub` com segredo do serviço: é identificador pseudônimo protegido, não dado anônimo e nunca dimensão de telemetria.
 
-Sessão aleatória de alta entropia, com apenas hash guardado no servidor, rotação e cookie `__Host-lal_session`, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`, restrito ao host da API. Expiração proposta: 30 dias sem atividade, renovação automática dentro de limite absoluto de 180 dias. Verificar prazo em cada chamada; TTL DynamoDB é limpeza eventual, não mecanismo de autorização. Sessão vencida não apaga a biblioteca.
+Login opcional persistente usa `__Host-lal_login`, hash no servidor e identificador estável durante a renovação condicional; novo login cria outro identificador. Não conserva tokens Google da identificação. Sessão Drive separada, vinculada ao LOGIN e ao seu epoch local, usa rotação e cookie `__Host-lal_session`, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`, restrito ao host da API. Ambas têm prazo móvel de 30 dias, renovação dentro do limite absoluto de 180 dias. LOGIN renovada não concede Drive. Verificar prazo em cada chamada; TTL DynamoDB é limpeza eventual, não mecanismo de autorização. Sessão vencida não apaga a biblioteca.
 
 `POST /v1/auth/drive-token` exige sessão válida, Origin exata, CSRF vinculado à sessão e resposta `Cache-Control: no-store`. Servidor obtém access token via refresh e retorna apenas `accessToken`, `expiresIn` e escopos permitidos; token fica **só em memória** e sai apenas em Authorization para hosts Google explicitamente permitidos. Não salvar em IndexedDB, localStorage, logs, URL, backup, service worker persistente ou catálogo. Abas podem pedir token usando cookie HttpOnly, sem compartilhá-lo por BroadcastChannel. Access token curto é segredo bearer e deve ser tratado como tal.
 
@@ -600,8 +600,10 @@ Produção não aceita localhost no CORS. Rotas mutáveis validam Origin, sessã
 Distinguir:
 
 - **Pausar sincronização neste dispositivo:** suspende chamadas, mantém vínculo/pendências locais e permite retomar.
-- **Encerrar sessão neste dispositivo:** remove sessão no servidor, limpa access token em memória e interrompe sync local; não revoga outros aparelhos, não apaga biblioteca.
-- **Desconectar Google Drive em todos os dispositivos:** invalida sessões, bloqueia emissão de access token, incrementa geração de consentimento e solicita revogação Google; elimina refresh token protegido após o processo. Arquivos já existentes no Drive não são apagados automaticamente.
+- **Sair deste navegador:** remove LOGIN no servidor e invalida todas as SESSION ligadas a ela, limpa access token em memória e interrompe sync local; não revoga outros aparelhos, não apaga biblioteca.
+- **Desconectar Google Drive em todos os dispositivos:** mantém o login próprio e invalida sessões Drive, bloqueia emissão de access token, incrementa geração de consentimento e solicita revogação Google; elimina refresh token protegido após o processo. Arquivos já existentes no Drive não são apagados automaticamente.
+
+Sair só é anunciado como concluído após confirmação do serviço. Se não for possível confirmar a saída, os envios ficam pausados e o aplicativo avisa para tentar novamente; após reabrir, consulta o estado do login.
 
 Se revogação no Google falhar por rede, bloquear internamente de imediato e manter credencial cifrada apenas para tentar revogação por até 24 h, sem usá-la para acesso novo; orientar revogação na Conta Google. Access token já emitido/requisição em voo pode sobreviver até revogação efetiva/expiração: não prometer corte retroativo instantâneo. Serviços fazem limpeza de sessões expiradas e credenciais sem atividade por 180 dias, sem tocar nos arquivos Drive ou dados locais. Registro de revogação pendente contém só credencial/estado técnico, nunca biblioteca; pode ser tratado por invocação agendada pequena do módulo auth, sem fila de snapshots.
 
@@ -656,14 +658,16 @@ Contrato HTTP proposto:
 | Endpoint | Papel e proteção |
 | --- | --- |
 | `POST /v1/auth/google/start` | Identificação openid explícita, estado/nonce/PKCE/cookie temporários; somente URL Google permitida |
-| `GET /v1/auth/google/identity` | Identidade temporária, vínculo HMAC e CSRF próprio; não autoriza Drive |
-| `POST /v1/auth/google/drive/start` | Segundo consentimento explícito, identidade temporária e CSRF; solicita appdata |
-| `DELETE /v1/auth/google/identity` | Cancela identidade pendente com CSRF |
-| `GET /v1/auth/google/callback` | Validar transação tipada; criar identidade ou sessão conforme etapa; redirect fixo, nenhum token em URL |
+| `GET /v1/login` | Login persistente opcional, vínculo HMAC e CSRF próprio; não autoriza Drive |
+| `POST /v1/login/renew` | Renovação condicional sem rotação, sem recriar LOGIN removida |
+| `DELETE /v1/login` | Encerra LOGIN e capacidades deste navegador, preservando outros perfis |
+| `POST /v1/auth/google/drive/start` | Segundo consentimento explícito, LOGIN, CSRF e UUID da tentativa; solicita appdata |
+| `GET/DELETE /v1/auth/google/authorization` | Consulta/cancela tentativa exata com cookie OAuth, UUID e CSRF próprio; fecha corrida com callback |
+| `GET /v1/auth/google/callback` | Validar transação tipada; criar LOGIN ou SESSION Drive conforme etapa; redirect fixo, nenhum token em URL |
 | `GET /v1/session` | Vínculo opaco, escopos e expiração; não retorna refresh token ou identidade para telemetria |
 | `POST /v1/session/renew` | Renovar sessão dentro do prazo absoluto, com CSRF |
 | `POST /v1/auth/drive-token` | Access token curto e expiresIn, somente em memória, sessão/CSRF, resposta no-store |
-| `DELETE /v1/session` | Encerrar aparelho, limpar cookie e interromper sincronização local |
+| `DELETE /v1/session` | Encerrar capacidade Drive deste navegador, mantendo LOGIN |
 | `DELETE /v1/drive-connection` | Revogação global e invalidação de sessões/credenciais; sem apagar Drive |
 | `GET /v1/experiments/catalog` | Configuração pública versionada, sem cookie e sem exigir conta |
 | `POST /v1/telemetry/batches` | Contadores opt-in, sem cookie, schema mínimo da seção 15 |
@@ -832,4 +836,4 @@ Testes cobrem URL permitida/IDs inválidos, modo local mesmo online, offline/ret
 
 ### OAuth em duas ações explícitas — issue #13
 
-A conexão opcional passa por identificação `openid` e retorno à UI, seguida de um segundo clique para `drive.appdata`. A primeira etapa dura dez minutos e não cria sessão Drive, cifra KMS ou acesso a arquivos. O consentimento posterior exige a mesma identidade HMAC e consome sua pendência na transação de conexão, junto com as condições de epoch e geração. A intenção local também é condicional: pausa/cancelamento em outra aba impede habilitação tardia. Contratos, expiração, mensagens e migração estão em [auth-api.md](auth-api.md) e [drive-sync.md](drive-sync.md). Não existe redirecionamento automático entre os dois passos.
+A conexão opcional passa por identificação `openid` e retorno à UI, seguida de um segundo clique para `drive.appdata`. A primeira etapa cria LOGIN persistente opcional, sem sessão Drive, cifra KMS ou acesso a arquivos. Tentativas OAuth e tickets internos expiram em até dez minutos. O consentimento posterior exige a mesma identidade HMAC, LOGIN válida e epoch local; consome seu ticket na transação de conexão, junto com as condições de epoch global e geração. AUTH_ATTEMPT conserva a tentativa durante a troca externa para impedir que cancelamento seja seguido de autorização tardia. A intenção local também é condicional: pausa/cancelamento em outra aba impede habilitação tardia. Contratos, transações, expiração, mensagens e migração estão em [auth-api.md](auth-api.md), [auth-login-persistente.md](auth-login-persistente.md) e [drive-sync.md](drive-sync.md). Não existe redirecionamento automático entre os dois passos.

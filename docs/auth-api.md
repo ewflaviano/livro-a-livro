@@ -14,16 +14,19 @@ Todas as respostas, inclusive erros, têm `Cache-Control: no-store`, `Referrer-P
 
 | Rota | Requisição | Resposta |
 | --- | --- | --- |
-| `POST /v1/auth/google/start` | Origin exata, sem body | URL de identificação Google (`openid`), cookie OAuth temporário; encerra sessão deste navegador |
-| `GET /v1/auth/google/identity` | Origin exata, cookie de identidade | `connectionId`, `expiresAt`, `csrfToken`; nenhuma sessão Drive |
-| `POST /v1/auth/google/drive/start` | Origin, identidade temporária e seu `x-lal-csrf`, sem body | URL de consentimento Drive, novo state/nonce/PKCE |
-| `DELETE /v1/auth/google/identity` | Origin, identidade temporária e seu `x-lal-csrf` | cancela a identidade e remove seu cookie |
-| `GET /v1/auth/google/callback` | state, iss Google exato, code e cookie OAuth temporário | 303 para `https://livroalivro.app.br/#/dados`; etapa 1 emite identidade temporária, etapa 2 emite sessão Drive; nenhum token na URL |
-| `GET /v1/session` | Origin exata, cookie | `connectionId`, `generation`, `expiresAt`, `csrfToken`, `scopes` |
-| `POST /v1/session/renew` | Origin, cookie e `x-lal-csrf` | nova sessão/cookie, `csrfToken`, `expiresAt` |
-| `POST /v1/auth/drive-token` | Origin, cookie e `x-lal-csrf` | somente `accessToken`, `expiresIn`, `scopes` |
-| `DELETE /v1/session` | Origin, cookie e `x-lal-csrf` | 204 e cookie removido; encerra este aparelho |
-| `DELETE /v1/drive-connection` | Origin, cookie e `x-lal-csrf` | `disconnected`, `revocationPending`; bloqueia a conexão globalmente |
+| `GET /v1/login` | Origin exata, cookie LOGIN | `connectionId`, `signInAttemptId`, `expiresAt`, `absoluteExpiresAt`, `csrfToken`; nenhum acesso Drive |
+| `POST /v1/login/renew` | LOGIN e CSRF login | estende prazo móvel dentro do absoluto, mantendo identificador/cookie LOGIN |
+| `DELETE /v1/login` | LOGIN e CSRF login | 204; encerra login e capacidades Drive deste navegador |
+| `POST /v1/auth/google/start` | Origin, `x-lal-attempt` UUID e CSRF login quando conectado | URL openid e cookie OAuth temporário; invalida login anterior deste navegador |
+| `POST /v1/auth/google/drive/start` | LOGIN, CSRF login e `x-lal-attempt` UUID | URL de consentimento Drive, novos state/nonce/PKCE |
+| `GET /v1/auth/google/authorization` | Origin, cookie OAuth | `attemptId`, `purpose` (`signin`/`drive`), `expiresAt`, `csrfToken` de cancelamento |
+| `DELETE /v1/auth/google/authorization` | cookie OAuth, CSRF de cancelamento, UUID exato | 204; cancela somente a tentativa conhecida |
+| `GET /v1/auth/google/callback` | state, iss Google exato, code e cookie OAuth | 303 para destino canônico fixo; etapa 1 cria LOGIN, etapa 2 cria SESSION Drive; nenhum token na URL |
+| `GET /v1/session` | Origin, LOGIN e SESSION vinculadas | `connectionId`, `generation`, `expiresAt`, `csrfToken`, `scopes` |
+| `POST /v1/session/renew` | LOGIN, SESSION e CSRF de SESSION | nova SESSION/cookie, `csrfToken`, `expiresAt`; LOGIN não é rotacionada |
+| `POST /v1/auth/drive-token` | LOGIN, SESSION e CSRF de SESSION | `accessToken`, `expiresIn`, `scopes`; login sem Drive retorna 403 `drive_authorization_required` |
+| `DELETE /v1/session` | LOGIN, SESSION e CSRF de SESSION | 204; encerra capacidade Drive deste navegador, mantendo LOGIN |
+| `DELETE /v1/drive-connection` | LOGIN, SESSION e CSRF de SESSION | `disconnected`, `revocationPending`; bloqueia Drive globalmente, mantendo LOGIN |
 
 O frontend usa `credentials: include` nas chamadas da API. Não envia body `{}`: os controles são deliberadamente sem body. Cada URL de autorização é usada para navegação completa após seu próprio clique: **Entrar com Google** e, depois do retorno à interface, **Autorizar Google Drive**. Não há redirecionamento automático entre as etapas. O callback não tem analytics nem HTML executável. Exige exatamente um `iss=https://accounts.google.com`, inclusive em respostas de erro, conforme [a referência oficial Google](https://developers.google.com/identity/openid-connect/reference#authorization-endpoint) e [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html). Esse campo não escolhe endpoint ou concedente; a assinatura e os demais controles continuam obrigatórios. Parâmetros de resposta não reconhecidos são ignorados sem uso, persistência ou eco, conforme RFC 6749; campos conhecidos continuam tipados e sem duplicação, com limite total de 8 KiB. Os parâmetros informativos `scope`, `authuser` e `prompt` do callback são tolerados, mas não confiáveis: a concessão é validada na resposta do endpoint de tokens.
 
@@ -33,10 +36,11 @@ O access token permanece somente em memória durante a execução do PWA. Não e
 
 - State, nonce, PKCE verifier e cookies aleatórios de 256 bits. Challenge S256. Transação de dez minutos, consumo atômico de uso único vinculado ao cookie.
 - Troca confidencial em duas etapas. Identificação solicita somente `openid`, com `access_type=online`, `prompt=select_account` e `include_granted_scopes=false`. Valida o ID token e descarta tokens de acesso/refresh sem usá-los ou revogá-los. Não cria conexão, sessão Drive ou cifra KMS.
-- A identidade pendente dura dez minutos, sem renovação, em cookie `__Host-lal_identity` HttpOnly/Secure/SameSite=Lax. Dynamo guarda apenas o vínculo HMAC do subject validado e o hash do cookie, nunca e-mail, perfil ou ID token. Essa identidade não autoriza sessão, renovação ou emissão de token Drive.
+- O login próprio persiste em `__Host-lal_login` HttpOnly/Secure/SameSite=Lax/Path=/, sem Domain: 30 dias móveis, limite absoluto de 180 dias. Renovação condicional mantém o identificador estável; não recria um registro apagado. Dynamo guarda vínculo HMAC, hash do cookie e controles técnicos, nunca e-mail, perfil ou ID token. Login não autoriza Drive. O ticket IDENTITY da segunda etapa é interno, expira em até dez minutos e não gera cookie de identidade novo.
+- `AUTH_ATTEMPT` conserva a tentativa após consumir OAUTH; cancelamento condicionado por UUID neutraliza callback em voo ou já concluído. O cookie OAuth permanece até o prazo original após o callback para permitir esse cancelamento. LOGIN e seu epoch Drive local são revalidados ao criar, renovar e usar SESSION. CSRF de login, cancelamento e Drive têm propósitos separados.
 - O segundo clique solicita exatamente `openid` e `https://www.googleapis.com/auth/drive.appdata`, `access_type=offline`, `prompt=consent`, `include_granted_scopes=false`, com novos state/nonce/PKCE. Rejeita conta diferente da etapa anterior e concessão extra ou incompleta. Exige refresh token novo no consentimento; se ausente retorna `incomplete_consent` sem criar sessão. O Google pode apresentar sua própria seleção de permissões nessa etapa.
 - ID token verificado localmente por assinatura RS256/JWKS, issuer, audience exata, expiração, nonce e `azp` quando presente. Cache de JWKS por cinco minutos, respostas limitadas a 64 KiB, timeout e redirects de rede desativados. Chave nova desconhecida pode requerer nova tentativa após expiração do cache.
-- Cookie `__Host-lal_session`, `Secure; HttpOnly; SameSite=Lax; Path=/`, sem Domain. O serviço persiste apenas hash do cookie; CSRF deriva de HMAC com propósito próprio. Sessão 30 dias, renovação explícita com rotação dentro de 180 dias absolutos.
+- Cookie `__Host-lal_session`, `Secure; HttpOnly; SameSite=Lax; Path=/`, sem Domain. O serviço persiste apenas hash do cookie; CSRF deriva de HMAC com propósito próprio. Sessão Drive 30 dias, renovação com rotação dentro de 180 dias absolutos; depende também de LOGIN válida e de seu epoch local.
 - DynamoDB exige lease distribuído/fencing e atualização atômica do refresh token rotacionado; uma operação expirada/revogada não pode liberar seu access token. `invalid_grant` ou escopos retirados invalidam a geração. Revogação bloqueia imediatamente; tentativas comprovadamente não enviadas podem ser repetidas por até 24h. Uma resposta incerta não permite repetição nem reconexão automática. Arquivos Drive e biblioteca local nunca são apagados.
 
 `Secret` não implementa Debug/Serialize e limpa sua String ao sair de escopo. Isso reduz exposição acidental, sem alegar eliminar todas as cópias que bibliotecas de HTTP/JSON podem produzir. O código não registra requisições, headers, códigos, identidades ou tokens.
@@ -45,14 +49,16 @@ O access token permanece somente em memória durante a execução do PWA. Não e
 
 Invariantes verificadas pelo adaptador, sem confiar na remoção eventual por TTL:
 
-1. Leituras consistentes, transações condicionais, hashes de sessão e prazos conferidos nas operações. A posse de refresh dura 30s e limita inclusive tentativas que falham. Renovação remove a sessão antiga e cria a nova atomicamente, sem estender os 180 dias absolutos.
+1. Leituras consistentes, transações condicionais, hashes de sessão e prazos conferidos nas operações. A posse de refresh dura 30s e limita inclusive tentativas que falham. Renovação da SESSION Drive remove a sessão antiga e cria a nova atomicamente, sem estender os 180 dias absolutos.
 2. KMS autentica `application=livro-a-livro`, `environment=production` e conexão opaca. O contexto pode aparecer em registros administrativos AWS; nunca contém subject, e-mail, token ou biblioteca. A chave HMAC está no Secrets Manager com o segredo OAuth; não é derivada do client secret.
 3. O callback da etapa Drive lê o epoch global antes de trocar o código no Google. A criação da sessão exige que ele permaneça igual e que a conexão não esteja bloqueada. Revogação avança esse epoch, impedindo um callback antigo de ressuscitar acesso. Pode ser necessário repetir consentimento quando outra revogação coincidir; nunca se revoga automaticamente o token descartado.
 4. O worker usa o índice apenas para encontrar candidatos; condições na tabela base autorizam cada alteração. Inatividade de 180 dias inicia o mesmo protocolo de bloqueio/revogação. Deadline de 24h impede uso da credencial mesmo se a limpeza atrasar.
 5. Antes de chamar o Google, a tentativa é marcada como enviada. Se o processo morrer ou o resultado for ambíguo, o estado passa a incerto: não se toma o lease para repetir a chamada. Conclusão e limpeza exigem geração, operação e proprietário corretos.
 6. Configuração ausente/inválida falha com código genérico. Não existe fallback em memória, segredo de desenvolvimento ou logging de erro bruto do SDK. Roles de execução não têm acesso a S3.
 
-A finalidade de cada OAuth fica na transação durável, nunca no query informado pelo navegador. A criação da sessão Drive consome a identidade pendente na mesma transação que verifica epoch e conexão: cancelamento, expiração ou consumo concorrente falham sem sessão parcial. Transações OAuth antigas sem finalidade são recusadas; uma nova tentativa deve começar pela identificação. Sessões Drive completas anteriores continuam válidas.
+A finalidade de cada OAuth fica na transação durável, nunca no query informado pelo navegador. O contrato de registros, transações, corridas e gates está em [auth-login-persistente.md](auth-login-persistente.md). Cancelar SignIn concluído apaga somente o LOGIN dessa tentativa; cancelar Drive avança somente seu epoch local, inclusive após rotação de SESSION. Sair apaga LOGIN estável, invalidando capacidades ligadas a ela. Nenhuma dessas operações revoga outros perfis.
+
+OAUTH/IDENTITY legados e SESSION sem vínculo LOGIN exigem reinício explícito: não são promovidos, não retornam 500 por ausência dos campos novos e não revogam CONNECTION. A migração preserva IndexedDB, snapshots, ciphertext e controle de revogação. A flag pública permanece false durante a implantação e os gates.
 
 Erros do callback usam mensagens HTML estáticas distintas para autorização negada, identidade expirada, permissão Drive incompleta, conta diferente e falha geral. Não incluem parâmetros ou mensagens recebidas do Google. A falha desta nova tentativa foi reproduzida em 27/09 no navegador normal: o Google devolveu `iss` junto com os campos esperados e o parser estrito respondeu 400 antes da troca do código, pois não declarava esse campo. O identificador agora é aceito somente com o valor Google exato; campo ausente, duplicado ou diferente continua recusado. A tentativa anterior não teve seu status preservado e não pode ser atribuída retrospectivamente à mesma causa. Nenhum código, token ou conteúdo da biblioteca foi incluído nos registros de diagnóstico.
 

@@ -220,3 +220,5 @@ h2 { font-size: var(--text-h2); }
   .global-sync { flex: 1; }
 }
 .global-action-error { flex-basis: 100%; margin: 0; font-size: var(--text-small); }
+
+.header-login-state { display: block; font-size: .68rem; line-height: 1.2; color: var(--color-text-secondary); }

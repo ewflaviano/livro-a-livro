@@ -8,7 +8,7 @@ import { GlobalSyncControls } from '../components/GlobalSyncControls';
 import { DataPage } from './DataPage';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false,
-  coordinator: { connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), cancelAuthorization: vi.fn(async () => {}), retryAuthorization: vi.fn(async () => {}) },
+  coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), cancelAuthorization: vi.fn(async () => {}), retryAuthorization: vi.fn(async () => {}) },
 }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 vi.mock('../components/BackupPanel', () => ({ BackupPanel: () => <section><h2>Backup local</h2><button>Exportar JSON</button></section> }));
@@ -22,7 +22,7 @@ describe('optional two-step Google authorization', () => {
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Entrar com Google' }));
     expect(sync.coordinator.connect).toHaveBeenCalledOnce(); expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
     sync.state = { status: 'authorize-drive' }; view.rerender(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
-    expect(screen.getByText(/Conta Google confirmada por alguns minutos. O Drive ainda não foi autorizado/)).toBeTruthy();
+    expect(screen.getAllByText(/Você entrou com Google. O Drive ainda não foi autorizado/).length).toBeGreaterThan(0);
     expect((screen.getByRole('button', { name: 'Exportar JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
@@ -39,4 +39,13 @@ describe('optional two-step Google authorization', () => {
     expect(sync.coordinator.connect).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Exportar JSON' })).toBeTruthy();
   });
+});
+
+it('shows unconfirmed logout honestly and offers no global Drive revocation for login-only', () => {
+  sync.state = { status: 'paused', login: { status: 'signed-in', driveAuthorized: false }, logoutUnconfirmed: true };
+  render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
+  expect(screen.getByRole('alert').textContent).toContain('A saída não foi confirmada');
+  expect(screen.getByRole('button', { name: 'Sair deste navegador' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Desconectar Google Drive' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Retomar sincronização' })).toBeNull();
 });

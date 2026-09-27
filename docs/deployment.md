@@ -78,3 +78,13 @@ O responsável deve verificar a ocorrência sem copiar credenciais para logs, or
 ## CI/CD
 
 `.github/workflows/ci.yml` testa e publica frontend e Rust independentemente. Publicações da `main` assumem as roles OIDC limitadas em `infra/github-oidc.yml` e `infra/api-deploy.yml`; não usam chaves AWS estáticas. A confiança usa o identificador imutável do repositório no GitHub e a referência `main`, para que uma renomeação não abra a role a outro repositório. A role estática só pode ler os outputs da stack, publicar assets no bucket do site e invalidar sua distribuição; a role da API não publica o frontend.
+
+## Login persistente — implantação da issue #13
+
+O contrato novo separa LOGIN e SESSION Drive, acrescentando AUTH_ATTEMPT durável e `x-lal-attempt` na allowlist. Não exige novo índice ou ampliação do papel do worker: LOGIN/AUTH_ATTEMPT não têm trabalho no índice `work-due`. Auth conserva as ações condicionais da tabela exclusiva. Ver [transações e gates](auth-login-persistente.md).
+
+Publicar com Drive público false. OAUTH/IDENTITY antigos e SESSION sem LOGIN exigem reinício explícito; não promover sessão antiga nem revogar CONNECTION durante a migração. Livros locais, snapshots e credenciais de conexão cifradas são preservados. A API pode preceder a PWA, mas clientes antigos exigirão reconexão; encerrar ensaios antigos e usar o build novo.
+
+LOGIN usa prazos móveis de 30 dias e absolutos de 180 dias, verificados a cada operação. Seu TTL é o limite absoluto. AUTH_ATTEMPT/OAUTH/ticket interno expiram em até dez minutos. TTL não comprova remoção física pontual nem permite renovar registro removido. Renew LOGIN conserva cookie; renew SESSION continua rotacionando. Logout remove LOGIN estável, invalidando inclusive SESSION rotacionada concorrente.
+
+Após publicar ambos, executar o smoke atualizado: consulta anônima de LOGIN/SESSION, preflight do novo header, início openid com UUID, consulta/cancelamento exato de tentativa e rejeição após cancelar. Cookies permanecem somente em memória. Complementar com navegador normal para persistência e consentimento separado; smoke sem conta não prova esses fluxos. Ao atualizar `privacidade.html`, invalidar também essa página no CDN.
