@@ -167,12 +167,16 @@ Os nomes orientam responsabilidades, não obrigam a criar pastas vazias no prime
 
 ## 4. Modelo, identidade e invariantes
 
+**Implementado na issue #1:** os contratos puros estão em `src/domain/`, com tipos derivados de schemas Zod estritos. `parseBook`/`parseLibrary` validam dados desconhecidos; `createBook` recebe UUID, instante UTC e ano de contexto; `updateBook` recebe alterações e instante UTC, preservando criação e recusando datas incompatíveis. `probableDuplicates` retorna avisos, sem impedir releituras. `booksForYear` filtra e ordena sem alterar a coleção recebida. Nenhuma dessas funções acessa relógio, rede, interface ou persistência.
+
+`statisticsForYear` retorna `books`, `pages`, `authors`, `booksWithPages` e `booksWithAuthors`: páginas/autores são `null` quando há Lidos sem informação correspondente, e zero quando não há Lidos. A comparação normaliza nomes sem modificar sua grafia salva; notas preservam cada caractere como texto simples, inclusive caracteres literais de marcação, que nunca devem ser interpretados como HTML. `LIBRARY_LIMITS` reserva 1 KiB do limite de 50 MiB para o futuro envelope JSON, além de limitar a coleção a 10.000 registros. Serviços e importador deverão reutilizar essa validação antes de qualquer commit. Erros de aplicação expõem somente códigos e caminhos de campos, sem valores ou mensagens brutas do Zod. Os testes desta camada usam Vitest (`npm test`); as demais camadas continuam propostas.
+
 Um `Book` é **um registro de leitura numa estante anual**, não uma obra global. Releitura intencional gera outro UUID. Conectar Drive não altera IDs nem cria um novo tipo de livro. ISBN e ID externo não são chave primária nem restrição de unicidade. Isso atende livros, webnovels e textos sem ISBN.
 
 Contrato conceitual; os schemas Zod serão a fonte dos tipos na implementação:
 
 ```ts
-type ReadingStatus = 'want_to_read' | 'reading' | 'read';
+type ReadingStatus = 'want-to-read' | 'reading' | 'read';
 
 type Book = {
   id: string;                         // UUID criado localmente
