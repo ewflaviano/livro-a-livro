@@ -1,0 +1,73 @@
+name: Validate and publish
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Verify only public assets are built
+        run: |
+          test -f dist/index.html
+          ! rg -n --hidden --glob '!*.map' '(refresh_token|client_secret|AKIA[0-9A-Z]{16})' dist
+
+  api:
+    runs-on: ubuntu-latest
+    env: { CARGO_BUILD_JOBS: 2 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with: { components: clippy, rustfmt }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with: { workspaces: api }
+      - run: cargo fmt --manifest-path api/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path api/Cargo.toml --all-features
+
+  publish_frontend:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [frontend, api]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: livro-a-livro-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: npm }
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: npm ci
+      - run: npm run build
+      - name: Publish immutable assets before entry points
+        run: |
+          BUCKET="$(aws cloudformation describe-stacks --stack-name livro-a-livro-frontend --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue | [0]" --output text)"
+          DISTRIBUTION="$(aws cloudformation describe-stacks --stack-name livro-a-livro-frontend --query "Stacks[0].Outputs[?OutputKey=='FrontendDistributionId'].OutputValue | [0]" --output text)"
+          test -n "$BUCKET" && test "$BUCKET" != None
+          test -n "$DISTRIBUTION" && test "$DISTRIBUTION" != None
+          aws s3 sync dist/assets/ "s3://$BUCKET/assets/" --cache-control 'public,max-age=31536000,immutable'
+          aws s3 sync dist/icons/ "s3://$BUCKET/icons/" --cache-control 'public,max-age=300,must-revalidate'
+          aws s3 cp dist/manifest.webmanifest "s3://$BUCKET/manifest.webmanifest" --cache-control 'no-cache'
+          aws s3 cp dist/sw.js "s3://$BUCKET/sw.js" --cache-control 'no-cache'
+          aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache'
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest'
