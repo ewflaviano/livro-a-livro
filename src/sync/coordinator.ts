@@ -1,27 +1,36 @@
+import { canonicalJson, headerOf, sameHeader, type SyncSnapshotV2 } from './protocol';
+import type { SyncCommitFence, SyncResolutionRepository } from '../ports/sync-resolution-repository';
+import { prepareMerge, materializeMerge, type PreparedMerge, type ResolutionChoices } from './merge';
 import { utf8ByteLength } from '../domain/library';
 import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
 import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SyncView, type AuthorizationIntent, type LoginSession } from './contracts';
-import { libraryHash, remoteHeads } from './snapshot';
+import { libraryHashV2, parseSnapshot, referencedExport, remoteHeads } from './snapshot';
 import type { SyncStore } from './outbox';
 import type { LibraryExport } from '../backup/schema';
 import { encodeCover } from '../adapters/indexeddb/cover-media';
 
-type Options = { repository: LibraryRepository; store: SyncStore; auth: AuthClient; drive: (binding: Binding) => DriveClient;
+type Options = { resolutionRepository: SyncResolutionRepository; repository: LibraryRepository; store: SyncStore; auth: AuthClient; drive: (binding: Binding) => DriveClient;
   online: () => boolean; visible: () => boolean; hasDraft: () => boolean; navigate: (url: string) => void };
 type Conflict = { binding: Binding; heads: DriveFile[]; version: LocalRevision; accountChanged: boolean };
 const ids = (files: DriveFile[]) => files.map(file => file.header.snapshotId).sort().join(',');
+const fingerprint = (files: DriveFile[]) => canonicalJson(files.map(file => file.header).sort((a,b) => a.snapshotId < b.snapshotId ? -1 : 1));
+const MAX_RESOLUTION_BYTES = 100 * 1024 * 1024;
 
 export function createSyncCoordinator(options: Options) {
   const { repository, store, auth } = options;
   const listeners = new Set<() => void>(); const owner = crypto.randomUUID();
   let view: SyncView = { status: 'disabled', login: { status: 'checking' } }; let conflict: Conflict | null = null;
+  let preview: { plan: PreparedMerge; context: Awaited<ReturnType<SyncStore['context']>>; binding: Binding; heads: DriveFile[]; local: Awaited<ReturnType<typeof library>> } | null = null;
+  let preparationId = 0;
+  let confirmationId: string | null = null;
+  const ready = (signal: AbortSignal, id?: string) => { if (closed || signal.aborted || options.hasDraft() || id !== undefined && confirmationId !== id) throw new SyncError('cancelled'); };
   let closed = false; let running = false; let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined; let polling: ReturnType<typeof setTimeout> | undefined;
   let firstEdit = 0; let lastPoll = 0;
   const publish = (next: SyncView) => { if (!closed) { view = { ...next, login: next.login ?? view.login, drivePromptDismissed: next.drivePromptDismissed ?? view.drivePromptDismissed, logoutUnconfirmed: next.logoutUnconfirmed ?? view.logoutUnconfirmed, revocationPending: next.revocationPending ?? view.revocationPending }; listeners.forEach(listener => listener()); } };
-  const guard = async () => { if (!(await store.read()).enabled || closed || controller?.signal.aborted) throw new SyncError('cancelled'); await store.assertLease(owner); };
+  const guard = async () => { const current = await store.read(); if (!current.enabled || current.authorization || closed || controller?.signal.aborted) throw new SyncError('cancelled'); await store.assertLease(owner); };
   async function library(): Promise<{ library: LibraryExport; version: LocalRevision }> {
     const snapshot = await repository.readBackupSnapshot();
     validateMediaCollection(snapshot.books, snapshot.coverMedia);
@@ -29,23 +38,61 @@ export function createSyncCoordinator(options: Options) {
     return { version: snapshot.version, library: { format: 'livro-a-livro', schemaVersion: 1, exportedAt: new Date().toISOString(),
       books: snapshot.books, preferences: snapshot.preferences, coverMedia: await Promise.all(snapshot.coverMedia.map(encodeCover)) } };
   }
-  async function snapshot(data: LibraryExport, parent: string | null, resolved: string[] = []): Promise<SyncSnapshot> {
-    return { format: 'livro-a-livro-sync', protocolVersion: 1, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(),
-      parentSnapshotId: parent, resolvedSnapshotIds: resolved, hash: await libraryHash(data), createdAt: new Date().toISOString(), library: data };
+  async function snapshot(data: LibraryExport, parent: string | null, resolved: string[] = []): Promise<SyncSnapshotV2> {
+    const portable = referencedExport(data);
+    return { format: 'livro-a-livro-sync', protocolVersion: 2, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(),
+      parentSnapshotId: parent, resolvedSnapshotIds: resolved, hash: await libraryHashV2(portable), createdAt: new Date().toISOString(), library: portable };
+  }
+  function ancestor(files: DriveFile[], head: string, base: string) {
+    const map = new Map(files.map(file => [file.header.snapshotId.toLowerCase(), file.header])); const seen = new Set<string>(); const queue = [head.toLowerCase()];
+    while (queue.length) { const id = queue.pop()!; if (id === base.toLowerCase()) return true; if (seen.has(id)) continue; seen.add(id);
+      const header = map.get(id); if (!header) throw new SyncError('invalid');
+      queue.push(...[header.parentSnapshotId, ...header.resolvedSnapshotIds].filter((id): id is string => id !== null).map(id => id.toLowerCase())); }
+    return false;
+  }
+  function fence(context: Awaited<ReturnType<SyncStore['context']>>): SyncCommitFence {
+    return { expectedRevision: context.version, expectedAuthRevision: context.record.authRevision, expectedBinding: context.record.binding,
+      expectedOperation: context.operation ? { binding: context.operation.binding, version: context.operation.version, header: headerOf(context.operation.snapshot) } : null,
+      expectedPending: context.pending, leaseOwner: owner };
+  }
+  async function download(drive: DriveClient, file: DriveFile, signal: AbortSignal) {
+    const content = await parseSnapshot(await drive.download(file, signal));
+    if (!sameHeader(headerOf(content), file.header)) throw new SyncError('invalid');
+    return content;
+  }
+  async function revalidate(binding: Binding, heads: DriveFile[], drive: DriveClient, signal: AbortSignal) {
+    await guard(); if (options.hasDraft()) throw new SyncError('conflict');
+    if (!sameBinding(binding, await auth.session(signal))) throw new SyncError('conflict');
+    if (fingerprint(remoteHeads(await drive.list(signal))) !== fingerprint(heads)) throw new SyncError('conflict');
+    await guard(); if (options.hasDraft()) throw new SyncError('conflict');
+  }
+  async function receive(binding: Binding, heads: DriveFile[], incoming: SyncSnapshot, local: Awaited<ReturnType<typeof library>>, context: Awaited<ReturnType<SyncStore['context']>>, drive: DriveClient, signal: AbortSignal) {
+    publish({ status: 'receiving' });
+    const media = await prepareBackupMedia(incoming.library); const recovery = await snapshot(local.library, context.record.base?.snapshotId ?? null);
+    const comparisonHashV2 = await libraryHashV2(incoming.library);
+    await revalidate(binding, heads, drive, signal);
+    const version = await options.resolutionRepository.commit({ fence: fence(context), library: incoming.library, media, recovery,
+      effect: { kind: 'receive', binding, head: headerOf(incoming), comparisonHashV2 } }, () => ready(signal));
+    conflict = null; preview = null;
+    const current = await repository.readRevision();
+    await guard();
+    publish(sameRevision(version, current) ? { status: 'synced', received: true, lastSyncedAt: new Date().toISOString() } : { status: 'pending' });
   }
   async function showConflict(binding: Binding, heads: DriveFile[], version: LocalRevision, accountChanged = false) {
     const drive = options.drive(binding); const remote = [];
     for (const head of heads) {
-      const content = await drive.download(head, controller!.signal);
+      const content = await download(drive, head, controller!.signal);
       remote.push({ snapshotId: head.header.snapshotId, count: content.library.books.length, createdAt: head.header.createdAt });
     }
+    const localCount = (await repository.readAll()).books.length;
+    await guard();
     conflict = { binding, heads, version, accountChanged };
-    publish({ status: 'conflict', localCount: (await repository.readAll()).books.length, remote, accountChanged });
+    publish({ status: 'conflict', localCount, remote, accountChanged });
   }
-  async function accepted(head: DriveFile, version: LocalRevision) {
+  async function accepted(head: DriveFile, version: LocalRevision, comparisonHashV2: string) {
     await guard();
     conflict = null;
-    await store.update({ base: { snapshotId: head.header.snapshotId, hash: head.header.hash }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }, owner, false, version);
+    await store.update({ base: { snapshotId: head.header.snapshotId, hash: head.header.hash, protocolVersion: head.header.protocolVersion, comparisonHashV2 }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }, owner, false, version);
     const current = await repository.readRevision();
     await guard();
     publish(sameRevision(current, version) ? { status: 'synced', lastSyncedAt: new Date().toISOString() } : { status: 'pending' });
@@ -61,12 +108,15 @@ export function createSyncCoordinator(options: Options) {
     if (operation.snapshot.parentSnapshotId !== (heads[0]?.header.snapshotId ?? null) && !operation.snapshot.resolvedSnapshotIds.length) {
       await showConflict(binding, heads, local.version); return;
     }
+    await guard(); if (!sameBinding(binding, await auth.session(signal))) throw new SyncError('conflict');
     await guard(); await drive.upload(operation.snapshot, signal);
     await guard(); const confirmed = remoteHeads(await drive.list(signal));
-    if (confirmed.length !== 1 || confirmed[0].header.snapshotId !== operation.snapshot.snapshotId || confirmed[0].header.hash !== operation.snapshot.hash) {
+    if (confirmed.length !== 1 || !sameHeader(confirmed[0].header, headerOf(operation.snapshot))) {
       await showConflict(binding, confirmed, local.version); return;
     }
-    await accepted(confirmed[0], operation.version);
+    const persisted = await download(drive, confirmed[0], signal);
+    if (await libraryHashV2(persisted.library) !== await libraryHashV2(operation.snapshot.library)) throw new SyncError('invalid');
+    await accepted(confirmed[0], operation.version, await libraryHashV2(operation.snapshot.library));
   }
   let loginRequest: Promise<void> | null = null; let loginAgain = false;
   const signedIn = (login: LoginSession) => ({ status: 'signed-in' as const, signInAttemptId: login.signInAttemptId, connectionId: login.connectionId });
@@ -143,56 +193,67 @@ export function createSyncCoordinator(options: Options) {
     const binding = await auth.session(signal);
     const drive = options.drive(binding);
     const files = await drive.list(signal); const heads = remoteHeads(files); const local = await library();
-    if (record.binding && !sameBinding(record.binding, binding)) {
-      await showConflict(binding, heads, local.version, true); return;
+    const context = await store.context();
+    if (!sameRevision(context.version, local.version) || context.record.authRevision !== record.authRevision) throw new SyncError('conflict');
+    record = context.record; await guard();
+    if (record.binding && !sameBinding(record.binding, binding)) { await showConflict(binding, heads, local.version, true); return; }
+    let baseContent: SyncSnapshot | null = null;
+    if (record.base) {
+      const baseFile = files.find(file => file.header.snapshotId === record.base!.snapshotId);
+      if (!baseFile || baseFile.header.hash !== record.base.hash || baseFile.header.protocolVersion !== record.base.protocolVersion) throw new SyncError('invalid');
+      baseContent = await download(drive, baseFile, signal);
+      if (record.base.comparisonHashV2 && record.base.comparisonHashV2 !== await libraryHashV2(baseContent.library)) throw new SyncError('invalid');
     }
-    if (!record.binding) { record = { ...record, binding }; await guard(); await store.update({ binding }, owner); }
-    const operation = await store.operation();
-    if (operation && sameBinding(operation.binding, binding)) {
-      const found = files.find(file => file.header.operationId === operation.snapshot.operationId);
-      if (found && (found.header.hash !== operation.snapshot.hash || found.header.snapshotId !== operation.snapshot.snapshotId)) throw new SyncError('invalid');
-      if (found && heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(found, operation.version); return; }
-      if (!record.base && operation.snapshot.resolvedSnapshotIds.length &&
-        ids(heads) === [...operation.snapshot.resolvedSnapshotIds].sort().join(',')) {
-        await transfer(binding, drive, heads, local, signal); return;
+    const operation = context.operation;
+    if (operation) {
+      if (!sameBinding(operation.binding, binding)) { await showConflict(binding, heads, local.version, true); return; }
+      const found = files.find(file => file.header.operationId.toLowerCase() === operation.snapshot.operationId.toLowerCase());
+      if (found) {
+        if (!sameHeader(found.header, headerOf(operation.snapshot))) throw new SyncError('invalid');
+        const content = await download(drive, found, signal);
+        if (await libraryHashV2(content.library) !== await libraryHashV2(operation.snapshot.library)) throw new SyncError('invalid');
+        if (heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(found, operation.version, await libraryHashV2(content.library)); return; }
+        await showConflict(binding, heads, local.version); return;
       }
+      const consumed = operation.snapshot.resolvedSnapshotIds;
+      const retryable = consumed.length ? ids(heads) === [...consumed].sort().join(',') : heads.length <= 1 && operation.snapshot.parentSnapshotId === (heads[0]?.header.snapshotId ?? null);
+      if (!retryable) { await showConflict(binding, heads, local.version); return; }
+      if (!record.binding) { await guard(); await store.update({ binding }, owner); }
+      await transfer(binding, drive, heads, local, signal); return;
     }
     if (heads.length > 1) { await showConflict(binding, heads, local.version); return; }
-    const hash = await libraryHash(local.library); const remote = heads[0];
-    if (remote?.header.hash === hash) { await accepted(remote, local.version); return; }
+    const hash = await libraryHashV2(local.library); const remote = heads[0];
     if (!remote) {
-      if (record.base) { await showConflict(binding, heads, local.version); return; }
-      if (local.library.books.length) await transfer(binding, drive, heads, local, signal);
-      else publish({ status: 'synced' });
+      if (record.base) throw new SyncError('invalid');
+      if (!record.binding) { await guard(); await store.update({ binding }, owner); }
+      if (local.library.books.length || context.pending || local.version.revision > 0) await transfer(binding, drive, heads, local, signal);
+      else { await guard(); publish({ status: 'connected-empty' }); }
       return;
     }
+    const incoming = await download(drive, remote, signal); const remoteHash = await libraryHashV2(incoming.library);
+    if (remoteHash === hash) {
+      if (!record.binding) { await guard(); await store.update({ binding }, owner); }
+      await accepted(remote, local.version, remoteHash); return;
+    }
+    const empty = !local.library.books.length && !record.base && !context.pending && local.version.revision === 0 &&
+      canonicalJson(local.library.preferences) === canonicalJson({ shelfYear: null, mode: 'grid', filter: 'all' });
+    if (empty && !options.hasDraft()) { await receive(binding, heads, incoming, local, context, drive, signal); return; }
     if (!record.base) { await showConflict(binding, heads, local.version); return; }
     if (remote.header.snapshotId === record.base.snapshotId) { await transfer(binding, drive, heads, local, signal); return; }
-    // The remote may advance only through a known ancestor, never via timestamps.
-    const byId = new Map(files.map(file => [file.header.snapshotId, file]));
-    const ancestors = new Set<string>(); const queue = [remote.header.snapshotId];
-    while (queue.length) { const id = queue.pop()!; if (ancestors.has(id)) continue; ancestors.add(id);
-      const h = byId.get(id)?.header; if (h) queue.push(...[h.parentSnapshotId, ...h.resolvedSnapshotIds].filter((x): x is string => x !== null)); }
-    if (hash !== record.base.hash || !ancestors.has(record.base.snapshotId) || options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
-    const incoming = await drive.download(remote, signal);
-    const recovery = await snapshot(local.library, record.base.snapshotId);
-    await guard(); if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
-    await store.preserve(recovery, owner);
-    const coverMedia = await prepareBackupMedia(incoming.library);
-    await guard();
-    if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
-    const version = await repository.commit({ kind: 'replace', books: incoming.library.books, preferences: incoming.library.preferences, coverMedia }, local.version, { syncLeaseOwner: owner });
-    await accepted(remote, version);
+    if (!baseContent || hash !== await libraryHashV2(baseContent.library) || !ancestor(files, remote.header.snapshotId, record.base.snapshotId) || options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
+    await receive(binding, heads, incoming, local, context, drive, signal);
   }
-  async function locked(action: (signal: AbortSignal) => Promise<void>) {
-    if (closed || running) return;
+
+  async function locked<Result>(action: (signal: AbortSignal) => Promise<Result>, rethrow = false): Promise<Result | undefined> {
+    if (closed || running) { if (rethrow) throw new SyncError('conflict'); return; }
     running = true; controller = new AbortController();
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
-      if (!await store.lease(owner)) return;
+      if (!await store.lease(owner)) { if (rethrow) throw new SyncError('conflict'); return; }
       heartbeat = setInterval(() => { void store.lease(owner, false, true).then(ok => { if (!ok) controller?.abort(); }).catch(() => controller?.abort()); }, 10_000);
-      await action(controller.signal);
+      return await action(controller.signal);
     } catch (error) {
+      if (rethrow) throw error;
       const failure = error instanceof SyncError ? error : new SyncError('invalid');
       if (failure.code === 'cancelled' || closed || controller?.signal.aborted) return;
       if (failure.code === 'retry') {
@@ -321,33 +382,81 @@ export function createSyncCoordinator(options: Options) {
     },
     async localCopy() { return (await library()).library; },
     recoveryCopy: () => store.recovery(),
+    async prepareResolution() {
+      const requestId = ++preparationId;
+      const selected = conflict; if (!selected || options.hasDraft() || closed) throw new SyncError('conflict');
+      const context = await store.context(); const local = await library();
+      if (!context.record.enabled || context.record.authorization || !sameRevision(context.version, local.version)) throw new SyncError('conflict');
+      const signal = new AbortController().signal; const binding = await auth.session(signal);
+      if (!sameBinding(binding, selected.binding)) throw new SyncError('conflict');
+      const drive = options.drive(binding); const files = await drive.list(signal); const heads = remoteHeads(files);
+      const base = context.record.base && (!context.record.binding || sameBinding(context.record.binding, binding)) ? files.find(file => file.header.snapshotId === context.record.base!.snapshotId) : undefined;
+      if (context.record.base && !selected.accountChanged && !base) throw new SyncError('invalid');
+      const retained = [...heads]; if (base && !heads.some(file => file.header.snapshotId === base.header.snapshotId)) retained.push(base);
+      const localBytes = utf8ByteLength(JSON.stringify(local.library));
+      if (localBytes + retained.reduce((sum,file) => sum + file.size,0) > MAX_RESOLUTION_BYTES) throw new SyncError('merge-budget');
+      let bytes = localBytes; const contents = new Map<string, SyncSnapshot>();
+      for (const file of retained) { const content = await download(drive, file, signal); bytes += utf8ByteLength(JSON.stringify(content));
+        if (bytes > MAX_RESOLUTION_BYTES) throw new SyncError('merge-budget'); contents.set(file.header.snapshotId, content); }
+      let trusted: LibraryExport | undefined;
+      if (base) {
+        if (base.header.hash !== context.record.base!.hash || base.header.protocolVersion !== context.record.base!.protocolVersion) throw new SyncError('invalid');
+        if (heads.every(head => ancestor(files, head.header.snapshotId, base.header.snapshotId))) trusted = contents.get(base.header.snapshotId)!.library;
+      }
+      const current = await store.context();
+      if (requestId !== preparationId || closed || options.hasDraft() || canonicalJson(fence(current)) !== canonicalJson(fence(context))) throw new SyncError('conflict');
+      const plan = prepareMerge({ id: crypto.randomUUID(), sources: [{ id: 'local', label: 'Neste dispositivo', library: local.library }, ...heads.map((head,index) => ({ id: head.header.snapshotId, label: `Drive — versão ${index + 1}`, library: contents.get(head.header.snapshotId)!.library }))], base: trusted, baseSourceId: trusted ? base?.header.snapshotId : undefined });
+      conflict = { binding, heads, version: local.version, accountChanged: selected.accountChanged };
+      preview = { plan, context, binding, heads, local }; return structuredClone(plan.preview);
+    },
+    cancelResolution(id: string) { if (preview?.plan.preview.id === id) preview = null; if (confirmationId === id) confirmationId = null; },
+    async confirmResolution(id: string, choices: ResolutionChoices): Promise<'localCommittedPending' | 'synchronized'> {
+      const selected = preview;
+      if (!selected || selected.plan.preview.id !== id) throw new SyncError('conflict');
+      const data = materializeMerge(selected.plan, choices);
+      preview = null; confirmationId = id; // Pure choice/budget errors remain editable; a commit attempt consumes the preview.
+      return (await locked(async signal => {
+        const context = await store.context();
+        if (canonicalJson(fence(context)) !== canonicalJson(fence(selected.context))) throw new SyncError('conflict');
+        const drive = options.drive(selected.binding);
+        const media = await prepareBackupMedia(referencedExport(data)); const recovery = await snapshot(selected.local.library, selected.context.record.base?.snapshotId ?? null);
+        const outgoing = await snapshot(data, selected.heads[0]?.header.snapshotId ?? null, selected.heads.map(head => head.header.snapshotId));
+        await revalidate(selected.binding, selected.heads, drive, signal);
+        const version = await options.resolutionRepository.commit({ fence: fence(selected.context), library: outgoing.library, media, recovery,
+          effect: { kind: 'resolution', binding: selected.binding, snapshot: outgoing } }, () => ready(signal, id));
+        confirmationId = null;
+        conflict = null; await guard().then(() => publish({ status: 'pending' })).catch(() => {});
+        try { await transfer(selected.binding, drive, selected.heads, { library: outgoing.library, version }, signal); }
+        catch { await guard().then(() => publish({ status: 'pending' })).catch(() => {}); return 'localCommittedPending' as const; }
+        return view.status === 'synced' ? 'synchronized' as const : 'localCommittedPending' as const;
+      }, true))!;
+    },
     async resolve(choice: 'local' | string) {
-      const selected = conflict; if (!selected) return;
-      await locked(async signal => {
-        const binding = await auth.session(signal); if (!sameBinding(selected.binding, binding)) throw new SyncError('reconnect');
-        const drive = options.drive(binding); const heads = remoteHeads(await drive.list(signal)); const local = await library();
-        if (ids(heads) !== ids(selected.heads) || !sameRevision(local.version, selected.version)) { await showConflict(binding, heads, local.version, selected.accountChanged); return; }
-        let data = local.library; let version = local.version;
-        if (choice !== 'local') {
-          const file = heads.find(head => head.header.snapshotId === choice); if (!file) throw new SyncError('invalid');
-          data = (await drive.download(file, signal)).library;
+      const selected = conflict; if (!selected) throw new SyncError('conflict');
+      // Whole-library choices do not materialize every source; they remain available above the merge budget.
+      return locked(async signal => {
+        const context = await store.context(); const local = await library();
+        if (!sameRevision(local.version, selected.version) || !sameRevision(local.version, context.version)) throw new SyncError('conflict');
+        const binding = await auth.session(signal); if (!sameBinding(selected.binding, binding)) throw new SyncError('conflict');
+        const drive = options.drive(binding); const files = await drive.list(signal); const heads = remoteHeads(files);
+        if (fingerprint(heads) !== fingerprint(selected.heads)) throw new SyncError('conflict');
+        if (context.record.base && !selected.accountChanged) {
+          const base = files.find(file => file.header.snapshotId === context.record.base!.snapshotId);
+          if (!base || base.header.hash !== context.record.base.hash || base.header.protocolVersion !== context.record.base.protocolVersion) throw new SyncError('invalid');
+          await download(drive, base, signal);
         }
-        await guard(); await store.preserve(await snapshot(local.library, null), owner);
-        if (choice !== 'local') {
-          if (options.hasDraft()) throw new SyncError('conflict');
-          const coverMedia = await prepareBackupMedia(data);
-          await guard();
-          if (options.hasDraft()) throw new SyncError('conflict');
-          version = await repository.commit({ kind: 'replace', books: data.books, preferences: data.preferences, coverMedia }, local.version, { syncLeaseOwner: owner });
-        }
-        const next = await snapshot(data, heads[0]?.header.snapshotId ?? null, heads.map(head => head.header.snapshotId));
-        await guard(); await store.saveOperation({ binding, version, snapshot: next }, owner); await store.update({ binding, base: null }, owner);
-        conflict = null; publish({ status: 'syncing' });
-        await transfer(binding, drive, heads, { library: data, version }, signal);
-      });
+        let data = local.library;
+        if (choice !== 'local') { const file = heads.find(head => head.header.snapshotId === choice); if (!file) throw new SyncError('invalid'); data = (await download(drive, file, signal)).library; }
+        const media = await prepareBackupMedia(referencedExport(data)); const recovery = await snapshot(local.library, context.record.base?.snapshotId ?? null);
+        const outgoing = await snapshot(data, heads[0]?.header.snapshotId ?? null, heads.map(head => head.header.snapshotId));
+        await revalidate(binding, heads, drive, signal);
+        const version = await options.resolutionRepository.commit({ fence: fence(context), library: outgoing.library, media, recovery, effect: { kind: 'resolution', binding, snapshot: outgoing } }, () => ready(signal));
+        conflict = null; preview = null; await guard().then(() => publish({ status: 'pending' })).catch(() => {});
+        try { await transfer(binding, drive, heads, { library: outgoing.library, version }, signal); } catch { await guard().then(() => publish({ status: 'pending' })).catch(() => {}); }
+      }, true);
     },
     async runNow() { await locked(cycle); },
-    close() { closed = true; controller?.abort(); clearTimeout(timer); clearTimeout(polling); unsubscribe(); unsubscribeControl(); listeners.clear(); auth.invalidate(); },
+    close() { closed = true; preview = null; controller?.abort(); clearTimeout(timer); clearTimeout(polling); unsubscribe(); unsubscribeControl(); listeners.clear(); auth.invalidate(); },
   };
 }
 export type SyncCoordinator = ReturnType<typeof createSyncCoordinator>;

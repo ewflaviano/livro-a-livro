@@ -213,8 +213,8 @@ Não afirmar “backup concluído” quando só foi possível observar o início
 Os estados abaixo orientam o conector implementado e seu simulador. O catálogo estático não oferece conexão real. Em produção, enquanto o gate de autorização não estiver concluído, informar indisponibilidade claramente, sem botão que prometa um serviço pronto.
 
 - Não conectado: “Seus dados estão apenas neste dispositivo.” Ação inicial “Entrar com Google”, opcional.
-- Conta confirmada temporariamente: informar que o Drive ainda não foi autorizado e oferecer “Autorizar Google Drive” e “Cancelar autorização”. Retornar à tela entre as etapas; nunca abrir o segundo consentimento automaticamente.
-- Identidade expirada: oferecer entrar novamente, preservando a biblioteca e sem prometer uma conta permanente.
+- Google conectado: login global lembrado entre aberturas. Se o Drive ainda não foi autorizado, oferecer “Autorizar Google Drive” e “Agora não”. Retornar à tela entre as etapas; nunca abrir o segundo consentimento automaticamente.
+- Login expirado: oferecer entrar novamente, preservando a biblioteca.
 - Conectando / Sincronizando: informar operação em andamento, sem antecipar sucesso.
 - Sincronizado: data/hora e confirmação do serviço, sem inferir a partir da presença de internet.
 - Sem conexão: “Alterações salvas aqui; aguardando conexão para sincronizar.”
@@ -302,4 +302,15 @@ Entrar com Google abre a confirmação compartilhada com Seus dados. Após ident
 
 Formulário aberto, operação de backup, atualização em aplicação ou outro diálogo adiam o convite. Rascunho/backup/update também são conferidos imediatamente antes de sair para Google, depois da resposta de autorização. Fechar devolve o foco a um acionador disponível. Autorização usa o estilo de ação primária; ações destrutivas conservam seu estilo próprio.
 
-Erro, reconexão, revogação pendente e conflito exibem aviso global com detalhes e Decidir depois. Dispensar o aviso mantém o estado no cabeçalho; uma nova situação pode voltar a ser anunciada. A resolução continua em Seus dados até a fatia de união. Com a flag desligada, o cabeçalho informa indisponibilidade e leva aos detalhes, sem simular conexão.
+Erro, reconexão, revogação pendente e conflito exibem aviso global com detalhes e Decidir depois. Dispensar o aviso mantém o estado no cabeçalho; uma nova situação pode voltar a ser anunciada. A resolução fica em Seus dados, com prévia explícita da união. Com a flag desligada, o cabeçalho informa indisponibilidade e leva aos detalhes, sem simular conexão.
+
+
+### União de bibliotecas — issue #13
+
+Depois da autorização opcional do Drive, uma instalação realmente nova e vazia recebe a biblioteca disponível automaticamente. A estante esvaziada por exclusão ou importação não é tratada como nova. Mudanças somente de ano, Grade/Lista ou filtro também acompanham a biblioteca na sincronização.
+
+Se os dois lados mudaram, Seus dados oferece Juntar bibliotecas, Manter esta biblioteca e Usar uma versão do Drive. A prévia de união mostra todas as versões envolvidas, totais e escolhas pendentes. Livros cadastrados separadamente continuam separados. Mesmo livro com versões diferentes exige escolher um registro inteiro ou excluir; não selecionar silenciosamente o mais recente. Preferências divergentes exigem uma escolha para o conjunto ano/modo/filtro.
+
+Detalhes de livros equivalentes ou presentes em uma versão começam recolhidos; divergências ficam abertas. Paginar grupos e oferecer preferência explícita em lote com contagem e confirmação. Capas, notas, datas e origem distinguem as versões. Sem base confiável, avisar que incluir livros presentes só em algumas versões pode trazer de volta um livro removido e pedir confirmação. “Tamanho das versões” descreve o orçamento da prévia sem expor hashes, IDs ou detalhes de transporte.
+
+Cancelar união não altera a estante. Revisar e juntar abre uma única confirmação final; alteração concorrente invalida a prévia. Após salvar localmente, falha de rede informa envio pendente, sem sugerir que a união foi desfeita. Manter exportação das versões e recuperação local acessíveis. Notas longas, teclado, foco e largura de 320 px fazem parte da validação. Contrato completo em [sync-uniao.md](sync-uniao.md).

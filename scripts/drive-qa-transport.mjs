@@ -24,13 +24,13 @@ export function createQaFetch(namespace) {
       try { metadata = JSON.parse(init.body); } catch { return stop(); }
       const operation = metadata?.appProperties?.operationId;
       if (metadata?.name !== 'livro-a-livro-snapshot-v1.json' || metadata?.parents?.length !== 1 ||
-        metadata.parents[0] !== 'appDataFolder' || typeof operation !== 'string' || !uuid.test(operation)) return stop();
+        metadata.parents[0] !== 'appDataFolder' || !['1', '2'].includes(metadata?.appProperties?.protocolVersion) || typeof operation !== 'string' || !uuid.test(operation)) return stop();
       // Separate keys avoid overwriting another tab's concurrent operation registration.
       localStorage.setItem(`${namespace}:operation:${operation}`, '1');
     } else if (method === 'PUT' && url.pathname === '/upload/drive/v3/files') {
       let snapshot;
       try { snapshot = JSON.parse(init.body); } catch { return stop(); }
-      if (!known(snapshot?.operationId)) return stop();
+      if (![1, 2].includes(snapshot?.protocolVersion) || !known(snapshot?.operationId)) return stop();
     } else if (method === 'GET' && url.pathname.startsWith('/drive/v3/files/')) {
       if (!allowedFiles.has(url.pathname.slice('/drive/v3/files/'.length))) return stop();
     } else if (method !== 'GET' || url.pathname !== '/drive/v3/files') return stop();

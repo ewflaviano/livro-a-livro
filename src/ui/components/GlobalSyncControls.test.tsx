@@ -47,7 +47,7 @@ it('does not pretend Google sign-in is available with the flag disabled', () => 
   expect(sync.coordinator.connect).not.toHaveBeenCalled();
 });
 it.each([
-  ['synced', 'Drive atualizado'], ['syncing', 'Sincronizando…'], ['pending', 'Envio pendente'],
+  ['synced', 'Drive atualizado'], ['syncing', 'Enviando…'], ['receiving', 'Recebendo…'], ['connected-empty', 'Drive conectado'], ['pending', 'Envio pendente'],
   ['offline', 'Drive offline'], ['paused', 'Drive pausado'], ['reconnect', 'Reconectar Google'],
   ['conflict', 'Versões diferentes'], ['error', 'Falha no Drive'], ['quota', 'Drive sem espaço'],
 ] as const)('shows %s in the persistent header', (status, label) => {

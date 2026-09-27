@@ -1,11 +1,17 @@
 import { z } from 'zod';
 import { openDatabase } from '../adapters/indexeddb/database';
 import type { DatabaseOptions } from '../adapters/indexeddb/database';
-import { revisionSchema, sameRevision } from '../adapters/indexeddb/schema';
+import { parseMetadata, versionOf, revisionSchema, sameRevision } from '../adapters/indexeddb/schema';
 import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncError, type Operation, type SyncRecord, type AuthorizationIntent } from './contracts';
 import { parseSnapshot } from './snapshot';
+import { canonicalJson } from './protocol';
 import type { LocalRevision } from '../ports/library-repository';
 
+async function parseOperation(value: unknown): Promise<Operation | null> {
+  if (value === undefined) return null;
+  const parsed = z.strictObject({ binding: bindingSchema, version: revisionSchema, snapshot: z.unknown() }).parse(value);
+  return { ...parsed, snapshot: await parseSnapshot(parsed.snapshot) };
+}
 export async function openSyncStore(options: DatabaseOptions = {}) {
   const connection = await openDatabase(options); const db = connection.db;
   const listeners = new Set<() => void>();
@@ -68,10 +74,13 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       await tx.done;
     },
     async operation(): Promise<Operation | null> {
-      const value = await db.get('syncOutbox', 'operation');
-      if (value === undefined) return null;
-      const parsed = z.strictObject({ binding: bindingSchema, version: revisionSchema, snapshot: z.unknown() }).parse(value);
-      return { ...parsed, snapshot: await parseSnapshot(parsed.snapshot) };
+      return parseOperation(await db.get('syncOutbox', 'operation'));
+    },
+    async context() {
+      const tx = db.transaction(['syncState','syncOutbox','meta'], 'readonly');
+      const [control, operation, pending, meta] = await Promise.all([tx.objectStore('syncState').get('control'), tx.objectStore('syncOutbox').get('operation'), tx.objectStore('syncOutbox').get('pending'), tx.objectStore('meta').get('library')]);
+      await tx.done;
+      return { record: control === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(control), operation: await parseOperation(operation), pending: pending === undefined ? null : pendingSchema.parse(pending).version, version: versionOf(parseMetadata(meta)) };
     },
     async saveOperation(operation: Operation, owner?: string) {
       const tx = db.transaction(['syncState', 'syncOutbox'], 'readwrite');
@@ -83,6 +92,8 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
           await tx.done; throw new SyncError('cancelled');
         }
       }
+      const existing = await tx.objectStore('syncOutbox').get('operation');
+      if (existing !== undefined && canonicalJson(existing) !== canonicalJson(operation)) { await tx.done; throw new SyncError('conflict'); }
       await tx.objectStore('syncOutbox').put(operation, 'operation');
       await tx.done;
     },

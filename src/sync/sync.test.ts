@@ -1,3 +1,4 @@
+import { openSyncResolutionRepository } from '../adapters/indexeddb/sync-resolution-repository';
 import { coverId, encodedCover, syntheticCover, stubImageDecoder } from '../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,9 +34,10 @@ async function setup() {
   let signInAttemptId = crypto.randomUUID();
   const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), startSignIn: vi.fn(async (id: string) => { signInAttemptId = id as `${string}-${string}-${string}-${string}-${string}`; return 'https://accounts.google.com/o/oauth2/v2/auth'; }), login: vi.fn(async () => ({ connectionId: binding.connectionId, signInAttemptId, expiresAt: Date.now() / 1000 + 30 * 86400, absoluteExpiresAt: Date.now() / 1000 + 180 * 86400, csrfToken: 'login-csrf' })), startDrive: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), cancelAuthorization: vi.fn(async () => {}), logout: vi.fn(async () => {}), disconnect: vi.fn(async () => false) };
   const drive: DriveClient = { list: vi.fn(async () => snapshots.map(file)), download: vi.fn(async head => snapshots.find(item => item.snapshotId === head.header.snapshotId)!), upload: vi.fn(async value => { snapshots.push(value); }) };
-  const options = { repository, media, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
+  const resolutionRepository = await openSyncResolutionRepository(repository, { name });
+  const options = { repository, resolutionRepository, media, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
   const coordinator = createSyncCoordinator(options);
-  close.push(() => { coordinator.close(); repository.close(); media.close(); store.close(); });
+  close.push(() => { coordinator.close(); repository.close(); media.close(); store.close(); resolutionRepository.close(); });
   await store.write({ ...defaultSyncRecord, enabled: true });
   return { ...options, name, options, coordinator, snapshots, remote: drive };
 }
@@ -396,11 +398,11 @@ describe('durable local first coordinator', () => {
       await s.coordinator.runNow();
     }
     const before = await s.repository.readBackupSnapshot();
-    const original = s.repository.commit.bind(s.repository);
-    vi.spyOn(s.repository, 'commit').mockImplementation(async (...args) => {
+    const original = s.resolutionRepository.commit.bind(s.resolutionRepository);
+    vi.spyOn(s.resolutionRepository, 'commit').mockImplementation(async (...args) => {
       await s.coordinator.pause(); return original(...args);
     });
-    if (path === 'conflict') await s.coordinator.resolve(remote.snapshotId); else await s.coordinator.runNow();
+    if (path === 'conflict') await expect(s.coordinator.resolve(remote.snapshotId)).rejects.toMatchObject({ code: 'cancelled' }); else await s.coordinator.runNow();
     expect(await s.repository.readBackupSnapshot()).toEqual(before);
     expect(s.coordinator.getSnapshot().status).toBe('paused');
   });
@@ -423,11 +425,11 @@ describe('durable local first coordinator', () => {
     const remote = await snap(data([book('Remoto sintético')]), s.snapshots[0]?.snapshotId ?? null);
     s.snapshots.push(remote);
     if (path === 'conflict') await s.coordinator.runNow();
-    const preserve = s.store.preserve.bind(s.store);
+    const preserve = s.resolutionRepository.commit.bind(s.resolutionRepository);
     let reached!: () => void; const ready = new Promise<void>(resolve => { reached = resolve; });
     let release!: () => void; const blocked = new Promise<void>(resolve => { release = resolve; });
     let first = true;
-    vi.spyOn(s.store, 'preserve').mockImplementation(async (...args) => {
+    vi.spyOn(s.resolutionRepository, 'commit').mockImplementation(async (...args) => {
       if (first) { first = false; reached(); await blocked; }
       return preserve(...args);
     });
@@ -441,7 +443,7 @@ describe('durable local first coordinator', () => {
     await other.runNow(); await other.resolve(remote.snapshotId);
     const recovery = await s.store.recovery();
     expect(recovery?.library.books).toContainEqual(newer);
-    release(); await stale;
+    release(); if (path === 'conflict') await expect(stale).rejects.toMatchObject({ code: 'conflict' }); else await stale;
     expect(await s.store.recovery()).toEqual(recovery);
     expect((await s.repository.readAll()).books).toEqual(remote.library.books);
   });
@@ -477,7 +479,7 @@ describe('durable local first coordinator', () => {
       await s.repository.commit({ kind: 'put', book: book('Concurrent') }, await s.repository.readRevision());
       return remote;
     });
-    if (path === 'conflict') await s.coordinator.resolve(remote.snapshotId); else await s.coordinator.runNow();
+    if (path === 'conflict') await expect(s.coordinator.resolve(remote.snapshotId)).rejects.toMatchObject({ code: 'conflict' }); else await s.coordinator.runNow();
     expect((await s.repository.readAll()).books).toHaveLength(2);
     expect(await (await s.media.read(coverId))!.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
     expect(await s.store.pending()).toEqual(await s.repository.readRevision());
@@ -542,7 +544,7 @@ describe('durable local first coordinator', () => {
     const s = await setup(); await s.repository.commit({ kind: 'put', book: book('Local') }, await s.repository.readRevision());
     const remote = await snap(data([book('Remoto')])); s.snapshots.push(remote); await s.coordinator.runNow();
     await s.repository.commit({ kind: 'put', book: book('Nova edição') }, await s.repository.readRevision());
-    await s.coordinator.resolve(remote.snapshotId); expect((await s.repository.readAll()).books).toHaveLength(2); expect(s.remote.upload).not.toHaveBeenCalled();
+    await expect(s.coordinator.resolve(remote.snapshotId)).rejects.toMatchObject({ code: 'conflict' }); expect((await s.repository.readAll()).books).toHaveLength(2); expect(s.remote.upload).not.toHaveBeenCalled();
   });
   it('serializes tabs with durable leases', async () => {
     const s = await setup(); await s.store.lease('another-tab'); await s.coordinator.runNow(); expect(s.auth.session).not.toHaveBeenCalled();
@@ -649,4 +651,164 @@ describe('network boundary', () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ files: [{ id: 'abc', size: '2', appProperties: { protocolVersion: '999' } }] })));
     await expect(createDriveClient(auth, binding, fetcher).list(new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' });
   });
+});
+
+describe('V2 receiving, complete comparison and explicit union', () => {
+  const choices = (preview: import('./merge').ResolutionPreview): import('./merge').ResolutionChoices => ({ books: preview.books.map(group => ({ bookId: group.id, sourceId: group.variants.find(variant => variant.sourceId === 'local')?.sourceId ?? group.variants[0].sourceId })), preferencesSourceId: 'local', includeUnbased: true });
+  async function divergent() {
+    const s = await setup(); await s.repository.commit({ kind: 'put', book: book('Local sintético') }, await s.repository.readRevision());
+    s.snapshots.push(await snap(data([book('Remoto sintético')]))); await s.coordinator.runNow(); return s;
+  }
+  it('receives a genuinely fresh empty installation automatically, including V1 orphan cleanup, and converges without upload', async () => {
+    const s = await setup(); const remote = await snap({ ...data([book('Recebido')]), coverMedia: [encodedCover()] }); s.snapshots.push(remote);
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot()).toMatchObject({ status: 'synced', received: true });
+    expect((await s.repository.readAll()).books).toEqual(remote.library.books); expect((await s.repository.readBackupSnapshot()).coverMedia).toEqual([]);
+    expect((await s.store.recovery())?.library.books).toEqual([]); expect(await s.store.pending()).toBeNull();
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('synced'); expect(s.remote.upload).not.toHaveBeenCalled();
+    expect((await s.store.read()).base).toMatchObject({ protocolVersion: 1, hash: remote.hash });
+  });
+  it.each(['delete','replace','preferences'] as const)('does not confuse an empty library changed by %s with a fresh installation', async kind => {
+    const s = await setup();
+    if (kind === 'preferences') await s.repository.updatePreferences({ mode: 'list' });
+    else if (kind === 'replace') await s.repository.commit({ kind: 'replace', books: [] }, await s.repository.readRevision());
+    else { const item = book(); await s.repository.commit({ kind: 'put', book: item }, await s.repository.readRevision()); await s.repository.commit({ kind: 'delete',id:item.id },await s.repository.readRevision()); }
+    s.snapshots.push(await snap(data([book('Remoto')]))); const before = await s.repository.readBackupSnapshot(); await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('conflict'); expect(await s.repository.readBackupSnapshot()).toEqual(before); expect(s.remote.upload).not.toHaveBeenCalled();
+  });
+  it('never creates an empty backup for two genuinely empty sides, while a preference-only edit sends V2', async () => {
+    const s = await setup(); await s.coordinator.runNow(); expect(s.remote.upload).not.toHaveBeenCalled(); expect((await s.store.read()).base).toBeNull(); expect(s.coordinator.getSnapshot().status).toBe('connected-empty');
+    await s.repository.updatePreferences({ mode: 'list' }); await s.coordinator.runNow();
+    expect(s.snapshots).toHaveLength(1); expect(s.snapshots[0]).toMatchObject({ protocolVersion:2,library:{books:[],preferences:{mode:'list'}} });
+  });
+  it('does not equate V1 wire hashes with different preferences and hydrates a declared V1 base from its own payload', async () => {
+    const s = await setup(); const item = book(); await s.repository.commit({ kind:'put',book:item },await s.repository.readRevision());
+    const remote = await snap(data([item])); s.snapshots.push(remote); await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('conflict'); expect((await s.store.read()).base).toBeNull();
+    await s.repository.updatePreferences(remote.library.preferences); await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('synced'); expect((await s.store.read()).base?.comparisonHashV2).toBeDefined();
+    await s.store.update({ base: { snapshotId:remote.snapshotId,hash:remote.hash,protocolVersion:1 } });
+    s.snapshots.push(await snap(data([book('Descendente')]),remote.snapshotId)); await s.coordinator.runNow();
+    expect((await s.repository.readAll()).books[0].title).toBe('Descendente'); expect(s.remote.upload).not.toHaveBeenCalled();
+  });
+  it('a preference-only local edit prevents an automatic descendant overwrite', async () => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Base')},await s.repository.readRevision()); await s.coordinator.runNow();
+    await s.repository.updatePreferences({mode:'list'}); const before=await s.repository.readBackupSnapshot();
+    s.snapshots.push(await snap(data([book('Remoto')]),s.snapshots[0].snapshotId)); await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('conflict'); expect(await s.repository.readBackupSnapshot()).toEqual(before);
+  });
+  it('blocks a missing declared base without turning it into a fresh binding or silently replacing local', async () => {
+    const s=await setup(); const missing=await snap(data()); await s.store.update({binding,base:{snapshotId:missing.snapshotId,hash:missing.hash,protocolVersion:1}});
+    s.snapshots.push(await snap(data([book('Remoto')]))); const before=await s.repository.readBackupSnapshot(); await s.coordinator.runNow();
+    expect(s.coordinator.getSnapshot().status).toBe('error'); expect(await s.repository.readBackupSnapshot()).toEqual(before); expect((await s.store.read()).base?.snapshotId).toBe(missing.snapshotId);
+  });
+  it('prepares all three heads without holding a lease and commits every consumed head into one union', async () => {
+    const s=await divergent(); s.snapshots.push(await snap(data([book('Terceira')]))); await s.coordinator.runNow();
+    const before=await s.repository.readBackupSnapshot(); const preview=await s.coordinator.prepareResolution(); expect(preview.sources).toHaveLength(3);
+    expect(await s.store.lease('other-reader')).toBe(true); await s.store.lease('other-reader',true);
+    const result=await s.coordinator.confirmResolution(preview.id,choices(preview)); expect(result).toBe('synchronized');
+    expect((await s.repository.readAll()).books).toHaveLength(3); expect(s.snapshots.at(-1)?.resolvedSnapshotIds).toHaveLength(2); expect(s.snapshots.at(-1)?.protocolVersion).toBe(2);
+    expect((await s.store.recovery())?.library.books).toEqual(before.books);
+  });
+  it.each(['book','preferences','auth','binding','head','pending','operation'] as const)('invalidates a preview if %s changes before confirmation', async mutation => {
+    const s=await divergent(); const preview=await s.coordinator.prepareResolution();
+    if(mutation==='book') await s.repository.commit({kind:'put',book:book('Depois')},await s.repository.readRevision());
+    if(mutation==='preferences') await s.repository.updatePreferences({mode:'list'});
+    if(mutation==='auth') await s.coordinator.pause();
+    if(mutation==='binding') await s.store.update({binding:{...binding,generation:2}});
+    if(mutation==='head') s.snapshots[0]={...s.snapshots[0],createdAt:'2026-09-27T00:00:00Z'};
+    if(mutation==='pending') await s.store.acknowledge(await s.repository.readRevision());
+    if(mutation==='operation') await s.store.saveOperation({binding,version:await s.repository.readRevision(),snapshot:await snap(data([book('Operação')]))});
+    const before=await s.repository.readBackupSnapshot(); const operation=await s.store.operation();
+    await expect(s.coordinator.confirmResolution(preview.id,choices(preview))).rejects.toBeDefined();
+    expect(await s.repository.readBackupSnapshot()).toEqual(before); expect(await s.store.operation()).toEqual(operation); expect(s.remote.upload).not.toHaveBeenCalled();
+  });
+  it('cancel or unmount during asynchronous commit preparation leaves no operation, replacement or recovery', async () => {
+    const s=await divergent(); const preview=await s.coordinator.prepareResolution(); const before=await s.repository.readBackupSnapshot();
+    const original=s.resolutionRepository.commit.bind(s.resolutionRepository);
+    vi.spyOn(s.resolutionRepository,'commit').mockImplementation(async (...args)=>{ s.coordinator.cancelResolution(preview.id); return original(...args); });
+    await expect(s.coordinator.confirmResolution(preview.id,choices(preview))).rejects.toMatchObject({code:'cancelled'});
+    expect(await s.repository.readBackupSnapshot()).toEqual(before); expect(await s.store.operation()).toBeNull(); expect(await s.store.recovery()).toBeNull();
+  });
+  it('preserves a committed resolution and its original operation across lost PUT and later local edits', async () => {
+    const s=await divergent(); const preview=await s.coordinator.prepareResolution();
+    vi.mocked(s.remote.upload).mockImplementationOnce(async snapshot=>{s.snapshots.push(snapshot);throw new SyncError('retry');});
+    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    const operation=await s.store.operation(); expect(operation?.snapshot.protocolVersion).toBe(2);
+    const newer=await s.repository.commit({kind:'put',book:book('Depois do commit')},await s.repository.readRevision());
+    await s.coordinator.runNow(); expect(await s.store.operation()).toBeNull(); expect(await s.store.pending()).toEqual(newer); expect(s.remote.upload).toHaveBeenCalledOnce();
+  });
+  it('does not let a delayed upload result overwrite pause after local resolution committed', async () => {
+    const s=await divergent(); const preview=await s.coordinator.prepareResolution();
+    vi.mocked(s.remote.upload).mockImplementationOnce(async snapshot=>{s.snapshots.push(snapshot);await s.coordinator.pause();});
+    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    expect(s.coordinator.getSnapshot().status).toBe('paused'); expect(await s.store.operation()).not.toBeNull(); expect((await s.repository.readAll()).books).toHaveLength(2);
+  });
+  it('retries a persisted V1 operation with exactly the same object and bytes, then acknowledges only its old revision', async () => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Antigo')},await s.repository.readRevision());
+    const local=await s.coordinator.localCopy(); const legacy=await snap(local); const version=await s.repository.readRevision();
+    await s.store.update({binding}); await s.store.saveOperation({binding,version,snapshot:legacy}); const bytes=JSON.stringify(legacy);
+    await s.repository.commit({kind:'put',book:book('Novo')},await s.repository.readRevision()); const pending=await s.store.pending();
+    await s.coordinator.runNow(); expect(JSON.stringify(vi.mocked(s.remote.upload).mock.calls[0][0])).toBe(bytes); expect(s.snapshots[0].protocolVersion).toBe(1); expect(await s.store.pending()).toEqual(pending);
+    await s.coordinator.runNow(); expect(s.snapshots.at(-1)?.protocolVersion).toBe(2); expect(s.snapshots.at(-1)?.parentSnapshotId).toBe(legacy.snapshotId);
+  });
+  it('rejects post-PUT V1 confirmation with equal wire hash but different preferences', async () => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Legado')},await s.repository.readRevision());
+    const legacy=await snap(await s.coordinator.localCopy()); await s.store.update({binding}); await s.store.saveOperation({binding,version:await s.repository.readRevision(),snapshot:legacy});
+    vi.mocked(s.remote.upload).mockImplementationOnce(async value=>{s.snapshots.push({...value,library:{...value.library,preferences:{...value.library.preferences,mode:'list'}}});});
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('error'); expect(await s.store.operation()).not.toBeNull(); expect((await s.store.read()).base).toBeNull();
+  });
+  it('blocks only merge when aggregate metadata exceeds 100 MiB, preserving whole-library resolution', async () => {
+    const s=await divergent(); s.snapshots.push(await snap(data([book('Terceira fonte')])),await snap(data([book('Quarta fonte')]))); const list=vi.mocked(s.remote.list); list.mockImplementation(async()=>s.snapshots.map(snapshot=>({...file(snapshot),size:35*1024*1024})));
+    await s.coordinator.runNow(); const downloads=vi.mocked(s.remote.download).mock.calls.length;
+    await expect(s.coordinator.prepareResolution()).rejects.toMatchObject({code:'merge-budget'}); expect(s.remote.download).toHaveBeenCalledTimes(downloads);
+    await s.coordinator.resolve('local'); expect((await s.repository.readAll()).books[0].title).toBe('Local sintético');
+  });
+  it('the latest preparation wins if an earlier download finishes afterward', async () => {
+    const s=await divergent(); const original=s.remote.download;
+    let release!:()=>void; let reached!:()=>void; const wait=new Promise<void>(resolve=>{release=resolve;}); const ready=new Promise<void>(resolve=>{reached=resolve;});
+    vi.mocked(s.remote.download).mockImplementationOnce(async (...args)=>{reached();await wait;return original(...args);});
+    const first=s.coordinator.prepareResolution(); const firstResult=first.catch(error=>error); await ready;
+    const second=await s.coordinator.prepareResolution(); release(); expect(await firstResult).toMatchObject({code:'conflict'});
+    expect(await s.coordinator.confirmResolution(second.id,choices(second))).toBe('synchronized');
+  });
+  it('a receive committed before pause never publishes a late synced state', async () => {
+    const s=await setup(); s.snapshots.push(await snap(data([book('Recebido antes pausa')])));
+    const original=s.repository.readRevision.bind(s.repository);
+    vi.spyOn(s.repository,'readRevision').mockImplementationOnce(async()=>{const value=await original();await s.coordinator.pause();return value;});
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('paused'); expect((await s.repository.readAll()).books[0].title).toBe('Recebido antes pausa');
+  });
+  it.each(['operationId','protocolVersion','createdAt'] as const)('refuses post-PUT confirmation if %s differs from the immutable outgoing header', async changed => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Header sintético')},await s.repository.readRevision());
+    vi.mocked(s.remote.upload).mockImplementationOnce(async value=>{
+      if(changed==='operationId') s.snapshots.push({...value,operationId:crypto.randomUUID()});
+      else if(changed==='createdAt') s.snapshots.push({...value,createdAt:'2026-09-27T00:00:00Z'});
+      else s.snapshots.push({...value,protocolVersion:1,hash:await libraryHash(value.library)});
+    });
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).not.toBe('synced'); expect(await s.store.operation()).not.toBeNull(); expect((await s.store.read()).base).toBeNull();
+  });
+
+  it('does not publish a conflict after pause wins during its final local count read', async () => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Local')},await s.repository.readRevision()); s.snapshots.push(await snap(data([book('Remoto')])));
+    const original=s.repository.readAll.bind(s.repository);
+    vi.spyOn(s.repository,'readAll').mockImplementationOnce(async()=>{const value=await original();await s.coordinator.pause();return value;});
+    await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('paused'); await expect(s.coordinator.prepareResolution()).rejects.toMatchObject({code:'conflict'});
+  });
+
+  it('preserves an uncertain V1 operation on a new remote head until an explicit atomic resolution supersedes it', async () => {
+    const s=await setup(); await s.repository.commit({kind:'put',book:book('Local V1')},await s.repository.readRevision());
+    const legacy=await snap(await s.coordinator.localCopy()); await s.store.update({binding}); await s.store.saveOperation({binding,version:await s.repository.readRevision(),snapshot:legacy});
+    s.snapshots.push(await snap(data([book('Ponta posterior')]))); await s.coordinator.runNow(); expect(s.coordinator.getSnapshot().status).toBe('conflict'); expect((await s.store.operation())?.snapshot).toEqual(legacy);
+    const preview=await s.coordinator.prepareResolution(); vi.mocked(s.remote.upload).mockRejectedValueOnce(new SyncError('retry'));
+    expect(await s.coordinator.confirmResolution(preview.id,choices(preview))).toBe('localCommittedPending');
+    const replacement=await s.store.operation(); expect(replacement?.snapshot.protocolVersion).toBe(2); expect(replacement?.snapshot.operationId).not.toBe(legacy.operationId); expect(replacement?.snapshot.resolvedSnapshotIds).toEqual([s.snapshots[0].snapshotId]);
+    expect((await s.store.recovery())?.library.books).toEqual(legacy.library.books);
+  });
+
+  it('a fresh preview can be prepared after an earlier one became stale from a local edit', async () => {
+    const s=await divergent(); const first=await s.coordinator.prepareResolution(); await s.repository.updatePreferences({mode:'list'});
+    await expect(s.coordinator.confirmResolution(first.id,choices(first))).rejects.toMatchObject({code:'conflict'});
+    const next=await s.coordinator.prepareResolution(); expect(next.id).not.toBe(first.id); expect(next.sources.find(source=>source.id==='local')?.preferences.mode).toBe('list');
+    expect(await s.coordinator.confirmResolution(next.id,choices(next))).toBe('synchronized');
+  });
+
 });

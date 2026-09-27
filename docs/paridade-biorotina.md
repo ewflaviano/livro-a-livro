@@ -86,5 +86,5 @@ fechado.
 ## Progresso verificado
 
 - PR #55 integrada: cabeçalho global, convite separado do Drive, avisos e proteção de rascunhos. Produção `02f4b23c75af`, workflow `36341639642`, frontend/API publicados e smoke de controles aprovado. A flag pública Drive continua false.
-- Login persistente: contrato aprovado em [auth-login-persistente.md](auth-login-persistente.md); implementação e gates em andamento na fatia seguinte da #13. Não confundir contrato aprovado com validação real concluída.
-- União de bibliotecas, convite de privacidade e gates finais continuam pendentes nas etapas acima.
+- PR #56 integrada: login persistente publicado em `99dc01184042`, workflow `36343523719`. CI: 397 testes frontend, 31 Rust; seis gates AWS isolados aprovados. No Chromium normal, identificação real confirmou LOGIN 200/SESSION Drive 401, Agora não persistiu em recarga e nova aba, navegação manteve login e logout permaneceu 401 após recarga. Esse ensaio não autorizou Drive nem validou isolamento entre perfis. A página temporária foi retirada após o teste.
+- União de bibliotecas: contrato aprovado em [sync-uniao.md](sync-uniao.md), implementação em andamento. Convite de privacidade e gates finais continuam pendentes nas etapas acima.

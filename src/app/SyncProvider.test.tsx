@@ -4,10 +4,11 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
   vi.stubEnv('VITE_DRIVE_ENABLED', 'true');
   const state = { status: 'disabled' };
-  return { failCompose: false, repository: vi.fn(), start: vi.fn(async () => {}), close: vi.fn(), storeClose: vi.fn(),
+  return { failCompose: false, repository: vi.fn(), start: vi.fn(async () => {}), close: vi.fn(), storeClose: vi.fn(), resolutionClose: vi.fn(),
     coordinator: { start: vi.fn(async () => {}), close: vi.fn(), wake: vi.fn(async () => {}), subscribe: () => () => {}, getSnapshot: () => state } };
 });
 vi.mock('../adapters/indexeddb/library-repository', () => ({ openLibraryRepository: mocks.repository }));
+vi.mock('../adapters/indexeddb/sync-resolution-repository', () => ({ openSyncResolutionRepository: async () => ({ close: mocks.resolutionClose }) }));
 vi.mock('../sync/outbox', () => ({ openSyncStore: async () => ({ close: mocks.storeClose }) }));
 vi.mock('../sync/api', () => ({ createAuthClient: () => ({}) }));
 vi.mock('../sync/drive-client', () => ({ createDriveClient: () => ({}) }));
@@ -33,11 +34,12 @@ it('reports a real initialization failure while preserving the local UI', async 
   expect(screen.getByRole('heading', { name: 'Biblioteca local' })).toBeTruthy();
 });
 
-it('closes both opened stores if later composition fails', async () => {
+it('closes all opened stores if later composition fails', async () => {
   mocks.repository.mockResolvedValueOnce({ close: mocks.close });
   mocks.failCompose = true;
   render(<SyncProvider><Probe /></SyncProvider>);
   expect(await screen.findByText('Indisponível')).toBeTruthy();
   expect(mocks.close).toHaveBeenCalledOnce();
   expect(mocks.storeClose).toHaveBeenCalledOnce();
+  expect(mocks.resolutionClose).toHaveBeenCalledOnce();
 });

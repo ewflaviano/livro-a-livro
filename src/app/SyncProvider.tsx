@@ -1,3 +1,4 @@
+import { openSyncResolutionRepository } from '../adapters/indexeddb/sync-resolution-repository';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { openSyncStore } from '../sync/outbox';
@@ -28,15 +29,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         cleanup = () => { repository?.close(); };
         const store = await openSyncStore();
         cleanup = () => { repository?.close(); store.close(); };
+        const resolutionRepository = await openSyncResolutionRepository(repository);
+        cleanup = () => { repository?.close(); store.close(); resolutionRepository.close(); };
         if (!active) { cleanup(); return; }
         const fetcher = local ? (await import('../sync/local-client')).localTransport() : fetch;
         const auth = createAuthClient(fetcher);
-        const next = createSyncCoordinator({ repository, store, auth, drive: binding => createDriveClient(auth, binding, fetcher),
+        const next = createSyncCoordinator({ repository, resolutionRepository, store, auth, drive: binding => createDriveClient(auth, binding, fetcher),
           online: () => navigator.onLine, visible: () => document.visibilityState !== 'hidden',
-          hasDraft: () => getPwaState().blocked, navigate: url => { assertAuthorizationNavigationSafe(); if (local) { window.location.hash = '/dados'; window.location.reload(); } else window.location.assign(url); },
+          hasDraft: () => getPwaState().blocked || getPwaState().update === 'applying', navigate: url => { assertAuthorizationNavigationSafe(); if (local) { window.location.hash = '/dados'; window.location.reload(); } else window.location.assign(url); },
         });
         const wake = () => { void next.wake().catch(() => {}); };
-        cleanup = () => { next.close(); repository?.close(); store.close();
+        cleanup = () => { next.close(); repository?.close(); store.close(); resolutionRepository.close();
           window.removeEventListener('online', wake); window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake); };
         if (!active) { cleanup(); return; }
         window.addEventListener('online', wake); window.addEventListener('focus', wake); document.addEventListener('visibilitychange', wake);

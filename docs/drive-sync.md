@@ -13,22 +13,37 @@ A intenção temporária de autorização fica no controle local, com UUID, etap
 Cancelamento consulta a autorização atual, mas só cancela se o UUID for exatamente o capturado antes da pausa local. O servidor conserva uma tentativa durável para neutralizar callbacks concorrentes. Sair durante SignIn usa esse cancelamento mesmo sem LOGIN. Sair conectado usa DELETE login; falha de rede/recusa não é anunciada como saída confirmada. A sincronização fica pausada; após reload, GET login determina conectado, desconectado ou não verificado. Nunca reabilitar sync apenas por recuperar LOGIN.
 
 O bootstrap/foco consulta login com deduplicação e renova perto do prazo, sem abrir OAuth automaticamente. Login usa 30 dias móveis/180 absolutos e não guarda refresh Google. SESSION Drive é separada. Após LOGIN válida, consultar SESSION apenas para apresentar capacidade não emite token nem acessa arquivos; 401 indica capacidade ausente e falha de rede deixa sua existência indeterminada. Sessões antigas sem LOGIN exigem reconexão, sem alterar biblioteca. Ver [contrato persistente](auth-login-persistente.md).
+
 ## Estado local e gates — 27 set 2026
 
 O backup independente está disponível em Seus dados → Backup local (issue #40), com exportação/importação offline e sem Drive. A issue #42 unifica capas na revisão, estante e detalhe: mídias locais funcionam offline; capas externas usam conexão e fallback em ausência/erro. A habilitação do conector continua condicionada aos gates da API/OAuth.
 
 A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebidos validam os bytes de imagem antes da prévia, e a aplicação remota automática ou escolhida no conflito substitui livros, mídias, preferências, revisão e outbox numa única transação condicional. Exportações leem esses dados em um snapshot readonly coerente. A issue #39 unifica o orçamento de gravação/exportação/restauração (S2), com base64 e envelope incluídos, e limita snapshots às mídias referenciadas. Estados legados excessivos permanecem legíveis, sem garantia retroativa de exportação.
 
-## Persistência e recuperação
+## Persistência e recuperação — protocolos V1/V2
 
-- Cada commit de biblioteca marca sua revisão pendente **na mesma transação IndexedDB**. Outbox nunca contém credenciais. Revisões posteriores não são apagadas pela confirmação de uma anterior.
-- `SyncSnapshot` V1 carrega backup V1, IDs de snapshot/operação, parent, hash canônico dos livros e IDs resolvidos. O hash e o envelope ficam só em IndexedDB e Drive. Não há criptografia ponta a ponta implementada; o JSON no Drive contém notas/avaliações.
+- Cada commit de biblioteca, inclusive alteração efetiva de preferências portáveis, marca sua revisão pendente **na mesma transação IndexedDB**. Salvar o mesmo valor ou atualizar lastExport não altera a revisão de conteúdo. Outbox nunca contém credenciais. Revisões posteriores não são apagadas pela confirmação de uma anterior.
+- Novas operações usam `SyncSnapshot` V2 com backup V1, IDs de snapshot/operação, parent e IDs resolvidos. Seu hash canônico inclui livros, preferências portáveis e capas referenciadas. O leitor mantém o algoritmo V1 exato para snapshots e operações antigas: hash V1 não inclui preferências e não pode provar equivalência completa. Não há criptografia ponta a ponta; o JSON no Drive contém notas/avaliações.
 - Snapshots são imutáveis. A listagem contém metadados pequenos; resoluções precisam baixar e validar seu envelope. `operationId` durável reconcilia respostas perdidas antes de repetir upload. Sessões resumable não persistem: se interrompidas, nova tentativa reconcilia a operação e inicia outra sessão.
-- Sem escolher por relógio, duas pontas diferentes exigem escolha explícita. A tela Dados mostra quantidades/datas, baixa cada versão e confirma qual biblioteca inteira usar. Sem união por ID, para não ressuscitar exclusões. Pontas e revisão local são relidas antes de aplicar.
+- Divergências oferecem Juntar bibliotecas, manter local, usar uma versão Drive ou decidir depois. A união cobre todas as pontas, compara IDs e exige escolhas de livro inteiro quando há diferenças; preferências divergentes são escolhidas como conjunto. Sem base confiável, a pessoa confirma a inclusão de livros ausentes de algumas versões; ausência não é tratada automaticamente como exclusão. Com base validada, exclusões são destacadas para decisão. Não há escolha por relógio nem merge por campo.
 - A última biblioteca local substituída fica preservada em `syncState/recovery` para download. As versões remotas ficam preservadas, sem limpeza automática. O aplicativo limita listagem a 10.000 snapshots e cada backup a 50 MiB (+64 KiB para envelope); exceder exige intervenção, nunca apagamento.
 - Apenas um coordenador por origem envia, com lease IndexedDB renovado a cada 10 s e validade de 45 s. Pausa/logout revogam o lease na mesma transação que desabilita o envio; o heartbeat apenas renova um lease existente. A confirmação atualiza a base, reconhece a revisão pendente e limpa a operação numa transação que verifica envio habilitado e posse do lease. Respostas antigas não reativam o envio. Escritas na biblioteca continuam condicionadas à revisão.
 - Alteração de conta ou geração congela base/outbox antigos e pede escolha explícita. Pausar, logout e revogar não removem livros nem arquivos do Drive.
 - Uma revogação não confirmada mantém aviso local persistente e bloqueia retomada automática, mesmo se a sessão antiga ainda for válida. A interface orienta verificar permissões Google e suporte. Somente uma confirmação de revogação ou a conclusão explícita de nova autorização Drive substitui esse aviso; a identificação inicial não o remove e uma sessão válida, isoladamente, não comprova revogação.
+
+## Compatibilidade e união
+
+O nome histórico `livro-a-livro-snapshot-v1.json` continua identificando os arquivos, inclusive V2. A versão real está em appProperties e no envelope, que devem coincidir. Isso permite ao cliente V1 descobrir V2 e interromper a sincronização por versão desconhecida, em vez de ignorar parte do histórico. Não renomear nem reescrever arquivos antigos.
+
+Operação V1 pendente mantém objeto, ordem de serialização, hash e IDs. Reconciliar resposta incerta antes de criar V2; não reconstruir silenciosamente uma operação antiga. Comparação entre versões exige validar V1 com seu hash e depois calcular o digest V2. Uma base declarada mas não encontrada bloqueia decisão automática; base=null numa primeira conexão é um estado legítimo.
+
+A prévia da união fica somente em memória. Limite agregado: 100 MiB das fontes materializadas (local, pontas e base, sem contar a mesma fonte duas vezes), além dos limites individuais. Esse limite não é um teto global de tráfego: reconstruir a linhagem também pode baixar envelopes históricos de resolução. Se a união exceder o orçamento, explicar o limite e manter opções de backup e biblioteca inteira; nunca ignorar uma ponta para caber.
+
+Mídias são escolhidas pela mesma origem do livro. Colisão de mediaId com conteúdo diferente gera outro UUID e referências corrigidas; bytes e metadados são conservados. O resultado continua sujeito a 100 mídias, 2 MiB por mídia, 12 MiB agregados e 50 MiB por backup. Não baixar capas externas durante a união.
+
+Confirmar relê conta/geração, revisão, autorização local e todas as pontas. Alteração invalida a prévia sem aplicar escolhas antigas. Resultado, capas, preferências, recuperação e operação de envio são gravados numa única transação IndexedDB; o upload ocorre depois. Falha de envio após o commit mantém a escolha salva e pendente. Recebimento automático também grava biblioteca, recuperação e base atomicamente. Ver [contrato completo e gates](sync-uniao.md).
+
+Instalação realmente vazia, sem histórico, pendência ou preferência editada, pode receber uma única ponta automaticamente após autorizar Drive. Uma estante esvaziada por exclusão/importação, conta alterada, múltiplas pontas ou preferências personalizadas exige decisão. Duas bibliotecas vazias não produzem snapshot apenas para anunciar backup.
 
 ## Agendamento e falhas
 
