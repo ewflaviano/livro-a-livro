@@ -1,5 +1,11 @@
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { createShelfService } from '../services/shelf-service';
+import { createSearchCache } from '../adapters/indexeddb/search-cache';
+import { createOpenLibraryClient } from '../adapters/open-library/client';
+import { createSearchService } from '../services/search-service';
+import { openLibraryCoverUrl } from '../adapters/open-library/covers';
+
+export function openBookSearch() { return { ...createSearchService(createOpenLibraryClient(createSearchCache())), coverUrl: openLibraryCoverUrl }; }
 
 export async function openShelfService() {
   let service: ReturnType<typeof createShelfService> | undefined;

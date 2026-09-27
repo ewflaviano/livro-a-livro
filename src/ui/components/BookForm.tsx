@@ -26,19 +26,19 @@ export function storageMessage(error: unknown): string {
   return 'Não foi possível salvar neste dispositivo. Seu rascunho continua aqui. Tente novamente.';
 }
 
-function makeDraft(book: Book | undefined, year: number) {
-  return { title: book?.title ?? '', authors: book?.authors.join('\n') ?? '',
+function makeDraft(book: NewBook | undefined, year: number) {
+  return { title: book?.title ?? '', authors: book?.authors?.join('\n') ?? '',
     status: book?.status ?? 'want-to-read' as ReadingStatus, shelfYear: String(book?.shelfYear ?? year),
     pageCount: book?.pageCount?.toString() ?? '', isbn: book?.isbn ?? '',
     publicationYear: book?.publicationYear?.toString() ?? '', startedOn: book?.startedOn ?? '',
     finishedOn: book?.finishedOn ?? '', rating: book?.rating?.toString() ?? '', note: book?.note ?? '' };
 }
 
-export function BookForm({ book, year, version, service, onSaved, onCancel, onReload }: {
-  book?: Book; year: number; version: LocalRevision; service: LibraryService;
+export function BookForm({ book, initialDraft, year, version, service, onSaved, onCancel, onReload }: {
+  book?: Book; initialDraft?: NewBook; year: number; version: LocalRevision; service: LibraryService;
   onSaved: (book: Book, version: LocalRevision) => void; onCancel: () => void; onReload: () => void;
 }) {
-  const [initial] = useState(() => makeDraft(book, year));
+  const [initial] = useState(() => makeDraft(book ?? initialDraft, year));
   const [draft, setDraft] = useState(initial);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -84,7 +84,8 @@ export function BookForm({ book, year, version, service, onSaved, onCancel, onRe
       status: draft.status, shelfYear: Number(draft.shelfYear), pageCount: numberOrNull(draft.pageCount),
       isbn: draft.isbn || null, publicationYear: numberOrNull(draft.publicationYear),
       startedOn: draft.startedOn || null, finishedOn: draft.finishedOn || null,
-      rating: numberOrNull(draft.rating) as Book['rating'], note: draft.note };
+      rating: numberOrNull(draft.rating) as Book['rating'], note: draft.note,
+      ...(initialDraft ? { cover: initialDraft.cover, source: initialDraft.source } : {}) };
     try {
       const result = await service.save({ draft: input, id: book?.id, year, expected: version, allowDuplicate });
       if (result.kind === 'duplicate') setDuplicates(result.count);
