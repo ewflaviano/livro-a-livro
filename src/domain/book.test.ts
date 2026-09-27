@@ -14,7 +14,7 @@ const context = {
 describe('Book contract', () => {
   it('creates a minimal manual record with injected identity, instant and year', () => {
     expect(createBook({ title: '  Livro sintético  ' }, context)).toEqual({
-      id: context.id, title: 'Livro sintético', authors: [], status: 'want_to_read',
+      id: context.id, title: 'Livro sintético', authors: [], status: 'want-to-read',
       shelfYear: 2026, pageCount: null, isbn: null, publicationYear: null,
       startedOn: null, finishedOn: null, rating: null, note: '', cover: null,
       source: null, createdAt: context.now, updatedAt: context.now,
@@ -23,7 +23,8 @@ describe('Book contract', () => {
   });
 
   it('accepts only the three specified statuses', () => {
-    expect(readingStatusSchema.options).toEqual(['want_to_read', 'reading', 'read']);
+    expect(readingStatusSchema.options).toEqual(['want-to-read', 'reading', 'read']);
+    expect(readingStatusSchema.safeParse('want_to_read').success).toBe(false);
     expect(() => createBook({ title: 'Livro', status: 'abandoned' }, context)).toThrow(DomainError);
   });
 
@@ -114,8 +115,8 @@ describe('civil dates and status changes', () => {
     expect(createBook({ title: 'Livro', status: 'read', finishedOn: '2026-01-01' }, context).startedOn).toBeNull();
   });
   it.each([
-    { status: 'want_to_read', startedOn: '2026-01-01' },
-    { status: 'want_to_read', finishedOn: '2026-01-01' },
+    { status: 'want-to-read', startedOn: '2026-01-01' },
+    { status: 'want-to-read', finishedOn: '2026-01-01' },
     { status: 'reading', finishedOn: '2026-01-01' },
     { status: 'read', startedOn: '2026-02-01', finishedOn: '2026-01-01' },
     { status: 'read', finishedOn: '2025-12-31' },
@@ -128,7 +129,7 @@ describe('civil dates and status changes', () => {
     expect(() => updateBook(book, { status: 'reading' }, context.now)).toThrow(DomainError);
     expect(() => updateBook(book, { shelfYear: 2025 }, context.now)).toThrow(DomainError);
     expect(updateBook(book, { status: 'reading', finishedOn: null }, context.now).startedOn).toBe('2025-12-31');
-    expect(updateBook(book, { status: 'want_to_read', startedOn: null, finishedOn: null }, context.now).status).toBe('want_to_read');
+    expect(updateBook(book, { status: 'want-to-read', startedOn: null, finishedOn: null }, context.now).status).toBe('want-to-read');
     expect(book).toEqual(original);
   });
 });

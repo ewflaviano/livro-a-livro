@@ -95,7 +95,7 @@ describe('statistics for completed readings in the shelf year', () => {
       { ...book(2, { status: 'read', pageCount: 200, authors: ['ＡNA Silva', 'Jose\u0301'] }), createdAt: '2025-01-01T00:00:00Z' },
       book(3, { status: 'read' }),
       book(4, { status: 'reading', pageCount: 900, authors: ['Não contar'] }),
-      book(5, { status: 'want_to_read', pageCount: 800, authors: ['Também não'] }),
+      book(5, { status: 'want-to-read', pageCount: 800, authors: ['Também não'] }),
       book(6, { status: 'read', shelfYear: 2025, pageCount: 700, authors: ['Outro ano'] }),
     ];
     const original = structuredClone(books);

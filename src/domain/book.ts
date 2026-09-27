@@ -9,7 +9,7 @@ export const BOOK_LIMITS = {
   pageCount: 1_000_000,
 } as const;
 
-export const readingStatusSchema = z.enum(['want_to_read', 'reading', 'read']);
+export const readingStatusSchema = z.enum(['want-to-read', 'reading', 'read']);
 export type ReadingStatus = z.infer<typeof readingStatusSchema>;
 export const shelfYearSchema = z.number().int().min(1).max(9999);
 
@@ -82,7 +82,7 @@ const bookFields = z.strictObject({
 
 export const bookSchema = bookFields.superRefine((book, ctx) => {
   const invalid = (field: keyof typeof book) => ctx.addIssue({ code: 'custom', path: [field] });
-  if (book.status === 'want_to_read' && book.startedOn !== null) invalid('startedOn');
+  if (book.status === 'want-to-read' && book.startedOn !== null) invalid('startedOn');
   if (book.status !== 'read' && book.finishedOn !== null) invalid('finishedOn');
   if (book.startedOn && book.finishedOn && book.startedOn > book.finishedOn) invalid('finishedOn');
   if (book.finishedOn && Number(book.finishedOn.slice(0, 4)) !== book.shelfYear) invalid('shelfYear');
@@ -104,7 +104,7 @@ export function createBook(input: unknown, context: { id: string; now: string; s
   const draft = parseDomain(newBookSchema, input);
   const year = parseDomain(shelfYearSchema, context.shelfYear);
   return parseBook({
-    authors: [], status: 'want_to_read', shelfYear: year, pageCount: null,
+    authors: [], status: 'want-to-read', shelfYear: year, pageCount: null,
     isbn: null, publicationYear: null, startedOn: null, finishedOn: null,
     rating: null, note: '', cover: null, source: null,
     ...Object.fromEntries(Object.entries(draft).filter(([, value]) => value !== undefined)),

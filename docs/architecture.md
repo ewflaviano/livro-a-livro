@@ -176,7 +176,7 @@ Um `Book` é **um registro de leitura numa estante anual**, não uma obra global
 Contrato conceitual; os schemas Zod serão a fonte dos tipos na implementação:
 
 ```ts
-type ReadingStatus = 'want_to_read' | 'reading' | 'read';
+type ReadingStatus = 'want-to-read' | 'reading' | 'read';
 
 type Book = {
   id: string;                         // UUID criado localmente
