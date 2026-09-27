@@ -1,4 +1,5 @@
 import type { LibraryRepository, PortablePreferences, Snapshot } from '../ports/library-repository';
+import { createLibraryService } from './library-service';
 
 export type ShelfState =
   | { status: 'loading' }
@@ -37,6 +38,7 @@ export function createShelfService(repository: LibraryRepository) {
 
   const unsubscribe = repository.subscribe(() => { void refresh(); });
   return {
+    books: createLibraryService(repository),
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     refresh,

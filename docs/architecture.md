@@ -293,6 +293,8 @@ Erros tipados: `StorageUnavailable`, `QuotaExceeded`, `StaleRevision`, `Unsuppor
 
 ### Adicionar, editar e remover
 
+**Implementado na issue #6:** `createLibraryService` concentra criação/edição pelo domínio, aviso de duplicata e commits condicionais. A interface captura a revisão ao abrir o formulário e mantém o rascunho diante de quota/falha/conflito; recarregar uma versão salva exige confirmação de descarte. Datas incompatíveis continuam visíveis após trocar o estado, para correção explícita. Cadastro começa no ano selecionado, com Quero ler e título obrigatório; os demais detalhes são opcionais. A página lê pelo ID, exibe nota como texto simples, permite editar e confirma exclusão em diálogo com foco contido, Escape e retorno ao acionador. A confirmação conserva a revisão apresentada mesmo se outra operação alterar o banco. Capas continuam sendo fallbacks locais e nenhum fluxo desta etapa faz chamadas de rede. Testes de serviço e interface usam IndexedDB emulado, incluindo ausência de `fetch`; validação visual e de ciclo de vida em navegador real permanece um gate posterior.
+
 1. UI mantém rascunho e a revisão da leitura inicial; relógio/UUID são fornecidos pelo serviço.
 2. Serviço valida domínio, datas, duplicata e limites; confirmação de exclusão/descarte acontece antes do commit.
 3. Repositório compara geração/revisão e faz a mudança atômica.

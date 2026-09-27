@@ -72,7 +72,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       </div>
     </div>
     {state.preferenceError && <p role="status">Não foi possível guardar sua preferência de visualização. Seus livros continuam salvos.</p>}
-    {yearBooks.length === 0 ? <LibraryState state="empty" year={year} /> : visible.length === 0 ?
+    {yearBooks.length === 0 ? <LibraryState state="empty" year={year} returnTo={location.pathname} /> : visible.length === 0 ?
       <div className="notice-panel"><h2>Nenhum livro em {labels[filter]} nesta estante.</h2>
         <button className="button button-secondary" onClick={() => selectFilter('all')}>Limpar filtro</button></div> :
       <ol className={`book-collection book-collection--${preferences.mode}`} aria-label={`Livros da estante de ${yearText}`}>
