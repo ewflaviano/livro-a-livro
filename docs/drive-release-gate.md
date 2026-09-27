@@ -1,6 +1,16 @@
 # Gate real do Drive antes da liberação
 
-O script `scripts/drive-gate.mjs` cria um Chromium novo e dois contextos descartáveis, A e B. Nunca conecta a um Chrome existente. O build temporário usa `VITE_DRIVE_ENABLED=true`, mas nenhum arquivo é publicado e a flag da distribuição pública permanece **false**. API, OAuth e Drive reais só devem ser usados depois do deploy da API e da revisão de suas fronteiras.
+## Liberação para teste manual do responsável
+
+**Decisão de 27/09/2026:** após autorizar a entrega integral em produção, o responsável informou que não há usuários e que está realizando os testes manuais. A flag desabilitada impedia esse uso no domínio canônico e aparecia como “Google indisponível”. O workflow passa a habilitar `VITE_DRIVE_ENABLED=true` nos jobs de validação e publicação frontend. Não há mudança de código OAuth, permissões Google, biblioteca, API ou infraestrutura nesta ativação.
+
+Esta decisão antecipa a disponibilidade pública para o ensaio manual do responsável em relação à ordem de gates definida abaixo. O site continua público: não há allowlist de usuários nem garantia de que só o responsável possa acessá-lo. O login segue opcional; acesso ao Drive depende da segunda autorização explícita. Os resultados das PRs #56–#58 sustentam o teste: API/AWS isolados, fluxo Google real, união/recuperação/convergência, resposta PUT perdida e renovação. **Ativação não equivale à aprovação de todos os gates.**
+
+Permanecem pendentes, com a issue #13 aberta: duas sessões reais independentes, rejeição do cookie SESSION antigo com LOGIN válido, logout isolado e revogação global entre essas sessões. O teste manual deve conferir esses cenários antes de declarar o aceite completo. O convite inicial de privacidade (#47) e os gates finais (#46) também não são considerados entregues por esta mudança.
+
+As menções a flag desabilitada nas evidências anteriores registram o estado na data de cada ensaio. Para um lançamento geral com todos os gates aprovados, continuam valendo os critérios abaixo. O procedimento de reversão está em [deployment.md](deployment.md).
+
+O script `scripts/drive-gate.mjs` cria um Chromium novo e dois contextos descartáveis, A e B. Nunca conecta a um Chrome existente. O build temporário usa `VITE_DRIVE_ENABLED=true`, mas nenhum arquivo é publicado; o harness não altera a flag da distribuição pública, definida pelo workflow. API, OAuth e Drive reais só devem ser usados depois do deploy da API e da revisão de suas fronteiras.
 
 ## Preparação e verificação sem Google
 
