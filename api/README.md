@@ -14,11 +14,19 @@ Secrets Manager deve fornecer JSON estrito com `client_id`, `client_secret`, `hm
 
 KMS Encrypt/Decrypt recebe contexto `application=livro-a-livro`, `environment=production`, `connection=<HMAC opaco>`. Plaintext limitado a 4096 bytes, sem truncar. Esses campos técnicos entram no CloudTrail; jamais usar subject, token, e-mail ou biblioteca no contexto.
 
+## Autorização em duas etapas
+
+`POST /v1/auth/google/start` solicita apenas `openid`, online, com seleção de conta. O callback verifica o ID token e guarda somente HMAC da identidade e prazo de 600 segundos; não grava sessão, conexão ou ciphertext KMS. Access/refresh inesperados são descartados e zerados, sem revogação automática. O cookie `__Host-lal_identity` não autoriza endpoints de sessão ou token.
+
+`GET /v1/auth/google/identity` retorna `connectionId`, `expiresAt` e `csrfToken`. Após voltar à interface e uma nova ação explícita, `POST /v1/auth/google/drive/start` exige esse cookie e CSRF separado (`identity-csrf`). Solicita exatamente `openid` + `drive.appdata`, offline e consentimento, com state/nonce/PKCE novos. O segundo callback exige a mesma conta, refresh novo e escopos completos. Consome a identidade na mesma transação de epoch/conexão/sessão. Cancelamento (`DELETE /v1/auth/google/identity`, cookie+CSRF) impede o commit de callback posterior; prazo não é renovável. Iniciar nova identificação encerra somente a sessão deste navegador e a identificação pendente anterior, sem revogar globalmente o vínculo.
+
+Mensagens HTML de callback são estáticas: negação, identificação expirada, permissão incompleta, conta diferente ou falha geral. Nenhum parâmetro/erro bruto Google é exibido. `error_description` é tolerado e descartado. OAUTH anterior sem finalidade explícita é recusado; durante rollout a pessoa deve iniciar novamente. Conexões e sessões Drive completas existentes continuam válidas, sem migração de conteúdo.
+
 ## DynamoDB e permissões
 
 Tabela exclusiva com `pk` string e TTL `deleteAfter`; GSI `work-due`: `workType` string + `workAt` number, projeção KEYS_ONLY. Sem streams/Scan. IAM: GetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem conforme runtime; worker não precisa DeleteItem, precisa Query no índice. TransactGet/TransactWrite autorizam suas suboperações IAM.
 
-Prefixos: CONTROL#grants, OAUTH#hash, SESSION#hash, CONNECTION#HMAC. Conexões guardam registro técnico em atributo JSON `data`, `recordVersion` para CAS, ciphertext separado em `encryptedRefresh` Binary e agenda GSI. Sessões guardam `data` e TTL. OAuth guarda apenas hashes e nonce/verifier temporários, nunca código OAuth. Nenhum access token ou subject é persistido.
+Prefixos: CONTROL#grants, OAUTH#hash, IDENTITY#hash, SESSION#hash, CONNECTION#HMAC. Conexões guardam registro técnico em atributo JSON `data`, `recordVersion` para CAS, ciphertext separado em `encryptedRefresh` Binary e agenda GSI. Sessões guardam `data` e TTL. Identidades guardam somente HMAC opaco/prazo em `data` e TTL; worker não lê esse prefixo. OAuth guarda finalidade interna, hashes e nonce/verifier temporários, nunca código OAuth. Nenhum access token ou subject é persistido.
 
 Toda autorização verifica prazo em leitura consistente/TransactGet; ações sensíveis repetem pré-condições CAS/ConditionCheck na escrita. TTL apenas remove fisicamente depois. Uma sessão vencida, removida ou renovada durante refresh impede o finish/publicação do access token. Callback captura epoch antes de exchange e não tenta novamente com epoch novo após conflito. Lease perdido/expirado nunca publica token nem substitui credencial. O core também confere o prazo mínimo após finish, pois a latência AWS pode atravessar a validade durante a transação.
 
@@ -66,4 +74,4 @@ Os testes `api/tests/aws.rs` são ignorados por padrão. Usam somente fixtures s
 AWS_PROFILE=biorotina AWS_REGION=sa-east-1 AUTH_TEST_TABLE="$ISOLATED_TABLE" AUTH_TEST_KMS_KEY="$ISOLATED_KEY_ARN" CARGO_BUILD_JOBS=2 cargo test --manifest-path api/Cargo.toml --all-features --test aws -- --ignored --test-threads=1
 ```
 
-Executam concorrência, prazos, leases/fencing/rotação, renew, callback atravessado por epoch, revogação incerta/reconexão/limpeza/inatividade e KMS com contexto incorreto. Não acessam Google nem secret real. A integração OAuth/Drive em domínio canônico e a revisão IAM continuam gates separados antes de habilitar o frontend.
+Executam consumo único de identidade, cancelamento antes/depois de preparar consentimento, expiração física pendente, rollback por epoch, rejeição de OAuth legado/unknown, concorrência, prazos, leases/fencing/rotação, renew, callback atravessado por epoch, revogação incerta/reconexão/limpeza/inatividade e KMS com contexto incorreto. Não acessam Google nem secret real. A integração OAuth/Drive em domínio canônico e a revisão IAM continuam gates separados antes de habilitar o frontend.

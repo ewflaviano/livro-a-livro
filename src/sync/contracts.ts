@@ -28,18 +28,29 @@ export interface AuthClient {
   session(signal?: AbortSignal): Promise<Binding>;
   token(binding: Binding, signal?: AbortSignal): Promise<string>;
   invalidate(): void;
-  start(): Promise<string>;
+  startSignIn(): Promise<string>;
+  identity(signal?: AbortSignal): Promise<PendingIdentity>;
+  startDrive(csrfToken: string): Promise<string>;
+  cancelIdentity(): Promise<void>;
   disconnect(all: boolean): Promise<boolean>;
 }
+export type PendingIdentity = { connectionId: string; expiresAt: number; csrfToken: string };
+export const authorizationSchema = z.discriminatedUnion('stage', [
+  z.strictObject({ id: z.uuid(), stage: z.literal('identity-starting') }),
+  z.strictObject({ id: z.uuid(), stage: z.literal('identity') }),
+  z.strictObject({ id: z.uuid(), stage: z.literal('drive'), expectedConnection: z.string().min(1).max(200) }),
+]);
+export type AuthorizationIntent = z.infer<typeof authorizationSchema>;
 export const syncStateSchema = z.strictObject({
   enabled: z.boolean(), binding: bindingSchema.nullable(),
   base: z.strictObject({ snapshotId: z.uuid(), hash: hashSchema }).nullable(),
   nextAttempt: z.number().nonnegative(), attempts: z.number().int().nonnegative(),
   lastSyncedAt: instantSchema.nullable(),
   revocationPending: z.boolean().default(false),
+  authorization: authorizationSchema.nullable().default(null),
 });
 export type SyncRecord = z.infer<typeof syncStateSchema>;
-export const defaultSyncRecord: SyncRecord = { enabled: false, binding: null, base: null, nextAttempt: 0, attempts: 0, lastSyncedAt: null, revocationPending: false };
+export const defaultSyncRecord: SyncRecord = { enabled: false, binding: null, base: null, nextAttempt: 0, attempts: 0, lastSyncedAt: null, revocationPending: false, authorization: null };
 export const pendingSchema = z.strictObject({ version: revisionSchema });
 export type Operation = { binding: Binding; version: z.infer<typeof revisionSchema>; snapshot: SyncSnapshot };
-export type SyncView = { status: 'disabled' | 'paused' | 'pending' | 'syncing' | 'synced' | 'offline' | 'reconnect' | 'error' | 'quota' | 'conflict'; revocationPending?: boolean; lastSyncedAt?: string; remote?: { snapshotId: string; count: number; createdAt: string }[]; localCount?: number; accountChanged?: boolean };
+export type SyncView = { status: 'identifying' | 'authorize-drive' | 'authorization-expired' | 'authorization-error' | 'authorization-waiting' | 'disabled' | 'paused' | 'pending' | 'syncing' | 'synced' | 'offline' | 'reconnect' | 'error' | 'quota' | 'conflict'; revocationPending?: boolean; authorizationStage?: 'identity' | 'drive'; lastSyncedAt?: string; remote?: { snapshotId: string; count: number; createdAt: string }[]; localCount?: number; accountChanged?: boolean };

@@ -18,6 +18,11 @@ try {
   assert.equal(session.headers.get('access-control-allow-origin'), origin);
   assert.equal(session.headers.get('access-control-allow-credentials'), 'true');
 
+  const identity = await control('/v1/auth/google/identity');
+  assert.equal(identity.status, 401);
+  const driveWithoutIdentity = await control('/v1/auth/google/drive/start', { method: 'POST' });
+  assert.equal(driveWithoutIdentity.status, 401);
+
   const wrongOrigin = await control('/v1/session', { headers: { Origin: 'https://example.invalid' } });
   assert.equal(wrongOrigin.status, 403);
   assert.equal(wrongOrigin.headers.get('access-control-allow-origin'), null);
@@ -38,9 +43,12 @@ try {
   assert.equal(url.pathname, '/o/oauth2/v2/auth');
   assert.equal(url.searchParams.get('client_id'), '924461663769-hh13uavp9etgut330pq65uulsm84am9c.apps.googleusercontent.com');
   assert.equal(url.searchParams.get('redirect_uri'), api + '/v1/auth/google/callback');
-  assert.deepEqual(url.searchParams.get('scope').split(' ').sort(), ['https://www.googleapis.com/auth/drive.appdata', 'openid']);
+  assert.equal(url.searchParams.get('scope'), 'openid');
+  assert.equal(url.searchParams.get('access_type'), 'online');
+  assert.equal(url.searchParams.get('prompt'), 'select_account');
+  assert.equal(url.searchParams.get('include_granted_scopes'), 'false');
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
-  const cookie = start.headers.get('set-cookie');
+  const cookie = start.headers.getSetCookie().find(value => value.startsWith('__Host-lal_oauth='));
   assert.match(cookie, /^__Host-lal_oauth=[A-Za-z0-9_-]{43};/);
   for (const attribute of ['Secure', 'HttpOnly', 'SameSite=Lax', 'Path=/', 'Max-Age=600']) assert.ok(cookie.includes(attribute));
   assert.ok(!cookie.includes('Domain='));

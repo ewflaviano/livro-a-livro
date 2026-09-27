@@ -25,6 +25,7 @@ use tower::ServiceExt;
 struct Database {
     epoch: u64,
     finish_clock: Option<Arc<Time>>,
+    identities: HashMap<String, PendingIdentity>,
     oauth: HashMap<String, Transaction>,
     sessions: HashMap<String, Session>,
     connections: HashMap<String, Connection>,
@@ -56,6 +57,46 @@ fn current(db: &Database, hash: &str, now: u64) -> Result<Session, Error> {
 }
 #[async_trait]
 impl Store for Memory {
+    async fn put_identity(&self, hash: &str, identity: PendingIdentity) -> Result<(), Error> {
+        let mut db = self.0.lock().unwrap();
+        if db.identities.contains_key(hash) {
+            return Err(Error::Busy);
+        }
+        db.identities.insert(hash.into(), identity);
+        Ok(())
+    }
+    async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error> {
+        self.0
+            .lock()
+            .unwrap()
+            .identities
+            .get(hash)
+            .filter(|i| i.expires_at > now)
+            .cloned()
+            .ok_or(Error::Unauthorized)
+    }
+    async fn delete_identity(&self, hash: &str) -> Result<(), Error> {
+        self.0.lock().unwrap().identities.remove(hash);
+        Ok(())
+    }
+    async fn put_drive_oauth(
+        &self,
+        hash: &str,
+        transaction: Transaction,
+        expected: &PendingIdentity,
+        now: u64,
+    ) -> Result<(), Error> {
+        let mut db = self.0.lock().unwrap();
+        let OAuthPurpose::Drive { identity_hash, .. } = &transaction.purpose else {
+            return Err(Error::InvalidRequest);
+        };
+        if db.identities.get(identity_hash) != Some(expected) || expected.expires_at <= now {
+            return Err(Error::IdentityExpired);
+        }
+        db.oauth.insert(hash.into(), transaction);
+        Ok(())
+    }
+
     async fn grant_epoch(&self) -> Result<u64, Error> {
         Ok(self.0.lock().unwrap().epoch)
     }
@@ -66,8 +107,11 @@ impl Store for Memory {
     async fn take_oauth(&self, key: &str, cookie: &str, now: u64) -> Result<Transaction, Error> {
         let mut db = self.0.lock().unwrap();
         let transaction = db.oauth.get(key).ok_or(Error::Unauthorized)?;
-        if transaction.cookie_hash != cookie || transaction.expires_at <= now {
+        if transaction.cookie_hash != cookie {
             return Err(Error::Unauthorized);
+        }
+        if transaction.expires_at <= now {
+            return Err(Error::IdentityExpired);
         }
         Ok(db.oauth.remove(key).unwrap())
     }
@@ -77,9 +121,16 @@ impl Store for Memory {
         encrypted: Vec<u8>,
         hash: &str,
         epoch: u64,
+        identity: IdentityConsumption<'_>,
         now: u64,
     ) -> Result<Session, Error> {
         let mut db = self.0.lock().unwrap();
+        if db.identities.get(identity.hash) != Some(identity.expected)
+            || identity.expected.expires_at <= now
+            || identity.expected.connection_id != connection
+        {
+            return Err(Error::IdentityExpired);
+        }
         if db.epoch != epoch {
             return Err(Error::Busy);
         }
@@ -108,6 +159,7 @@ impl Store for Memory {
             expires_at: now + SESSION_TTL,
             absolute_expires_at: now + ABSOLUTE_TTL,
         };
+        db.identities.remove(identity.hash);
         db.sessions.insert(hash.into(), session.clone());
         Ok(session)
     }
@@ -346,20 +398,37 @@ struct FakeGoogle {
 }
 #[async_trait]
 impl Provider for FakeGoogle {
-    async fn exchange(&self, _: &str, verifier: &str, nonce: &str) -> Result<Grant, Error> {
+    async fn exchange(
+        &self,
+        _: &str,
+        verifier: &str,
+        nonce: &str,
+        _: &OAuthPurpose,
+    ) -> Result<Grant, Error> {
         if let Some(store) = &self.revoke_during_exchange {
             store.0.lock().unwrap().epoch += 1;
         }
         assert_eq!(verifier.len(), 43);
         assert_eq!(nonce.len(), 43);
         Ok(Grant {
-            subject: Secret("synthetic-google-sub".into()),
+            subject: Secret(
+                if self.mode.load(Ordering::Relaxed) == 4 {
+                    "different-sub"
+                } else {
+                    "synthetic-google-sub"
+                }
+                .into(),
+            ),
             refresh_token: if self.mode.load(Ordering::Relaxed) == 1 {
                 None
             } else {
                 Some(Secret("synthetic-refresh".into()))
             },
-            scope: SCOPES.join(" "),
+            scope: if self.mode.load(Ordering::Relaxed) == 5 {
+                "openid".into()
+            } else {
+                SCOPES.join(" ")
+            },
         })
     }
     async fn refresh(&self, refresh: &str) -> Result<Access, Error> {
@@ -399,15 +468,48 @@ fn setup() -> (Auth, Arc<Memory>, Arc<Time>, Arc<FakeGoogle>) {
         provider,
     )
 }
-async fn connect(auth: &Auth) -> String {
-    let (url, cookie) = auth.start().await.unwrap();
-    let url = url::Url::parse(&url).unwrap();
-    let params: HashMap<_, _> = url.query_pairs().into_owned().collect();
-    assert_eq!(params["scope"], SCOPES.join(" "));
-    assert_eq!(params["code_challenge_method"], "S256");
-    auth.callback(&params["state"], &cookie, "synthetic-code")
+fn params(url: &str) -> HashMap<String, String> {
+    url::Url::parse(url)
+        .unwrap()
+        .query_pairs()
+        .into_owned()
+        .collect()
+}
+async fn identify(auth: &Auth) -> String {
+    let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
+    let values = params(&url);
+    assert_eq!(values["scope"], "openid");
+    assert_eq!(values["access_type"], "online");
+    assert_eq!(values["prompt"], "select_account");
+    match auth
+        .callback(&values["state"], &cookie, "synthetic-code")
         .await
         .unwrap()
+    {
+        CallbackResult::Identity { raw_cookie, .. } => raw_cookie,
+        _ => panic!("identification must not connect"),
+    }
+}
+async fn drive_start(auth: &Auth) -> (String, String) {
+    let raw = identify(auth).await;
+    auth.start_drive(&raw, &auth.identity_csrf(&raw).unwrap())
+        .await
+        .unwrap()
+}
+async fn connect(auth: &Auth) -> String {
+    let (url, cookie) = drive_start(auth).await;
+    let values = params(&url);
+    assert_eq!(values["scope"], SCOPES.join(" "));
+    assert_eq!(values["access_type"], "offline");
+    assert_eq!(values["prompt"], "consent");
+    match auth
+        .callback(&values["state"], &cookie, "synthetic-code")
+        .await
+        .unwrap()
+    {
+        CallbackResult::Drive { raw_session } => raw_session,
+        _ => panic!("drive must connect"),
+    }
 }
 async fn call(
     auth: &Auth,
@@ -485,8 +587,8 @@ async fn callback_sets_host_only_cookies_and_redirects_without_secrets() {
         .iter()
         .map(|value| value.to_str().unwrap())
         .collect();
-    assert_eq!(cookies.len(), 2);
-    assert!(cookies[0].starts_with("__Host-lal_session="));
+    assert_eq!(cookies.len(), 3);
+    assert!(cookies[0].starts_with("__Host-lal_identity="));
     for cookie in cookies {
         assert!(cookie.contains("Path=/; Secure; HttpOnly; SameSite=Lax"));
         assert!(!cookie.contains("Domain="));
@@ -496,7 +598,7 @@ async fn callback_sets_host_only_cookies_and_redirects_without_secrets() {
 #[tokio::test]
 async fn oauth_state_is_bound_to_cookie_single_use_and_expiring() {
     let (auth, _, time, _) = setup();
-    let (url, cookie) = auth.start().await.unwrap();
+    let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
     let state = url::Url::parse(&url)
         .unwrap()
         .query_pairs()
@@ -515,7 +617,7 @@ async fn oauth_state_is_bound_to_cookie_single_use_and_expiring() {
         auth.callback(&state, &cookie, "code").await.err(),
         Some(Error::Unauthorized)
     );
-    let (url, cookie) = auth.start().await.unwrap();
+    let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
     let state = url::Url::parse(&url)
         .unwrap()
         .query_pairs()
@@ -526,7 +628,7 @@ async fn oauth_state_is_bound_to_cookie_single_use_and_expiring() {
     time.0.store(1600, Ordering::Relaxed);
     assert_eq!(
         auth.callback(&state, &cookie, "code").await.err(),
-        Some(Error::Unauthorized)
+        Some(Error::IdentityExpired)
     );
 }
 #[tokio::test]
@@ -658,7 +760,7 @@ async fn rotation_expiration_and_logout_are_enforced() {
 async fn incomplete_consent_creates_no_session() {
     let (auth, store, _, provider) = setup();
     provider.mode.store(1, Ordering::Relaxed);
-    let (url, cookie) = auth.start().await.unwrap();
+    let (url, cookie) = drive_start(&auth).await;
     let url = url::Url::parse(&url).unwrap();
     let state = url
         .query_pairs()
@@ -740,7 +842,7 @@ async fn callback_crossing_revocation_epoch_cannot_create_a_session() {
         mode: AtomicU64::new(0),
         revoke_during_exchange: Some(store.clone()),
     });
-    let (url, cookie) = auth.start().await.unwrap();
+    let (url, cookie) = drive_start(&auth).await;
     let url = url::Url::parse(&url).unwrap();
     let state = url
         .query_pairs()
@@ -780,4 +882,307 @@ async fn callback_failure_is_static_human_readable_and_never_echoes_query() {
     assert!(!body.contains("private-state"));
     assert!(!body.contains("private-code"));
     assert!(!body.contains("access_denied"));
+}
+
+#[tokio::test]
+async fn identification_has_no_drive_authority_and_replaces_only_browser_session() {
+    let (auth, store, _, provider) = setup();
+    let old_session = connect(&auth).await;
+    let other_session = connect(&auth).await;
+    let old_identity = identify(&auth).await;
+    let (url, oauth_cookie) = auth
+        .start_sign_in(Some(&old_identity), Some(&old_session))
+        .await
+        .unwrap();
+    assert!(auth.identity(&old_identity).await.is_err());
+    assert!(auth.session(&old_session).await.is_err());
+    assert!(auth.session(&other_session).await.is_ok());
+    // Unexpected refresh in the first exchange never changes persisted credentials/session count.
+    let before = store
+        .0
+        .lock()
+        .unwrap()
+        .connections
+        .values()
+        .next()
+        .unwrap()
+        .encrypted
+        .clone();
+    provider.mode.store(1, Ordering::Relaxed);
+    let CallbackResult::Identity {
+        raw_cookie,
+        expires_at,
+    } = auth
+        .callback(&params(&url)["state"], &oauth_cookie, "code")
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(expires_at, 1600);
+    assert_eq!(store.0.lock().unwrap().sessions.len(), 1);
+    assert_eq!(
+        store
+            .0
+            .lock()
+            .unwrap()
+            .connections
+            .values()
+            .next()
+            .unwrap()
+            .encrypted,
+        before
+    );
+    for (method, path) in [
+        ("GET", "/v1/session"),
+        ("POST", "/v1/session/renew"),
+        ("POST", "/v1/auth/drive-token"),
+    ] {
+        let response = router(auth.clone())
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header("origin", ORIGIN)
+                    .header("cookie", format!("__Host-lal_identity={raw_cookie}"))
+                    .header("x-lal-csrf", auth.identity_csrf(&raw_cookie).unwrap())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(
+        auth.start_drive(&raw_cookie, &auth.csrf(&raw_cookie).unwrap())
+            .await
+            .err(),
+        Some(Error::Forbidden)
+    );
+    assert_eq!(
+        auth.cancel_identity(&raw_cookie, &auth.csrf(&raw_cookie).unwrap())
+            .await
+            .err(),
+        Some(Error::Forbidden)
+    );
+    assert_eq!(
+        auth.authorize(&other_session, &auth.identity_csrf(&other_session).unwrap())
+            .await
+            .err(),
+        Some(Error::Forbidden)
+    );
+}
+
+#[tokio::test]
+async fn first_callback_is_ephemeral_and_drive_requires_matching_account_and_complete_permission() {
+    let (auth, store, time, provider) = setup();
+    let raw = identify(&auth).await;
+    {
+        let db = store.0.lock().unwrap();
+        assert_eq!(db.identities.len(), 1);
+        assert!(db.sessions.is_empty());
+        assert!(db.connections.is_empty());
+        assert_eq!(db.epoch, 0);
+    }
+    let csrf = auth.identity_csrf(&raw).unwrap();
+    for (mode, error) in [
+        (4, Error::AccountMismatch),
+        (5, Error::IncompleteConsent),
+        (1, Error::IncompleteConsent),
+    ] {
+        let (url, cookie) = auth.start_drive(&raw, &csrf).await.unwrap();
+        provider.mode.store(mode, Ordering::Relaxed);
+        assert_eq!(
+            auth.callback(&params(&url)["state"], &cookie, "code")
+                .await
+                .err(),
+            Some(error)
+        );
+        assert!(auth.identity(&raw).await.is_ok());
+        assert!(store.0.lock().unwrap().connections.is_empty());
+    }
+    time.0.store(1600, Ordering::Relaxed);
+    assert_eq!(
+        auth.start_drive(&raw, &csrf).await.err(),
+        Some(Error::Unauthorized)
+    );
+    assert!(
+        store
+            .0
+            .lock()
+            .unwrap()
+            .identities
+            .contains_key(&digest(&raw))
+    );
+}
+
+#[tokio::test]
+async fn canceled_pending_identity_cannot_connect_or_cancel_a_new_identity() {
+    let (auth, store, _, _) = setup();
+    let old = identify(&auth).await;
+    let csrf = auth.identity_csrf(&old).unwrap();
+    let (url, cookie) = auth.start_drive(&old, &csrf).await.unwrap();
+    auth.cancel_identity(&old, &csrf).await.unwrap();
+    let new = identify(&auth).await;
+    assert_eq!(
+        auth.cancel_identity(&new, &csrf).await.err(),
+        Some(Error::Forbidden)
+    );
+    assert_eq!(
+        auth.callback(&params(&url)["state"], &cookie, "code")
+            .await
+            .err(),
+        Some(Error::IdentityExpired)
+    );
+    assert!(store.0.lock().unwrap().sessions.is_empty());
+    assert!(auth.identity(&new).await.is_ok());
+}
+
+#[tokio::test]
+async fn callback_errors_are_specific_static_and_denial_consumes_state() {
+    let (auth, _, _, _) = setup();
+    for (provider_error, expected) in [
+        ("access_denied", "cancelada ou negada"),
+        ("server_error", "Não foi possível"),
+    ] {
+        let (url, cookie) = auth.start_sign_in(None, None).await.unwrap();
+        let state = &params(&url)["state"];
+        let response = router(auth.clone()).oneshot(Request::builder()
+            .uri(format!("/v1/auth/google/callback?state={state}&error={provider_error}&error_description=DO_NOT_ECHO"))
+            .header("cookie", format!("__Host-lal_oauth={cookie}")).body(Body::empty()).unwrap()).await.unwrap();
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let html = std::str::from_utf8(&bytes).unwrap();
+        assert!(html.contains(expected));
+        assert!(!html.contains("DO_NOT_ECHO"));
+        assert!(!html.contains(state));
+        assert_eq!(
+            auth.callback(state, &cookie, "code").await.err(),
+            Some(Error::Unauthorized)
+        );
+    }
+}
+
+struct NoCipher;
+#[async_trait]
+impl Crypto for NoCipher {
+    async fn seal(&self, _: &str, _: &str) -> Result<Vec<u8>, Error> {
+        panic!("first step must not encrypt")
+    }
+    async fn open(&self, _: &str, _: &[u8]) -> Result<Secret, Error> {
+        panic!("first step must not decrypt")
+    }
+    fn mac(&self, purpose: &str, value: &str) -> Result<String, Error> {
+        TestCrypto.mac(purpose, value)
+    }
+}
+#[tokio::test]
+async fn identification_never_calls_kms_even_with_unexpected_refresh() {
+    let (mut auth, store, _, _) = setup();
+    auth.crypto = Arc::new(NoCipher);
+    let raw = identify(&auth).await;
+    assert!(auth.identity(&raw).await.is_ok());
+    assert!(store.0.lock().unwrap().connections.is_empty());
+}
+
+#[tokio::test]
+async fn http_identity_and_explicit_drive_start_issue_only_the_correct_cookies() {
+    let (auth, _, _, _) = setup();
+    let raw = identify(&auth).await;
+    let request = |method: &str, path: &str, csrf: Option<&str>| {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("origin", ORIGIN)
+            .header("cookie", format!("__Host-lal_identity={raw}"));
+        if let Some(csrf) = csrf {
+            builder = builder.header("x-lal-csrf", csrf);
+        }
+        builder.body(Body::empty()).unwrap()
+    };
+    let response = router(auth.clone())
+        .oneshot(request("GET", "/v1/auth/google/identity", None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(body.as_object().unwrap().len(), 3);
+    assert_eq!(body["expiresAt"], 1600);
+    let csrf = body["csrfToken"].as_str().unwrap();
+    let response = router(auth.clone())
+        .oneshot(request("POST", "/v1/auth/google/drive/start", None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = router(auth.clone())
+        .oneshot(request("POST", "/v1/auth/google/drive/start", Some(csrf)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let oauth_cookie = response.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(oauth_cookie.starts_with("__Host-lal_oauth="));
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    let values = params(body["authorizationUrl"].as_str().unwrap());
+    assert_eq!(values["scope"], SCOPES.join(" "));
+    let response = router(auth.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/auth/google/callback?state={}&code=synthetic",
+                    values["state"]
+                ))
+                .header("cookie", oauth_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let cookies: Vec<_> = response
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert!(
+        cookies
+            .iter()
+            .any(|v| v.starts_with("__Host-lal_session=") && !v.contains("Max-Age=0"))
+    );
+    assert!(
+        cookies
+            .iter()
+            .any(|v| v.starts_with("__Host-lal_identity=;") && v.contains("Max-Age=0"))
+    );
+    assert!(auth.identity(&raw).await.is_err());
+    let next = identify(&auth).await;
+    let response = router(auth.clone())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/v1/auth/google/identity")
+                .header("origin", ORIGIN)
+                .header("cookie", format!("__Host-lal_identity={next}"))
+                .header("x-lal-csrf", auth.identity_csrf(&next).unwrap())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        response.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+    assert!(auth.identity(&next).await.is_err());
 }

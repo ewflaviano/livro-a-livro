@@ -15,7 +15,7 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 | Tema | Decisão V1 | Consequência |
 | --- | --- | --- |
 | Execução | SPA estática, sem SSR; API opcional separada | Leitura/escrita local não esperam servidor |
-| Identidade | Sem conta para uso local; sessão Google somente ao conectar Drive | Vínculo técnico autenticado do conector, sem perfil social ou login obrigatório |
+| Identidade | Sem conta para uso local; identificação Google temporária e consentimento Drive em ações separadas | Vínculo técnico autenticado do conector, sem perfil social ou login obrigatório |
 | Fonte de verdade | IndexedDB; React mantém apenas projeções e rascunhos | Sucesso de escrita somente depois do commit local |
 | Fronteiras | Domínio puro → serviços → portas; adaptadores no ponto de composição | UI não conhece IndexedDB, JSON bruto nem respostas da Open Library |
 | Dados portáveis | `LibraryExport`, `schemaVersion: 1`, validado com Zod | Exportar e restaurar todos os anos sem rede é critério de release |
@@ -577,9 +577,9 @@ Web Background Sync ou Periodic Background Sync podem ser melhoria progressiva d
 
 ### 14.3 OAuth, sessão, escopos e proteção de credenciais
 
-Consentimento acionado por “Conectar Google Drive”, sem login na entrada do app: “Seus livros, notas e avaliações serão enviados diretamente deste dispositivo para o seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.” Conectar Drive não autoriza experimentos ou telemetria.
+Identificação opcional acionada por “Entrar com Google”, sem login na entrada do app. Após retornar à interface, o segundo botão “Autorizar Google Drive” explica: “Seus livros, notas e avaliações serão enviados diretamente deste dispositivo para o seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.” Conectar Drive não autoriza experimentos ou telemetria.
 
-Fluxo por código de cliente confidencial com redirect exato para callback da API. Estado de uso único e nonce vinculados a cookie temporário protegem a transação; usar PKCE S256 quando suportado pelo fluxo escolhido. Validar assinatura/JWKS, issuer, audience, expiração e nonce do ID token, além dos escopos realmente concedidos. Solicitar apenas `openid` e `https://www.googleapis.com/auth/drive.appdata`; não pedir Drive completo, e-mail ou perfil por padrão. Usar `sub` validado apenas para vínculo técnico interno; se um rótulo de e-mail for necessário no futuro, justificar e consentir com o escopo específico.
+Fluxo por código de cliente confidencial com redirect exato para callback da API. Estado de uso único e nonce vinculados a cookie temporário protegem a transação; usar PKCE S256 quando suportado pelo fluxo escolhido. Validar assinatura/JWKS, issuer, audience, expiração e nonce do ID token, além dos escopos realmente concedidos. Solicitar somente `openid` na identificação e, em uma segunda ação explícita, `openid` com `https://www.googleapis.com/auth/drive.appdata`; não pedir Drive completo, e-mail ou perfil por padrão. Usar `sub` validado apenas para vínculo técnico interno; se um rótulo de e-mail for necessário no futuro, justificar e consentir com o escopo específico.
 
 OAuth client secret fica no Secrets Manager. Refresh token fica em atributo cifrado com KMS no DynamoDB, além da criptografia em repouso da tabela; contexto de criptografia amarra ambiente/conexão. Somente role de autenticação pode decifrar. Nunca devolver refresh token, client secret ou credencial AWS ao navegador. Chave interna pode ser HMAC do `sub` com segredo do serviço: é identificador pseudônimo protegido, não dado anônimo e nunca dimensão de telemetria.
 
@@ -587,7 +587,7 @@ Sessão aleatória de alta entropia, com apenas hash guardado no servidor, rota�
 
 `POST /v1/auth/drive-token` exige sessão válida, Origin exata, CSRF vinculado à sessão e resposta `Cache-Control: no-store`. Servidor obtém access token via refresh e retorna apenas `accessToken`, `expiresIn` e escopos permitidos; token fica **só em memória** e sai apenas em Authorization para hosts Google explicitamente permitidos. Não salvar em IndexedDB, localStorage, logs, URL, backup, service worker persistente ou catálogo. Abas podem pedir token usando cookie HttpOnly, sem compartilhá-lo por BroadcastChannel. Access token curto é segredo bearer e deve ser tratado como tal.
 
-Refresh é serializado por conexão para evitar corridas; token de renovação rotacionado é substituído atomicamente. Se Google não devolver refresh token novo, só manter o anterior da mesma identidade/consentimento e ainda válido; sem um, informar conexão incompleta. O [fluxo OAuth para servidor](https://developers.google.com/identity/protocols/oauth2/web-server) documenta a troca e renovação; ele não cria acesso ao armazenamento do navegador. A pasta privada usa [Drive appDataFolder](https://developers.google.com/workspace/drive/api/guides/appdata).
+Refresh é serializado por conexão para evitar corridas; token de renovação rotacionado é substituído atomicamente. Durante renovação de acesso, se Google não devolver refresh token novo, manter o anterior ainda válido. No callback de um novo consentimento Drive, exigir refresh token novo; sua ausência indica conexão incompleta. O [fluxo OAuth para servidor](https://developers.google.com/identity/protocols/oauth2/web-server) documenta a troca e renovação; ele não cria acesso ao armazenamento do navegador. A pasta privada usa [Drive appDataFolder](https://developers.google.com/workspace/drive/api/guides/appdata).
 
 Produção não aceita localhost no CORS. Rotas mutáveis validam Origin, sessão e CSRF; CORS não é autenticação. Callback usa `state`/nonce, não espera Origin do site. Authorization Code, cookie e headers de token nunca são registrados; callback não carrega analytics e redireciona a destino fixo sem copiar código à URL do site. CSP/CORS permitem o mínimo dos hosts Google documentados e testados. Não usar endpoint da nossa API para contornar um erro CORS de transferência.
 
@@ -653,8 +653,11 @@ Contrato HTTP proposto:
 
 | Endpoint | Papel e proteção |
 | --- | --- |
-| `POST /v1/auth/google/start` | Consentimento explícito, estado/nonce/cookie temporários; somente URL Google permitida |
-| `GET /v1/auth/google/callback` | Validar transação, trocar código e estabelecer sessão; redirect fixo, nenhum token em URL |
+| `POST /v1/auth/google/start` | Identificação openid explícita, estado/nonce/PKCE/cookie temporários; somente URL Google permitida |
+| `GET /v1/auth/google/identity` | Identidade temporária, vínculo HMAC e CSRF próprio; não autoriza Drive |
+| `POST /v1/auth/google/drive/start` | Segundo consentimento explícito, identidade temporária e CSRF; solicita appdata |
+| `DELETE /v1/auth/google/identity` | Cancela identidade pendente com CSRF |
+| `GET /v1/auth/google/callback` | Validar transação tipada; criar identidade ou sessão conforme etapa; redirect fixo, nenhum token em URL |
 | `GET /v1/session` | Vínculo opaco, escopos e expiração; não retorna refresh token ou identidade para telemetria |
 | `POST /v1/session/renew` | Renovar sessão dentro do prazo absoluto, com CSRF |
 | `POST /v1/auth/drive-token` | Access token curto e expiresIn, somente em memória, sessão/CSRF, resposta no-store |
@@ -824,3 +827,7 @@ URLs Open Library continuam exclusivamente no adaptador, expostas pela composiç
 Capas locais vêm de `LibraryService.readCover`, também sem rede. Cada leitura pertence à referência/geração atual: troca, restauração e desmontagem invalidam respostas atrasadas; object URLs são revogadas na troca, erro ou desmontagem. A geração do snapshot força releitura quando uma restauração mantém o mesmo mediaId com bytes diferentes. Não há cache raster novo, upload, alteração de backup ou inclusão de imagens na composição anual.
 
 Testes cobrem URL permitida/IDs inválidos, modo local mesmo online, offline/retorno online, ausência/erro, leitura atrasada, desmontagem, restauração do mesmo ID e passagem da capa escolhida pelo detalhe/Grade/Lista. O navegador confirma o fluxo busca → salvar → reabrir, além de capa local disponível offline.
+
+### OAuth em duas ações explícitas — issue #13
+
+A conexão opcional passa por identificação `openid` e retorno à UI, seguida de um segundo clique para `drive.appdata`. A primeira etapa dura dez minutos e não cria sessão Drive, cifra KMS ou acesso a arquivos. O consentimento posterior exige a mesma identidade HMAC e consome sua pendência na transação de conexão, junto com as condições de epoch e geração. A intenção local também é condicional: pausa/cancelamento em outra aba impede habilitação tardia. Contratos, expiração, mensagens e migração estão em [auth-api.md](auth-api.md) e [drive-sync.md](drive-sync.md). Não existe redirecionamento automático entre os dois passos.

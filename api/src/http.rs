@@ -1,4 +1,9 @@
-use crate::{Auth, config::*, ports::Error, service::opaque};
+use crate::{
+    Auth,
+    config::*,
+    ports::{CallbackResult, Error},
+    service::opaque,
+};
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
@@ -12,12 +17,18 @@ use serde::Deserialize;
 use serde_json::json;
 
 const SESSION_COOKIE: &str = "__Host-lal_session";
+const IDENTITY_COOKIE: &str = "__Host-lal_identity";
 const OAUTH_COOKIE: &str = "__Host-lal_oauth";
 
 pub fn router(auth: Auth) -> Router {
     Router::new()
         .route("/v1/auth/google/start", post(start))
         .route("/v1/auth/google/callback", get(callback))
+        .route(
+            "/v1/auth/google/identity",
+            get(identity).delete(cancel_identity),
+        )
+        .route("/v1/auth/google/drive/start", post(start_drive))
         .route("/v1/session", get(session).delete(logout))
         .route("/v1/session/renew", post(renew))
         .route("/v1/auth/drive-token", post(access))
@@ -134,10 +145,44 @@ async fn authorized(auth: &Auth, headers: &HeaderMap) -> Result<String, Error> {
     auth.authorize(&raw, csrf).await?;
     Ok(raw)
 }
-async fn start(State(auth): State<Auth>) -> Result<Response, Error> {
-    let (url, raw) = auth.start().await?;
+async fn start(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let (url, raw) = auth
+        .start_sign_in(
+            cookie(&headers, IDENTITY_COOKIE).ok().as_deref(),
+            cookie(&headers, SESSION_COOKIE).ok().as_deref(),
+        )
+        .await?;
     let mut response = Json(json!({"authorizationUrl": url})).into_response();
     set_cookie(&mut response, OAUTH_COOKIE, &raw, OAUTH_TTL);
+    set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
+    set_cookie(&mut response, SESSION_COOKIE, "", 0);
+    Ok(response)
+}
+fn identity_credentials(headers: &HeaderMap) -> Result<(String, &str), Error> {
+    let raw = cookie(headers, IDENTITY_COOKIE)?;
+    let csrf = headers
+        .get("x-lal-csrf")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(Error::Forbidden)?;
+    Ok((raw, csrf))
+}
+async fn identity(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let raw = cookie(&headers, IDENTITY_COOKIE)?;
+    let identity = auth.identity(&raw).await?;
+    Ok(Json(json!({"connectionId":identity.connection_id,"expiresAt":identity.expires_at,"csrfToken":auth.identity_csrf(&raw)?})).into_response())
+}
+async fn start_drive(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let (identity, csrf) = identity_credentials(&headers)?;
+    let (url, raw) = auth.start_drive(&identity, csrf).await?;
+    let mut response = Json(json!({"authorizationUrl":url})).into_response();
+    set_cookie(&mut response, OAUTH_COOKIE, &raw, OAUTH_TTL);
+    Ok(response)
+}
+async fn cancel_identity(State(auth): State<Auth>, headers: HeaderMap) -> Result<Response, Error> {
+    let (identity, csrf) = identity_credentials(&headers)?;
+    auth.cancel_identity(&identity, csrf).await?;
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
     Ok(response)
 }
 
@@ -147,6 +192,7 @@ struct Callback {
     state: String,
     code: Option<String>,
     error: Option<String>,
+    error_description: Option<String>,
     scope: Option<String>,
     authuser: Option<String>,
     prompt: Option<String>,
@@ -155,8 +201,26 @@ async fn callback(state: State<Auth>, headers: HeaderMap, request: Request) -> R
     match callback_inner(state, headers, request).await {
         Ok(response) => response,
         Err(error) => {
+            let message = match error {
+                Error::ConsentDenied => {
+                    "A autorização foi cancelada ou negada. Você pode tentar novamente no aplicativo."
+                }
+                Error::IdentityExpired => {
+                    "Sua identificação expirou. Entre com Google novamente para continuar."
+                }
+                Error::IncompleteConsent => {
+                    "O Google Drive não foi autorizado integralmente. Volte ao aplicativo para autorizar o Drive."
+                }
+                Error::AccountMismatch => {
+                    "A conta escolhida é diferente da conta confirmada. Volte ao aplicativo e use a mesma conta ou entre novamente."
+                }
+                _ => "Não foi possível conectar ao Google Drive.",
+            };
             let status = error.into_response().status();
-            let mut response = (status, axum::response::Html("<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Conexão com Google Drive</title><h1>Não foi possível conectar ao Google Drive.</h1><p>Sua biblioteca continua neste dispositivo.</p><a href=\"https://livroalivro.app.br/#/dados\">Voltar ao aplicativo</a></html>")).into_response();
+            let html = format!(
+                "<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Conexão com Google</title><h1>{message}</h1><p>Sua biblioteca continua neste dispositivo.</p><a href=\"https://livroalivro.app.br/#/dados\">Voltar ao aplicativo</a></html>"
+            );
+            let mut response = (status, axum::response::Html(html)).into_response();
             set_cookie(&mut response, OAUTH_COOKIE, "", 0);
             response
         }
@@ -176,8 +240,28 @@ async fn callback_inner(
     let query: Callback = axum::extract::Query::try_from_uri(request.uri())
         .map_err(|_| Error::InvalidRequest)?
         .0;
-    let _ = (&query.scope, &query.authuser, &query.prompt); // Google informational fields are never trusted.
-    if query.error.is_some() || query.code.is_none() {
+    let _ = (
+        &query.scope,
+        &query.authuser,
+        &query.prompt,
+        &query.error_description,
+    ); // Google informational fields are never trusted.
+    if query.error.is_some() {
+        // Consume the state even on denial; never trust or display provider error text.
+        auth.store
+            .take_oauth(
+                &crate::service::digest(&query.state),
+                &crate::service::digest(&cookie(&headers, OAUTH_COOKIE)?),
+                auth.clock.now(),
+            )
+            .await?;
+        return Err(if query.error.as_deref() == Some("access_denied") {
+            Error::ConsentDenied
+        } else {
+            Error::Provider
+        });
+    }
+    if query.code.is_none() {
         return Err(Error::Unauthorized);
     }
     let raw = auth
@@ -192,7 +276,24 @@ async fn callback_inner(
         header::LOCATION,
         HeaderValue::from_str(&auth.config.destination).unwrap(),
     );
-    set_cookie(&mut response, SESSION_COOKIE, &raw, SESSION_TTL);
+    match raw {
+        CallbackResult::Identity {
+            raw_cookie,
+            expires_at,
+        } => {
+            set_cookie(
+                &mut response,
+                IDENTITY_COOKIE,
+                &raw_cookie,
+                expires_at.saturating_sub(auth.clock.now()),
+            );
+            set_cookie(&mut response, SESSION_COOKIE, "", 0);
+        }
+        CallbackResult::Drive { raw_session } => {
+            set_cookie(&mut response, SESSION_COOKIE, &raw_session, SESSION_TTL);
+            set_cookie(&mut response, IDENTITY_COOKIE, "", 0);
+        }
+    }
     set_cookie(&mut response, OAUTH_COOKIE, "", 0);
     Ok(response)
 }
@@ -241,6 +342,9 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, code) = match self {
             Error::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
+            Error::IdentityExpired => (StatusCode::UNAUTHORIZED, "identity_expired"),
+            Error::AccountMismatch => (StatusCode::CONFLICT, "account_mismatch"),
+            Error::ConsentDenied => (StatusCode::UNAUTHORIZED, "consent_denied"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid_request"),
             Error::IncompleteConsent => (StatusCode::CONFLICT, "incomplete_consent"),

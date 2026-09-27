@@ -27,8 +27,10 @@ const fakeDriveFiles = [];
 let smokeRenewal = false; let syntheticSession = 'synthetic-old';
 const offlineContexts = new WeakSet();
 const contexts = {}; const pages = {}; const counters = { api: 0, drive: 0 };
+const contextDriveCounts = new WeakMap(); const identityDriveBaseline = new Map();
 const methods = new Map([
   ['/v1/auth/google/start', ['POST']], ['/v1/session', ['GET', 'DELETE']],
+  ['/v1/auth/google/identity', ['GET', 'DELETE']], ['/v1/auth/google/drive/start', ['POST']],
   ['/v1/session/renew', ['POST']], ['/v1/auth/drive-token', ['POST']],
   ['/v1/drive-connection', ['DELETE']],
 ]);
@@ -87,7 +89,12 @@ async function routeRequest(route) {
     }
     return smoke ? route.abort() : route.continue();
   }
-  if (url.origin === 'https://www.googleapis.com') { counters.drive++; return driveRequest(route); }
+  if (url.origin === 'https://www.googleapis.com') {
+    counters.drive++;
+    const context = request.frame().page().context();
+    contextDriveCounts.set(context, (contextDriveCounts.get(context) ?? 0) + 1);
+    return driveRequest(route);
+  }
   // Smoke mode is hermetic. Real mode leaves Google login/consent entirely to the human.
   return smoke ? route.abort() : route.continue();
 }
@@ -186,7 +193,7 @@ async function prepare() {
     const page = await context.newPage(); pages[id] = page; page.setDefaultTimeout(30_000);
     page.on('framenavigated', frame => { if (frame === page.mainFrame() && new URL(frame.url()).origin === 'https://accounts.google.com') emit('READY_FOR_GOOGLE_CONSENT'); });
     stage = 'OPEN_DATA'; await dataPage(page);
-    await expect(page.getByRole('button', { name: 'Conectar Google Drive', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true })).toBeVisible();
   }
   const page = pages.A;
   stage = 'IMPORT'; await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-gate.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
@@ -243,19 +250,24 @@ async function offlineCrud(id) {
   const page = pages[id]; const before = await snapshot(page);
   await setOffline(id, true);
   try {
+    stage = 'OFFLINE_ADD_PAGE';
     await page.goto(`${web}/#/adicionar`);
     await page.getByRole('button', { name: 'Adicionar manualmente', exact: true }).click();
+    stage = 'OFFLINE_SAVE';
     await page.getByLabel('Título (obrigatório)', { exact: true }).fill('Gate sintético offline');
     await page.getByLabel('Ano da estante', { exact: false }).fill('2026');
     await page.getByRole('button', { name: 'Salvar livro', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Editar livro', exact: true })).toBeVisible();
+    stage = 'OFFLINE_EDIT';
     await page.getByRole('button', { name: 'Editar livro', exact: true }).click();
     await page.getByLabel('Título (obrigatório)', { exact: true }).fill('Gate sintético offline editado');
     await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Gate sintético offline editado', exact: true })).toBeVisible();
+    stage = 'OFFLINE_DELETE';
     await page.getByRole('button', { name: 'Remover livro', exact: true }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Excluir livro', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).books.length).toBe(before.books.length);
+    stage = 'OFFLINE_EQUAL';
     check(isDeepStrictEqual(before, await snapshot(page)));
     emit('OFFLINE_CRUD_PRESERVED');
   } finally { await setOffline(id, false); await dataPage(page); }
@@ -394,7 +406,23 @@ async function command(line) {
   if (name === 'audit') { check(!violation); emit('API_BOUNDARY_PASS'); return; }
   if (name === 'compare') { check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B))); emit('CONTEXTS_EQUAL'); return; }
   check(['A', 'B'].includes(id) && pages[id]); const page = pages[id];
-  if (name === 'connect') { await dataPage(page); await page.getByRole('button', { name: /^(Conectar|Reconectar) Google Drive$/ }).click(); await confirm(page); return; }
+  if (name === 'signin') {
+    await dataPage(page);
+    identityDriveBaseline.set(id, contextDriveCounts.get(contexts[id]) ?? 0);
+    await page.getByRole('button', { name: 'Entrar com Google', exact: true }).click(); await confirm(page); return;
+  }
+  if (name === 'identity') {
+    // Human has returned from Google. Merely checking identity must never start Drive.
+    check(identityDriveBaseline.has(id));
+    const beforeDrive = identityDriveBaseline.get(id);
+    await dataPage(page);
+    await expect(page.getByRole('button', { name: 'Autorizar Google Drive', exact: true })).toBeVisible();
+    check(!(await localControl(page)).enabled && (contextDriveCounts.get(contexts[id]) ?? 0) === beforeDrive);
+    const status = await page.evaluate(async api => (await fetch(api + '/v1/session', { credentials: 'include', cache: 'no-store' })).status, api);
+    check(status === 401 && (contextDriveCounts.get(contexts[id]) ?? 0) === beforeDrive);
+    emit('IDENTITY_ONLY_NO_DRIVE_SESSION'); return;
+  }
+  if (name === 'authorize') { await page.getByRole('button', { name: 'Autorizar Google Drive', exact: true }).click(); await confirm(page); return; }
   if (name === 'synced') { await expect(page.getByText('Cópia confirmada no Google Drive.', { exact: false })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 }); emit('DRIVE_CONFIRMED'); return; }
   if (name === 'remote') { await expect(page.getByRole('heading', { name: 'Escolher uma versão', exact: true })).toBeVisible(); const buttons = page.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await buttons.count() === 1); await buttons.click(); await confirm(page); return; }
   if (['pause', 'logout', 'revoke'].includes(name)) return pauseOrDisconnect(id, name);
@@ -402,7 +430,7 @@ async function command(line) {
   if (name === 'offline-crud') return offlineCrud(id);
   if (name === 'renew') return renewSession(id);
   if (name === 'lost-put') return lostPutGate(id);
-  if (name === 'reconnect-required') { await page.reload(); await expect(page.getByRole('button', { name: 'Reconectar Google Drive', exact: true })).toBeVisible(); emit('RECONNECT_REQUIRED'); return; }
+  if (name === 'reconnect-required') { await page.reload(); await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true })).toBeVisible(); emit('RECONNECT_REQUIRED'); return; }
   throw new Error('UNKNOWN_COMMAND');
 }
 try {

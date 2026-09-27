@@ -15,6 +15,9 @@ pub enum Error {
     Unauthorized,
     InvalidRequest,
     IncompleteConsent,
+    IdentityExpired,
+    AccountMismatch,
+    ConsentDenied,
     Busy,
     Reconnect,
     InvalidGrant,
@@ -37,7 +40,13 @@ pub struct Access {
 }
 #[async_trait]
 pub trait Provider: Send + Sync {
-    async fn exchange(&self, code: &str, verifier: &str, nonce: &str) -> Result<Grant, Error>;
+    async fn exchange(
+        &self,
+        code: &str,
+        verifier: &str,
+        nonce: &str,
+        purpose: &OAuthPurpose,
+    ) -> Result<Grant, Error>;
     async fn refresh(&self, refresh: &str) -> Result<Access, Error>;
     async fn revoke(&self, refresh: &str) -> RevokeOutcome;
 }
@@ -64,7 +73,31 @@ impl Clock for SystemClock {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum OAuthPurpose {
+    SignIn,
+    Drive {
+        identity_hash: String,
+        expected_connection: String,
+    },
+}
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingIdentity {
+    pub connection_id: String,
+    pub expires_at: u64,
+}
+pub enum CallbackResult {
+    Identity { raw_cookie: String, expires_at: u64 },
+    Drive { raw_session: String },
+}
+pub struct IdentityConsumption<'a> {
+    pub hash: &'a str,
+    pub expected: &'a PendingIdentity,
+}
 pub struct Transaction {
+    pub purpose: OAuthPurpose,
     pub cookie_hash: String,
     pub nonce: Secret,
     pub verifier: Secret,
@@ -116,6 +149,16 @@ pub enum InvalidationReason {
 /// Implementations MUST verify deadlines inside the transaction, not rely on TTL cleanup.
 #[async_trait]
 pub trait Store: Send + Sync {
+    async fn put_identity(&self, hash: &str, identity: PendingIdentity) -> Result<(), Error>;
+    async fn identity(&self, hash: &str, now: u64) -> Result<PendingIdentity, Error>;
+    async fn delete_identity(&self, hash: &str) -> Result<(), Error>;
+    async fn put_drive_oauth(
+        &self,
+        hash: &str,
+        transaction: Transaction,
+        expected: &PendingIdentity,
+        now: u64,
+    ) -> Result<(), Error>;
     async fn grant_epoch(&self) -> Result<u64, Error>;
     async fn put_oauth(&self, state_hash: &str, transaction: Transaction) -> Result<(), Error>;
     /// Atomically check cookie hash + expiry and delete; wrong cookie must not consume it.
@@ -134,6 +177,7 @@ pub trait Store: Send + Sync {
         encrypted_refresh: Vec<u8>,
         session_hash: &str,
         expected_grant_epoch: u64,
+        identity: IdentityConsumption<'_>,
         now: u64,
     ) -> Result<Session, Error>;
     /// Validate session deadline, active connection, generation and 180-day connection inactivity.

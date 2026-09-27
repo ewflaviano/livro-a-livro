@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { bindingSchema, DRIVE_SCOPE, sameBinding, SyncError, type AuthClient, type Binding } from './contracts';
+import { bindingSchema, DRIVE_SCOPE, sameBinding, SyncError, type AuthClient, type Binding, type PendingIdentity } from './contracts';
 import { limitedJson, request } from './network';
 
 const scopes = z.array(z.string()).refine(values => values.includes(DRIVE_SCOPE) && values.every(value => value === DRIVE_SCOPE || value === 'openid'));
@@ -8,9 +8,16 @@ const sessionSchema = bindingSchema.extend({ expiresAt: z.number().positive(), c
 export function createAuthClient(fetcher: typeof fetch = fetch): AuthClient {
   const origin = 'https://api.livroalivro.app.br';
   let session: z.infer<typeof sessionSchema> | null = null;
+  let pendingIdentity: PendingIdentity | null = null;
   let access: { value: string; until: number } | null = null;
   const control = (path: string, method: string, csrf = false, signal?: AbortSignal) => request(fetcher, origin + path,
     { method, credentials: 'include', signal, headers: csrf && session ? { 'x-lal-csrf': session.csrfToken } : {} });
+  const authorizationUrl = async (response: Response) => {
+    const data = z.strictObject({ authorizationUrl: z.string().url() }).parse(await limitedJson(response, 16 * 1024));
+    const url = new URL(data.authorizationUrl);
+    if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' || url.username || url.password) throw new SyncError('invalid');
+    return url.href;
+  };
   const client: AuthClient = {
     async session(signal) {
       try {
@@ -36,11 +43,31 @@ export function createAuthClient(fetcher: typeof fetch = fetch): AuthClient {
       } catch (error) { access = null; if (error instanceof SyncError) throw error; throw new SyncError('invalid'); }
     },
     invalidate() { access = null; },
-    async start() {
-      const data = z.strictObject({ authorizationUrl: z.string().url() }).parse(await limitedJson(await control('/v1/auth/google/start', 'POST'), 16 * 1024));
-      const url = new URL(data.authorizationUrl);
-      if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' || url.username || url.password) throw new SyncError('invalid');
-      return url.href;
+    async startSignIn() {
+      access = null; session = null; pendingIdentity = null;
+      return authorizationUrl(await control('/v1/auth/google/start', 'POST'));
+    },
+    async identity(signal) {
+      pendingIdentity = null;
+      const identity = z.strictObject({ connectionId: z.string().min(1).max(200), expiresAt: z.number().positive(), csrfToken: z.string().min(1).max(1000) })
+        .parse(await limitedJson(await control('/v1/auth/google/identity', 'GET', false, signal), 16 * 1024));
+      if (identity.expiresAt * 1000 <= Date.now()) throw new SyncError('reconnect');
+      pendingIdentity = identity;
+      return identity;
+    },
+    async startDrive(csrfToken) {
+      if (!pendingIdentity || pendingIdentity.csrfToken !== csrfToken || pendingIdentity.expiresAt * 1000 <= Date.now()) throw new SyncError('reconnect');
+      return authorizationUrl(await request(fetcher, origin + '/v1/auth/google/drive/start', {
+        method: 'POST', credentials: 'include', headers: { 'x-lal-csrf': csrfToken },
+      }));
+    },
+    async cancelIdentity() {
+      // Never discover a newer identity during cancellation of an older local intent.
+      const identity = pendingIdentity; pendingIdentity = null;
+      if (!identity) return;
+      await request(fetcher, origin + '/v1/auth/google/identity', {
+        method: 'DELETE', credentials: 'include', headers: { 'x-lal-csrf': identity.csrfToken },
+      });
     },
     async disconnect(all) {
       try {

@@ -26,12 +26,45 @@ pub struct Google {
 }
 #[derive(Deserialize)]
 struct Tokens {
+    #[serde(default)]
     access_token: String,
+    #[serde(default)]
     expires_in: u64,
+    #[serde(default)]
     token_type: String,
     scope: Option<String>,
     refresh_token: Option<String>,
     id_token: Option<String>,
+}
+impl Tokens {
+    fn authorization_scope(&mut self, purpose: &OAuthPurpose) -> Result<String, Error> {
+        if matches!(purpose, OAuthPurpose::Drive { .. }) {
+            self.validate_access()?;
+        }
+        let scope = self.scope.take().unwrap_or_default();
+        if matches!(purpose, OAuthPurpose::Drive { .. }) && !valid_scopes(&scope) {
+            return Err(Error::IncompleteConsent);
+        }
+        Ok(scope)
+    }
+    fn validate_access(&self) -> Result<(), Error> {
+        if self.token_type != "Bearer"
+            || self.access_token.is_empty()
+            || self.expires_in == 0
+            || self.expires_in > 3600
+        {
+            return Err(Error::Provider);
+        }
+        Ok(())
+    }
+}
+impl Drop for Tokens {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.access_token.zeroize();
+        self.refresh_token.zeroize();
+        self.id_token.zeroize();
+    }
 }
 #[derive(Clone, Deserialize)]
 struct Claims {
@@ -84,13 +117,6 @@ impl Google {
             );
         }
         let tokens: Tokens = serde_json::from_slice(&bytes).map_err(|_| Error::Provider)?;
-        if tokens.token_type != "Bearer"
-            || tokens.access_token.is_empty()
-            || tokens.expires_in == 0
-            || tokens.expires_in > 3600
-        {
-            return Err(Error::Provider);
-        }
         Ok(tokens)
     }
     async fn identity(&self, token: &str, nonce: &str) -> Result<Secret, Error> {
@@ -167,8 +193,14 @@ async fn bounded(mut response: reqwest::Response) -> Result<Vec<u8>, Error> {
 
 #[async_trait]
 impl Provider for Google {
-    async fn exchange(&self, code: &str, verifier: &str, nonce: &str) -> Result<Grant, Error> {
-        let tokens = self
+    async fn exchange(
+        &self,
+        code: &str,
+        verifier: &str,
+        nonce: &str,
+        purpose: &OAuthPurpose,
+    ) -> Result<Grant, Error> {
+        let mut tokens = self
             .tokens(&[
                 ("grant_type", "authorization_code"),
                 ("code", code),
@@ -178,21 +210,25 @@ impl Provider for Google {
                 ("code_verifier", verifier),
             ])
             .await?;
-        let scope = tokens.scope.ok_or(Error::Forbidden)?;
-        if !valid_scopes(&scope) {
-            return Err(Error::Forbidden);
-        }
+        let scope = tokens.authorization_scope(purpose)?;
         let subject = self
-            .identity(&tokens.id_token.ok_or(Error::Unauthorized)?, nonce)
+            .identity(
+                tokens.id_token.as_deref().ok_or(Error::Unauthorized)?,
+                nonce,
+            )
             .await?;
         Ok(Grant {
             subject,
-            refresh_token: tokens.refresh_token.map(Secret),
+            refresh_token: if matches!(purpose, OAuthPurpose::Drive { .. }) {
+                tokens.refresh_token.take().map(Secret)
+            } else {
+                None
+            },
             scope,
         })
     }
     async fn refresh(&self, refresh: &str) -> Result<Access, Error> {
-        let tokens = self
+        let mut tokens = self
             .tokens(&[
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh),
@@ -200,11 +236,12 @@ impl Provider for Google {
                 ("client_secret", &self.secret.0),
             ])
             .await?;
+        tokens.validate_access()?;
         Ok(Access {
-            token: Secret(tokens.access_token),
+            token: Secret(std::mem::take(&mut tokens.access_token)),
             expires_in: tokens.expires_in,
-            scope: tokens.scope,
-            rotated_refresh: tokens.refresh_token.map(Secret),
+            scope: tokens.scope.take(),
+            rotated_refresh: tokens.refresh_token.take().map(Secret),
         })
     }
     async fn revoke(&self, refresh: &str) -> RevokeOutcome {

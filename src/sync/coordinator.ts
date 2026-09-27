@@ -2,7 +2,7 @@ import { utf8ByteLength } from '../domain/library';
 import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
-import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SyncView } from './contracts';
+import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SyncView, type AuthorizationIntent } from './contracts';
 import { libraryHash, remoteHeads } from './snapshot';
 import type { SyncStore } from './outbox';
 import type { LibraryExport } from '../backup/schema';
@@ -68,8 +68,37 @@ export function createSyncCoordinator(options: Options) {
     }
     await accepted(confirmed[0], operation.version);
   }
+  async function inspectAuthorization(intent: AuthorizationIntent, signal: AbortSignal) {
+    // The start request must invalidate any older backend identity before inspection.
+    if (intent.stage === 'identity-starting') { publish({ status: 'identifying' }); return; }
+    if (!options.online()) { publish({ status: 'authorization-waiting', authorizationStage: intent.stage }); return; }
+    try {
+      if (intent.stage === 'identity') {
+        await auth.identity(signal);
+        await store.compareAuthorization(intent, {});
+        if (closed || signal.aborted) return;
+        publish({ status: 'authorize-drive' });
+      } else {
+        const session = await auth.session(signal);
+        if (session.connectionId !== intent.expectedConnection) throw new SyncError('conflict');
+        if (closed || signal.aborted) return;
+        await store.compareAuthorization(intent, { authorization: null, enabled: true, revocationPending: false, attempts: 0, nextAttempt: 0 });
+        publish({ status: 'pending', revocationPending: false });
+        await cycle(signal);
+      }
+    } catch (error) {
+      if (closed || signal.aborted || error instanceof SyncError && error.code === 'cancelled') return;
+      // Check persisted intent again before exposing a late failure from another attempt.
+      try { await store.compareAuthorization(intent, {}); } catch { return; }
+      if (error instanceof SyncError && (error.code === 'retry' || intent.stage === 'drive' && error.code === 'reconnect')) publish({ status: 'authorization-waiting', authorizationStage: intent.stage });
+      else if (error instanceof SyncError && error.code === 'reconnect') publish({ status: 'authorization-expired' });
+      else publish({ status: 'authorization-error', authorizationStage: intent.stage });
+    }
+  }
   async function cycle(signal: AbortSignal) {
+    if (closed || signal.aborted) return;
     let record = await store.read();
+    if (record.authorization) { await inspectAuthorization(record.authorization, signal); return; }
     if (record.revocationPending) { publish({ status: 'reconnect', revocationPending: true }); return; }
     if (!record.enabled) { publish({ status: record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); return; }
     if (!options.online()) { publish({ status: 'offline' }); return; }
@@ -162,7 +191,7 @@ export function createSyncCoordinator(options: Options) {
   return {
     getSnapshot: () => view,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); schedule(); poll(); },
+    async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.authorization ? 'identifying' : record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); schedule(); poll(); },
     async wake() {
       if (closed || !options.visible()) return;
       const record = await store.read();
@@ -171,21 +200,60 @@ export function createSyncCoordinator(options: Options) {
       if (!conflict && Date.now() - lastPoll >= 60_000) { lastPoll = Date.now(); schedule(); }
     },
     async connect() {
-      const destination = await auth.start();
-      // A new, explicit authorization replaces the user's previous disconnect intent.
-      // It does not assert that the earlier Google revocation was confirmed.
-      await store.update({ enabled: true, revocationPending: false, attempts: 0, nextAttempt: 0 });
-      options.navigate(destination);
+      controller?.abort(); clearTimeout(timer); conflict = null; auth.invalidate();
+      const intent: AuthorizationIntent = { id: crypto.randomUUID(), stage: 'identity-starting' };
+      await store.update({ enabled: false, authorization: intent }, undefined, true);
+      publish({ status: 'identifying' });
+      const destination = await auth.startSignIn();
+      await store.compareAuthorization(intent, { authorization: { id: intent.id, stage: 'identity' } });
+      if (!closed) options.navigate(destination);
     },
-    async pause() { controller?.abort(); clearTimeout(timer); await store.update({ enabled: false }, undefined, true); auth.invalidate(); publish({ status: 'paused' }); },
+    async authorizeDrive() {
+      const intent = (await store.read()).authorization;
+      if (!intent || intent.stage !== 'identity') throw new SyncError('reconnect');
+      const identity = await auth.identity();
+      if (closed) throw new SyncError('cancelled');
+      const next: AuthorizationIntent = { id: crypto.randomUUID(), stage: 'drive', expectedConnection: identity.connectionId };
+      await store.compareAuthorization(intent, { authorization: next });
+      const destination = await auth.startDrive(identity.csrfToken);
+      await store.compareAuthorization(next, {});
+      if (!closed) options.navigate(destination);
+    },
+    async retryDriveAuthorization() {
+      const intent = (await store.read()).authorization;
+      if (!intent || intent.stage !== 'drive') throw new SyncError('reconnect');
+      const identity = await auth.identity();
+      if (closed || identity.connectionId !== intent.expectedConnection) throw new SyncError('reconnect');
+      const next: AuthorizationIntent = { ...intent, id: crypto.randomUUID() };
+      await store.compareAuthorization(intent, { authorization: next });
+      const destination = await auth.startDrive(identity.csrfToken);
+      await store.compareAuthorization(next, {});
+      if (!closed) options.navigate(destination);
+    },
+    async retryAuthorization() { if ((await store.read()).authorization) schedule(); },
+    async cancelAuthorization() {
+      controller?.abort(); clearTimeout(timer); conflict = null;
+      const record = await store.update({ enabled: false, authorization: null }, undefined, true);
+      auth.invalidate(); publish({ status: record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending });
+      void auth.cancelIdentity().catch(() => {});
+    },
+    async pause() {
+      controller?.abort(); clearTimeout(timer);
+      const record = await store.update({ enabled: false, authorization: null }, undefined, true);
+      auth.invalidate(); publish({ status: record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending });
+      void auth.cancelIdentity().catch(() => {});
+    },
     async resume() {
-      if ((await store.read()).revocationPending) throw new SyncError('reconnect');
+      const current = await store.read();
+      if (current.authorization) { schedule(); return; }
+      if (current.revocationPending) throw new SyncError('reconnect');
       const record = await store.update({ enabled: true, attempts: 0 }); conflict = null; schedule(Math.max(0, record.nextAttempt - Date.now()));
     },
     async disconnect(all: boolean) {
       controller?.abort(); clearTimeout(timer);
-      const record = await store.update({ enabled: false, ...(all ? { revocationPending: true } : {}) }, undefined, true);
+      const record = await store.update({ enabled: false, authorization: null, ...(all ? { revocationPending: true } : {}) }, undefined, true);
       auth.invalidate();
+      void auth.cancelIdentity().catch(() => {});
       try {
         const pending = await auth.disconnect(all);
         const next = await store.update(all ? { revocationPending: pending } : {});

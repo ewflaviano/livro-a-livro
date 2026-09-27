@@ -25,17 +25,45 @@ async fn environment() -> (DynamoStore, aws_config::SdkConfig, String) {
     let store = DynamoStore::new(aws_sdk_dynamodb::Client::new(&config), table.clone()).unwrap();
     (store, config, table)
 }
-async fn connect(store: &DynamoStore, id: &str, hash: &str, now: u64) -> Session {
+async fn attempt(
+    store: &DynamoStore,
+    id: &str,
+    encrypted: Vec<u8>,
+    hash: &str,
+    epoch: u64,
+    now: u64,
+) -> Result<Session, Error> {
+    let key = unique();
+    let identity = PendingIdentity {
+        connection_id: id.into(),
+        expires_at: now + OAUTH_TTL,
+    };
+    store.put_identity(&key, identity.clone()).await.unwrap();
     store
         .connect(
             id,
-            vec![7, 8, 9],
+            encrypted,
             hash,
-            store.grant_epoch().await.unwrap(),
+            epoch,
+            IdentityConsumption {
+                hash: &key,
+                expected: &identity,
+            },
             now,
         )
         .await
-        .unwrap()
+}
+async fn connect(store: &DynamoStore, id: &str, hash: &str, now: u64) -> Session {
+    attempt(
+        store,
+        id,
+        vec![7, 8, 9],
+        hash,
+        store.grant_epoch().await.unwrap(),
+        now,
+    )
+    .await
+    .unwrap()
 }
 #[tokio::test]
 #[ignore = "requires isolated AWS DynamoDB table with work-due index"]
@@ -49,6 +77,7 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
         .put_oauth(
             &oauth,
             Transaction {
+                purpose: OAuthPurpose::SignIn,
                 cookie_hash: cookie.clone(),
                 nonce: Secret(unique()),
                 verifier: Secret(unique()),
@@ -71,6 +100,7 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
         .put_oauth(
             &expired,
             Transaction {
+                purpose: OAuthPurpose::SignIn,
                 cookie_hash: cookie.clone(),
                 nonce: Secret(unique()),
                 verifier: Secret(unique()),
@@ -81,7 +111,7 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
         .unwrap();
     assert!(matches!(
         store.take_oauth(&expired, &cookie, now).await,
-        Err(Error::Unauthorized)
+        Err(Error::IdentityExpired)
     ));
     // Independent claims race across the service boundary; only one obtains bytes.
     let id = unique();
@@ -135,8 +165,7 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
         .unwrap();
     let key = store.disable(&new_hash, now + 93).await.unwrap();
     assert!(
-        store
-            .connect(&unique(), vec![11], &unique(), epoch, now + 94)
+        attempt(&store, &unique(), vec![11], &unique(), epoch, now + 94)
             .await
             .is_err()
     );
@@ -147,22 +176,21 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
             .is_err()
     );
     assert!(
-        store
-            .connect(&id, vec![11], &unique(), epoch, now + 94)
+        attempt(&store, &id, vec![11], &unique(), epoch, now + 94)
             .await
             .is_err()
     );
     assert!(
-        store
-            .connect(
-                &id,
-                vec![11],
-                &unique(),
-                store.grant_epoch().await.unwrap(),
-                now + 94
-            )
-            .await
-            .is_err()
+        attempt(
+            &store,
+            &id,
+            vec![11],
+            &unique(),
+            store.grant_epoch().await.unwrap(),
+            now + 94
+        )
+        .await
+        .is_err()
     );
     let (a, b) = tokio::join!(
         store.claim_revocation(&key, "revoke-a", now + 94),
@@ -242,32 +270,32 @@ async fn dynamodb_concurrency_deadlines_fencing_revocation_and_cleanup() {
             .is_err()
     );
     assert!(
-        store
-            .connect(
-                &id2,
-                vec![11],
-                &unique(),
-                store.grant_epoch().await.unwrap(),
-                now + 33
-            )
-            .await
-            .is_err()
+        attempt(
+            &store,
+            &id2,
+            vec![11],
+            &unique(),
+            store.grant_epoch().await.unwrap(),
+            now + 33
+        )
+        .await
+        .is_err()
     );
     assert!(matches!(
         store.prepare_due(&id2, now + 86400).await.unwrap(),
         DueOutcome::Purged
     ));
     assert!(
-        store
-            .connect(
-                &id2,
-                vec![11],
-                &unique(),
-                store.grant_epoch().await.unwrap(),
-                now + 86401
-            )
-            .await
-            .is_err()
+        attempt(
+            &store,
+            &id2,
+            vec![11],
+            &unique(),
+            store.grant_epoch().await.unwrap(),
+            now + 86401
+        )
+        .await
+        .is_err()
     );
     let client = aws_sdk_dynamodb::Client::new(&config);
     let item = client
@@ -456,4 +484,234 @@ async fn committed_transaction_retry_reuses_idempotency_token() {
     assert_eq!(key.generation, 2);
     assert_eq!(store.grant_epoch().await.unwrap(), epoch + 1);
     assert!(store.session(&hash, now + 2).await.is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires isolated AWS DynamoDB table"]
+async fn pending_identity_is_consumed_atomically_and_cannot_cross_cancel_expiry_or_epoch() {
+    let (store, config, table) = environment().await;
+    let client = aws_sdk_dynamodb::Client::new(&config);
+    let now = SystemClock.now();
+    let epoch = store.grant_epoch().await.unwrap();
+    let make_transaction = |hash: &str, identity: &PendingIdentity| Transaction {
+        purpose: OAuthPurpose::Drive {
+            identity_hash: hash.into(),
+            expected_connection: identity.connection_id.clone(),
+        },
+        cookie_hash: unique(),
+        nonce: Secret(unique()),
+        verifier: Secret(unique()),
+        expires_at: identity.expires_at,
+    };
+    // Logically expired records remain physically present until DynamoDB TTL cleanup.
+    let expired_hash = unique();
+    let expired = PendingIdentity {
+        connection_id: unique(),
+        expires_at: now,
+    };
+    store
+        .put_identity(&expired_hash, expired.clone())
+        .await
+        .unwrap();
+    assert!(store.identity(&expired_hash, now).await.is_err());
+    assert!(
+        store
+            .put_drive_oauth(
+                &unique(),
+                make_transaction(&expired_hash, &expired),
+                &expired,
+                now
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        store
+            .connect(
+                &expired.connection_id,
+                vec![1],
+                &unique(),
+                epoch,
+                IdentityConsumption {
+                    hash: &expired_hash,
+                    expected: &expired
+                },
+                now
+            )
+            .await
+            .is_err()
+    );
+
+    // Cancellation before start or after OAuth preparation fences a stale snapshot.
+    for prepare in [false, true] {
+        let hash = unique();
+        let identity = PendingIdentity {
+            connection_id: unique(),
+            expires_at: now + 600,
+        };
+        store.put_identity(&hash, identity.clone()).await.unwrap();
+        let snapshot = store.identity(&hash, now).await.unwrap();
+        let oauth = unique();
+        let transaction = make_transaction(&hash, &identity);
+        let cookie = transaction.cookie_hash.clone();
+        if prepare {
+            store
+                .put_drive_oauth(&oauth, transaction, &snapshot, now)
+                .await
+                .unwrap();
+        }
+        store.delete_identity(&hash).await.unwrap();
+        if prepare {
+            assert!(store.take_oauth(&oauth, &cookie, now).await.is_ok());
+        }
+        let late_oauth = unique();
+        assert!(
+            store
+                .put_drive_oauth(
+                    &late_oauth,
+                    make_transaction(&hash, &identity),
+                    &snapshot,
+                    now
+                )
+                .await
+                .is_err()
+        );
+        let session = unique();
+        assert!(
+            store
+                .connect(
+                    &identity.connection_id,
+                    vec![2],
+                    &session,
+                    epoch,
+                    IdentityConsumption {
+                        hash: &hash,
+                        expected: &snapshot
+                    },
+                    now
+                )
+                .await
+                .is_err()
+        );
+        for key in [
+            format!("OAUTH#{late_oauth}"),
+            format!("SESSION#{session}"),
+            format!("CONNECTION#{}", identity.connection_id),
+        ] {
+            assert!(
+                client
+                    .get_item()
+                    .table_name(&table)
+                    .key("pk", A::S(key))
+                    .consistent_read(true)
+                    .send()
+                    .await
+                    .unwrap()
+                    .item
+                    .is_none()
+            );
+        }
+    }
+    // Two callbacks with one identity can create exactly one session.
+    let hash = unique();
+    let identity = PendingIdentity {
+        connection_id: unique(),
+        expires_at: now + 600,
+    };
+    store.put_identity(&hash, identity.clone()).await.unwrap();
+    let first = unique();
+    let second = unique();
+    let (a, b) = tokio::join!(
+        store.connect(
+            &identity.connection_id,
+            vec![3],
+            &first,
+            epoch,
+            IdentityConsumption {
+                hash: &hash,
+                expected: &identity
+            },
+            now
+        ),
+        store.connect(
+            &identity.connection_id,
+            vec![4],
+            &second,
+            epoch,
+            IdentityConsumption {
+                hash: &hash,
+                expected: &identity
+            },
+            now
+        )
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert_eq!(
+        usize::from(store.session(&first, now).await.is_ok())
+            + usize::from(store.session(&second, now).await.is_ok()),
+        1
+    );
+    assert!(store.identity(&hash, now).await.is_err());
+    let winner = if a.is_ok() { &first } else { &second };
+    store.disable(winner, now).await.unwrap();
+    // Epoch mismatch leaves the identity reusable, never writes a session/connection.
+    let hash = unique();
+    let identity = PendingIdentity {
+        connection_id: unique(),
+        expires_at: now + 600,
+    };
+    store.put_identity(&hash, identity.clone()).await.unwrap();
+    let session = unique();
+    assert!(
+        store
+            .connect(
+                &identity.connection_id,
+                vec![5],
+                &session,
+                epoch,
+                IdentityConsumption {
+                    hash: &hash,
+                    expected: &identity
+                },
+                now
+            )
+            .await
+            .is_err()
+    );
+    assert!(store.identity(&hash, now).await.is_ok());
+    assert!(store.session(&session, now).await.is_err());
+    assert!(
+        client
+            .get_item()
+            .table_name(&table)
+            .key("pk", A::S(format!("CONNECTION#{}", identity.connection_id)))
+            .consistent_read(true)
+            .send()
+            .await
+            .unwrap()
+            .item
+            .is_none()
+    );
+    // Legacy/unknown purpose never becomes implicit Drive authority.
+    for purpose in [None, Some("\"Unknown\"")] {
+        let hash = unique();
+        let cookie = unique();
+        let mut put = client
+            .put_item()
+            .table_name(&table)
+            .item("pk", A::S(format!("OAUTH#{hash}")))
+            .item("cookieHash", A::S(cookie.clone()))
+            .item("nonce", A::S(unique()))
+            .item("verifier", A::S(unique()))
+            .item("expiresAt", A::N((now + 600).to_string()))
+            .item("deleteAfter", A::N((now + 600).to_string()));
+        if let Some(value) = purpose {
+            put = put.item("purpose", A::S(value.into()));
+        }
+        put.send().await.unwrap();
+        assert!(matches!(
+            store.take_oauth(&hash, &cookie, now).await,
+            Err(Error::Unauthorized)
+        ));
+    }
 }

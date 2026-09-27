@@ -14,22 +14,27 @@ Todas as respostas, inclusive erros, têm `Cache-Control: no-store`, `Referrer-P
 
 | Rota | Requisição | Resposta |
 | --- | --- | --- |
-| `POST /v1/auth/google/start` | Origin exata, sem body | `authorizationUrl` para Google e cookie temporário HttpOnly |
-| `GET /v1/auth/google/callback` | state, code e cookie temporário | 303 para `https://livroalivro.app.br/#/dados`, cookie de sessão; nenhum token na URL |
+| `POST /v1/auth/google/start` | Origin exata, sem body | URL de identificação Google (`openid`), cookie OAuth temporário; encerra sessão deste navegador |
+| `GET /v1/auth/google/identity` | Origin exata, cookie de identidade | `connectionId`, `expiresAt`, `csrfToken`; nenhuma sessão Drive |
+| `POST /v1/auth/google/drive/start` | Origin, identidade temporária e seu `x-lal-csrf`, sem body | URL de consentimento Drive, novo state/nonce/PKCE |
+| `DELETE /v1/auth/google/identity` | Origin, identidade temporária e seu `x-lal-csrf` | cancela a identidade e remove seu cookie |
+| `GET /v1/auth/google/callback` | state, code e cookie OAuth temporário | 303 para `https://livroalivro.app.br/#/dados`; etapa 1 emite identidade temporária, etapa 2 emite sessão Drive; nenhum token na URL |
 | `GET /v1/session` | Origin exata, cookie | `connectionId`, `generation`, `expiresAt`, `csrfToken`, `scopes` |
 | `POST /v1/session/renew` | Origin, cookie e `x-lal-csrf` | nova sessão/cookie, `csrfToken`, `expiresAt` |
 | `POST /v1/auth/drive-token` | Origin, cookie e `x-lal-csrf` | somente `accessToken`, `expiresIn`, `scopes` |
 | `DELETE /v1/session` | Origin, cookie e `x-lal-csrf` | 204 e cookie removido; encerra este aparelho |
 | `DELETE /v1/drive-connection` | Origin, cookie e `x-lal-csrf` | `disconnected`, `revocationPending`; bloqueia a conexão globalmente |
 
-O frontend usa `credentials: include` nas chamadas da API. Não envia body `{}`: os controles são deliberadamente sem body. A URL de autorização é usada para navegação completa após o clique Conectar. O callback não tem analytics nem HTML executável. Os parâmetros informativos `scope`, `authuser` e `prompt` do callback são tolerados, mas não confiáveis: a concessão é validada na resposta do endpoint de tokens.
+O frontend usa `credentials: include` nas chamadas da API. Não envia body `{}`: os controles são deliberadamente sem body. Cada URL de autorização é usada para navegação completa após seu próprio clique: **Entrar com Google** e, depois do retorno à interface, **Autorizar Google Drive**. Não há redirecionamento automático entre as etapas. O callback não tem analytics nem HTML executável. Os parâmetros informativos `scope`, `authuser` e `prompt` do callback são tolerados, mas não confiáveis: a concessão é validada na resposta do endpoint de tokens.
 
 O access token permanece somente em memória durante a execução do PWA. Não entra em localStorage, IndexedDB, service worker, BroadcastChannel, URL, backup ou telemetria. O cliente reaproveita o token até perto da expiração; uma nova emissão pode retornar 429 com `Retry-After: 30`. A aba deve aguardar e tentar novamente, sem logout. `connectionId` é identificador técnico opaco para vínculo, nunca dimensão de métricas.
 
 ## Proteções implementadas
 
 - State, nonce, PKCE verifier e cookies aleatórios de 256 bits. Challenge S256. Transação de dez minutos, consumo atômico de uso único vinculado ao cookie.
-- Troca confidencial no servidor. Solicita exatamente `openid` e `https://www.googleapis.com/auth/drive.appdata`, sem e-mail, perfil ou Drive completo. Rejeita concessão extra ou incompleta. Exige refresh token novo no consentimento; se ausente retorna `incomplete_consent` sem criar sessão.
+- Troca confidencial em duas etapas. Identificação solicita somente `openid`, com `access_type=online`, `prompt=select_account` e `include_granted_scopes=false`. Valida o ID token e descarta tokens de acesso/refresh sem usá-los ou revogá-los. Não cria conexão, sessão Drive ou cifra KMS.
+- A identidade pendente dura dez minutos, sem renovação, em cookie `__Host-lal_identity` HttpOnly/Secure/SameSite=Lax. Dynamo guarda apenas o vínculo HMAC do subject validado e o hash do cookie, nunca e-mail, perfil ou ID token. Essa identidade não autoriza sessão, renovação ou emissão de token Drive.
+- O segundo clique solicita exatamente `openid` e `https://www.googleapis.com/auth/drive.appdata`, `access_type=offline`, `prompt=consent`, `include_granted_scopes=false`, com novos state/nonce/PKCE. Rejeita conta diferente da etapa anterior e concessão extra ou incompleta. Exige refresh token novo no consentimento; se ausente retorna `incomplete_consent` sem criar sessão. O Google pode apresentar sua própria seleção de permissões nessa etapa.
 - ID token verificado localmente por assinatura RS256/JWKS, issuer, audience exata, expiração, nonce e `azp` quando presente. Cache de JWKS por cinco minutos, respostas limitadas a 64 KiB, timeout e redirects de rede desativados. Chave nova desconhecida pode requerer nova tentativa após expiração do cache.
 - Cookie `__Host-lal_session`, `Secure; HttpOnly; SameSite=Lax; Path=/`, sem Domain. O serviço persiste apenas hash do cookie; CSRF deriva de HMAC com propósito próprio. Sessão 30 dias, renovação explícita com rotação dentro de 180 dias absolutos.
 - DynamoDB exige lease distribuído/fencing e atualização atômica do refresh token rotacionado; uma operação expirada/revogada não pode liberar seu access token. `invalid_grant` ou escopos retirados invalidam a geração. Revogação bloqueia imediatamente; tentativas comprovadamente não enviadas podem ser repetidas por até 24h. Uma resposta incerta não permite repetição nem reconexão automática. Arquivos Drive e biblioteca local nunca são apagados.
@@ -42,10 +47,14 @@ Invariantes verificadas pelo adaptador, sem confiar na remoção eventual por TT
 
 1. Leituras consistentes, transações condicionais, hashes de sessão e prazos conferidos nas operações. A posse de refresh dura 30s e limita inclusive tentativas que falham. Renovação remove a sessão antiga e cria a nova atomicamente, sem estender os 180 dias absolutos.
 2. KMS autentica `application=livro-a-livro`, `environment=production` e conexão opaca. O contexto pode aparecer em registros administrativos AWS; nunca contém subject, e-mail, token ou biblioteca. A chave HMAC está no Secrets Manager com o segredo OAuth; não é derivada do client secret.
-3. O callback lê o epoch global antes de trocar o código no Google. A criação da sessão exige que ele permaneça igual e que a conexão não esteja bloqueada. Revogação avança esse epoch, impedindo um callback antigo de ressuscitar acesso. Pode ser necessário repetir consentimento quando outra revogação coincidir; nunca se revoga automaticamente o token descartado.
+3. O callback da etapa Drive lê o epoch global antes de trocar o código no Google. A criação da sessão exige que ele permaneça igual e que a conexão não esteja bloqueada. Revogação avança esse epoch, impedindo um callback antigo de ressuscitar acesso. Pode ser necessário repetir consentimento quando outra revogação coincidir; nunca se revoga automaticamente o token descartado.
 4. O worker usa o índice apenas para encontrar candidatos; condições na tabela base autorizam cada alteração. Inatividade de 180 dias inicia o mesmo protocolo de bloqueio/revogação. Deadline de 24h impede uso da credencial mesmo se a limpeza atrasar.
 5. Antes de chamar o Google, a tentativa é marcada como enviada. Se o processo morrer ou o resultado for ambíguo, o estado passa a incerto: não se toma o lease para repetir a chamada. Conclusão e limpeza exigem geração, operação e proprietário corretos.
 6. Configuração ausente/inválida falha com código genérico. Não existe fallback em memória, segredo de desenvolvimento ou logging de erro bruto do SDK. Roles de execução não têm acesso a S3.
+
+A finalidade de cada OAuth fica na transação durável, nunca no query informado pelo navegador. A criação da sessão Drive consome a identidade pendente na mesma transação que verifica epoch e conexão: cancelamento, expiração ou consumo concorrente falham sem sessão parcial. Transações OAuth antigas sem finalidade são recusadas; uma nova tentativa deve começar pela identificação. Sessões Drive completas anteriores continuam válidas.
+
+Erros do callback usam mensagens HTML estáticas distintas para autorização negada, identidade expirada, permissão Drive incompleta, conta diferente e falha geral. Não incluem parâmetros ou mensagens recebidas do Google. A tentativa anterior relatada em 27/09 falhou antes de criar conexão; sua causa específica não foi comprovada.
 
 Configuração dos executáveis:
 
@@ -59,9 +68,9 @@ Configuração dos executáveis:
 
 Origem e callback são allowlist literal na configuração compilada de produção. Alterações para outro ambiente exigem configuração revisada, cliente e tabela distintos. O [runbook](deployment.md#revogação-incerta) descreve retenção, alarmes e resolução assistida do bloqueio; expiração e limpeza nunca substituem confirmação do resultado externo.
 
-## Preparação GCP já autorizada pelo usuário, em etapa posterior
+## Configuração GCP
 
-Usar o projeto já criado e aberto no navegador. Habilitar Google Drive API, configurar branding/consentimento e cliente OAuth do tipo Web com callback exato `https://api.livroalivro.app.br/v1/auth/google/callback`. Pedir somente os dois escopos acima. Guardar o client secret diretamente em Secrets Manager. Não copiar configuração ou credenciais do BioRotina. Consentimento em Testing não oferece garantia de sessão duradoura: publicar e concluir verificações aplicáveis antes do release.
+O projeto exclusivo `livro-a-livro` usa Google Drive API e cliente OAuth do tipo Web com callback exato `https://api.livroalivro.app.br/v1/auth/google/callback`. Solicitar os escopos em duas etapas, conforme acima. O client secret fica somente no Secrets Manager. Domínio verificado, marca aprovada/publicada e audiência em produção estão registrados no [runbook](deployment.md). Não copiar configuração ou credenciais do BioRotina. Consentimento em Testing não oferece garantia de sessão duradoura: publicar e concluir verificações aplicáveis antes do release.
 
 Firebase não armazena biblioteca nem substitui a permissão Drive. Este fluxo de OAuth Web não requer Firebase Auth; se Firebase for utilizado para outro recurso, sua configuração deve preservar consentimentos separados.
 
