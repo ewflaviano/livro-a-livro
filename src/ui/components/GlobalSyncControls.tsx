@@ -82,7 +82,7 @@ export function GlobalSyncHeader() {
     {interactive ? <button ref={controls.trigger} className="header-option global-sync" disabled={controls.busy || controls.blocked}
       title={controls.blocked ? 'Conclua ou saia do formulário ou operação em andamento antes de conectar.' : undefined}
       onClick={() => controls.open(signIn ? 'connect' : 'authorize')}><Cloud aria-hidden="true" /><span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></button> :
-      <Link className="header-option global-sync" to="/dados" aria-label={`${label} — ver detalhes`}>
+      <Link className="header-option global-sync" to="/dados" state={state.status === 'conflict' ? { focus: 'sync-conflict' } : undefined} aria-label={`${label} — ver detalhes`}>
         {state.status === 'offline' ? <CloudOff aria-hidden="true" /> : <Cloud aria-hidden="true" />}<span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></Link>}
     <Link className="header-option header-settings" to="/configuracoes" aria-label="Abrir configurações" title="Configurações"><Settings aria-hidden="true" /></Link>
   </nav>{controls.error && <p className="global-action-error" role="alert">{controls.error} Abra os detalhes da conexão para tentar novamente ou cancelar.</p>}</>;
@@ -96,7 +96,7 @@ export function GlobalSyncAttention() {
   if (!available || (!attentionStates.includes(state.status) && !state.revocationPending) || dismissed === key) return null;
   return <aside className="global-sync-attention" aria-label="Atenção ao Google Drive">
     <p role="status">{state.revocationPending ? 'A revogação no Google ainda não foi confirmada. Os envios estão pausados.' : syncLabels[state.status]}</p>
-    <div><Link to="/dados">{state.status === 'conflict' ? 'Conferir versões' : 'Ver detalhes'}</Link>
+    <div><Link to="/dados" state={state.status === 'conflict' ? { focus: 'sync-conflict' } : undefined}>{state.status === 'conflict' ? 'Conferir versões' : 'Ver detalhes'}</Link>
       <button type="button" onClick={() => setDismissed(key)}>Decidir depois</button></div>
   </aside>;
 }

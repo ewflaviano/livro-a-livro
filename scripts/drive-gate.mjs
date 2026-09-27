@@ -392,6 +392,21 @@ async function conflictGate() {
     stage = 'CONFLICT_SYNC_A'; await setOffline('A', false); await dataPage(pages.A); await pages.A.getByRole('button', { name: 'Retomar sincronização', exact: true }).click(); await synced('A');
     stage = 'CONFLICT_REQUIRE_B'; await setOffline('B', false); await dataPage(pages.B); await pages.B.getByRole('button', { name: 'Retomar sincronização', exact: true }).click();
     await expect(pages.B.getByRole('heading', { name: 'Escolher uma versão', exact: true })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 });
+    stage = 'CONFLICT_NAVIGATION';
+    const viewport = pages.B.viewportSize();
+    try {
+      await pages.B.setViewportSize({ width: 320, height: 800 });
+      for (let activation = 0; activation < 2; activation++) {
+        await pages.B.getByRole('link', { name: 'Conferir versões', exact: true }).click();
+        const heading = pages.B.getByRole('heading', { name: 'Escolher uma versão', exact: true });
+        await expect(heading).toBeFocused();
+        const box = await heading.boundingBox();
+        check(box && box.y >= 0 && box.y + box.height <= 800);
+        check(await pages.B.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      }
+      if (smoke && process.env.LAL_GATE_SCREENSHOT) await pages.B.screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT.replace(/\.png$/, '-conflict.png')) });
+      emit('CONFLICT_NAVIGATION_MOBILE_PASS');
+    } finally { if (viewport) await pages.B.setViewportSize(viewport); }
     check(isDeepStrictEqual(b, await snapshot(pages.B)));
     const choice = pages.B.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await choice.count() === 1);
     stage = 'CONFLICT_CHOICE'; await choice.click(); await confirm(pages.B); await synced('B');

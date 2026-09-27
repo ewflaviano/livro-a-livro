@@ -2,6 +2,7 @@ import { MergePreview } from '../components/MergePreview';
 import type { ResolutionChoices, ResolutionPreview } from '../../sync/merge';
 import { BackupPanel } from '../components/BackupPanel';
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useSync } from '../../app/SyncProvider';
 import { serializeBackup } from '../../backup/serialize';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -16,6 +17,7 @@ export function downloadLibrary(data: LibraryExport, suffix: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 export function DataPage() {
+  const location = useLocation();
   const { coordinator, state, available, local, initializing } = useSync();
   const controls = useGlobalSyncControls();
   const [confirm, setConfirm] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
@@ -23,6 +25,19 @@ export function DataPage() {
   const [preparingMerge, setPreparingMerge] = useState(false);
   const [mergeError, setMergeError] = useState(''); const [mergeNotice, setMergeNotice] = useState('');
   const mergeRef = useRef<ResolutionPreview | null>(null); const mergeEpoch = useRef(0); const mergeButton = useRef<HTMLButtonElement>(null); const pageHeading = useRef<HTMLHeadingElement>(null);
+  const content = useRef<HTMLElement>(null); const conflictHeading = useRef<HTMLHeadingElement>(null); const driveHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (location.state?.focus !== 'sync-conflict') return;
+    let active = true;
+    // Run after the shell's route focus, including repeated clicks on this route.
+    queueMicrotask(() => {
+      if (!active || document.querySelector('[aria-modal="true"]')) return;
+      const target = content.current?.querySelector<HTMLElement>('#merge-title') ?? conflictHeading.current ?? driveHeading.current;
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
+    return () => { active = false; };
+  }, [location.key, location.state?.focus]);
   useEffect(() => () => { mergeEpoch.current++; if (mergeRef.current) coordinator?.cancelResolution(mergeRef.current.id); }, [coordinator]);
   const [preferences, setPreferences] = useState<{ experiments: boolean; telemetry: boolean } | null>(null);
   useEffect(() => { document.title = 'Seus dados · Livro a Livro'; }, []);
@@ -75,12 +90,12 @@ export function DataPage() {
     } catch { if (epoch === mergeEpoch.current) setMergeError('Não foi possível concluir esta prévia. Confira os limites de livros e capas; se a biblioteca ou conexão mudou, cancele e prepare uma nova prévia. Consulte o estado da sincronização antes de tentar novamente.'); }
     finally { if (epoch === mergeEpoch.current) setBusy(false); }
   }
-  return <section className="page-content"><p className="eyebrow">Sua história em livros</p><h1 ref={pageHeading} tabIndex={-1}>Seus dados</h1>
+  return <section ref={content} className="page-content"><p className="eyebrow">Sua história em livros</p><h1 ref={pageHeading} tabIndex={-1}>Seus dados</h1>
     {local && <p className="notice-panel" role="status">Modo local de teste: Google e Drive são simulados neste computador. Use somente dados descartáveis.</p>}
     <p className="page-description">Sua biblioteca pertence a você.</p>
     <p>Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador pode remover sua estante. Instalar o aplicativo não cria backup.</p>
     <BackupPanel />
-    <h2>Google Drive opcional</h2>
+    <h2 ref={driveHeading} className="sync-resolution-heading" tabIndex={-1}>Google Drive opcional</h2>
     {state.login?.status === 'signed-in' && <p>Você entrou com Google. O login, sozinho, não envia sua biblioteca.</p>}
     {state.login?.status === 'unavailable' && <p>Não foi possível verificar o login. Sua biblioteca continua disponível. <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>Verificar conexão</button></p>}
     {state.logoutUnconfirmed && <p role="alert">A saída não foi confirmada pelo serviço. Os envios estão pausados neste dispositivo. Tente sair novamente quando houver conexão.</p>}
@@ -109,7 +124,7 @@ export function DataPage() {
           <button className="button button-secondary" disabled={busy} onClick={() => void act(async () => { const copy = await coordinator!.recoveryCopy(); if (copy) downloadLibrary(copy.library, 'recuperacao'); else setError('Ainda não há uma cópia anterior preservada neste dispositivo.'); })}>Baixar cópia anterior preservada</button>
         </>}
       </div>
-      {state.status === 'conflict' && !merge && <div className="notice-panel"><h3>Escolher uma versão</h3>
+      {state.status === 'conflict' && !merge && <div className="notice-panel"><h3 ref={conflictHeading} className="sync-resolution-heading" tabIndex={-1}>Escolher uma versão</h3>
         {state.accountChanged && <p>A conta ou autorização mudou. Os envios anteriores foram suspensos. Escolha explicitamente qual biblioteca usar nesta conexão.</p>}
         <p>Neste dispositivo: {state.localCount} livros. Nenhuma união automática será feita. A versão escolhida será copiada para o Drive e compartilhada com seus dispositivos conectados.</p>
         <button ref={mergeButton} className="button button-primary" disabled={busy || !!merge || controls.blocked} onClick={() => void prepareMergePreview()}>Juntar bibliotecas</button>

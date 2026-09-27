@@ -65,6 +65,7 @@ protocolo de sincronização e experimentos exigem revisão de arquitetura SOL.
   explícito abre o consentimento Google. Oferecer Agora não.
 - Erros e conflitos ficam visíveis globalmente, com acesso à resolução e
   possibilidade de decidir depois. Adiar não altera a biblioteca.
+- “Conferir versões” e o estado de conflito no cabeçalho levam o foco e a rolagem diretamente às escolhas, inclusive em cliques repetidos dentro de Seus dados. Uma prévia já aberta conserva suas escolhas; a navegação apenas a revela, sem confirmar ou refazer a união.
 - Coordenar os convites de privacidade, Drive, instalação e conflito: apenas
   um diálogo ativo, sem interromper rascunhos ou operações de backup.
 - Login, Drive, experimentos e diagnóstico são decisões distintas. Recusar
