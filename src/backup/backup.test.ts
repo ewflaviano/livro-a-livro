@@ -6,7 +6,7 @@ import fixture from '../../test/fixtures/backups/v1.json';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
 import { LIBRARY_LIMITS } from '../domain/library';
-import { createBook } from '../domain/book';
+import { createBook, parseBook } from '../domain/book';
 import type { LibraryRepository } from '../ports/library-repository';
 import { createBackupService } from '../services/backup-service';
 import { parseBackupText, serializeBackup } from './serialize';
@@ -27,7 +27,7 @@ afterEach(async () => { vi.unstubAllGlobals(); for (const { repo, media, name } 
 describe('portable V1 backup', () => {
   it.each(['image/png', 'image/jpeg', 'image/webp'] as const)('prepares real synthetic %s bytes before confirmation', async mime => {
     const { service, media } = await setup();
-    const incoming = { ...fixture, coverMedia: [encodedCover(mime)] };
+    const incoming = { ...fixture, books: [{ ...fixture.books[0], cover: { provider: 'local', mediaId: coverId } }], coverMedia: [encodedCover(mime)] };
     const preview = await service.prepareImport(file(JSON.stringify(incoming)));
     expect(await media.all()).toEqual([]);
     await service.confirmImport(preview);
@@ -41,7 +41,7 @@ describe('portable V1 backup', () => {
     ['false image', { bytes: btoa('not an image') }],
   ])('rejects %s before preview and preserves media', async (_, patch) => {
     const { repo, media, service } = await setup();
-    await media.put(syntheticCover());
+    await repo.commit({ kind: 'put', book: parseBook({ ...fixture.books[0], cover: { provider: 'local', mediaId: coverId } }), coverMedia: syntheticCover() }, await repo.readRevision());
     const before = await repo.readBackupSnapshot();
     await expect(service.prepareImport(file(JSON.stringify({ ...fixture, coverMedia: [{ ...encodedCover(), ...patch }] }))))
       .rejects.toMatchObject({ code: 'InvalidBackup' });
@@ -69,9 +69,8 @@ describe('portable V1 backup', () => {
 
   it('round-trips local cover bytes separately from the book record', async () => {
     const a = await setup(); const id = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
-    await a.media.put(syntheticCover());
     const book = createBook({ title: 'Com capa', cover: { provider: 'local', mediaId: id } }, { id: crypto.randomUUID(), now: fixture.exportedAt, shelfYear: 2026 });
-    await a.repo.commit({ kind: 'put', book }, await a.repo.readRevision());
+    await a.repo.commit({ kind: 'put', book, coverMedia: syntheticCover() }, await a.repo.readRevision());
     const exported = await a.service.exportBackup(fixture.exportedAt);
     const b = await setup(); await b.service.confirmImport(await b.service.prepareImport(file(exported.text)));
     expect((await b.repo.readAll()).books[0].cover).toEqual({ provider: 'local', mediaId: id });
@@ -164,7 +163,7 @@ describe('portable V1 backup', () => {
 
   it('refuses stale replacement and leaves concurrent books and preferences intact', async () => {
     const { repo, media, service } = await setup();
-    await media.put(syntheticCover());
+    await repo.commit({ kind: 'put', book: parseBook({ ...fixture.books[0], cover: { provider: 'local', mediaId: coverId } }), coverMedia: syntheticCover() }, await repo.readRevision());
     const preview = await service.prepareImport(file());
     const book = createBook({ title: 'Outro sintético' }, { id: crypto.randomUUID(), now: fixture.exportedAt, shelfYear: 2026 });
     await repo.commit({ kind: 'put', book }, await repo.readRevision());

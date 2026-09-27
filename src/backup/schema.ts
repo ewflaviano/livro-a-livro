@@ -1,3 +1,4 @@
+import { COVER_LIMITS } from '../media/cover';
 import { z } from 'zod';
 import { instantSchema, readingStatusSchema, shelfYearSchema } from '../domain/book';
 import { DomainError, parseDomain } from '../domain/errors';
@@ -11,7 +12,7 @@ const envelopeSchema = z.strictObject({
   format: z.literal('livro-a-livro'), schemaVersion: z.literal(1), exportedAt: instantSchema,
   books: z.array(z.unknown()), preferences: portablePreferencesSchema,
   coverMedia: z.array(z.strictObject({ id: z.uuid(), mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']), bytes: z.string().min(1),
-    width: z.number().int().positive().max(2400), height: z.number().int().positive().max(3600), createdAt: instantSchema })).max(100),
+    width: z.number().int().positive().max(COVER_LIMITS.width), height: z.number().int().positive().max(COVER_LIMITS.height), createdAt: instantSchema })).max(COVER_LIMITS.count),
 });
 export type LibraryExport = Omit<z.infer<typeof envelopeSchema>, 'books'> & {
   books: ReturnType<typeof parseLibrary>;

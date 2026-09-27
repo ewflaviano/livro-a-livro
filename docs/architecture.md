@@ -6,7 +6,7 @@ O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com bibliotec
 
 Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
 
-**Lacunas atuais:** Configurações é placeholder; o backup independente não tem interface; capas Open Library não são renderizadas na biblioteca; experimentos/métricas não têm consumidores runtime. A issue #37 corrige atomicidade e validação da restauração com mídias (S1/S4); os limites de gravação e portabilidade (S2) continuam pendentes.
+**Lacunas atuais:** Configurações é placeholder; o backup independente não tem interface; capas Open Library não são renderizadas na biblioteca; experimentos/métricas não têm consumidores runtime. A issue #37 corrige atomicidade e validação da restauração com mídias (S1/S4); a issue #39 unifica limites de gravação, exportação e importação (S2).
 
 A orientação vigente inclui Drive opcional e experimentos desde a arquitetura inicial, sem tornar conta ou conexão requisitos do fluxo local. Ela substitui a exclusão histórica de Drive do roteiro visual. O [design system](design-system.md) e o [catálogo](design-system.html) continuam referências visuais, não inventário funcional.
 
@@ -273,7 +273,7 @@ Porta mínima:
 type LocalRevision = { generation: string; revision: number };
 type Snapshot = { books: Book[]; version: LocalRevision };
 type LibraryChange =
-  | { kind: 'put'; book: Book }
+  | { kind: 'put'; book: Book; coverMedia?: CoverMedia }
   | { kind: 'delete'; id: string }
   | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences; coverMedia?: CoverMedia[] };
 
@@ -390,7 +390,7 @@ O store reservado `searchCache` guarda somente páginas normalizadas e os prazos
 
 Na revisão, somente após selecionar um resultado, a capa é carregada por URL construída a partir de `coverId` validado, com CORS anônimo, sem referrer e fallback local. Os resultados não carregam imagens. Esta fatia preserva a referência de capa no livro; a estante e o detalhe ainda usam fallback tipográfico. Cache raster validado e reutilização de capas em estante/compartilhamento pertencem à integração seguinte. A busca não instala service worker nem proxy. As diretrizes e endpoints oficiais abaixo foram conferidos antes da implementação; nenhum teste automatizado acessa o serviço público.
 
-**Capas locais adicionadas na issue #21:** o domínio aceita `provider: 'local'`, os bytes ficam em `coverMedia` e o detalhe mostra a imagem enviada. A estante ainda usa fallback. Backup e sincronização carregam mídias; a issue #37 corrige a substituição atômica e a validação prévia. A divergência de limites na gravação/exportação (S2) permanece pendente. Capas não passam pela API/AWS.
+**Capas locais adicionadas na issue #21:** o domínio aceita `provider: 'local'`, os bytes ficam em `coverMedia` e o detalhe mostra a imagem enviada. A estante ainda usa fallback. Backup e sincronização carregam mídias; a issue #37 corrige a substituição atômica e a validação prévia. A issue #39 unifica limites e coleta de órfãs na transação de escrita. Capas não passam pela API/AWS.
 
 O provedor publica limites de **1 requisição/s sem identificação e 3/s com identificação**, pede cache e uso humano de baixo volume, e não se propõe a servir como backend de alto tráfego. Não distribuir tráfego deliberadamente por IPs para contornar limites. Revalidar essas regras antes do lançamento e de cada expansão relevante. [Diretrizes oficiais](https://openlibrary.org/developers/api).
 
@@ -781,4 +781,16 @@ Mudança de semântica de ano, estatística, conteúdo exportado, origem de capa
 
 Antes de produzir a prévia local ou aceitar um snapshot Drive, `prepareBackupMedia` verifica IDs únicos sem distinção de maiúsculas, referências locais existentes, base64 canônico, limites de 2 MiB por capa e 12 MiB agregados, assinatura PNG/JPEG/WebP, decode nativo e dimensões reais correspondentes à declaração (máximos 2400 × 3600). O envelope limita 100 mídias e 50 MiB de JSON. Erros de mídia são `InvalidBackup`; excesso de bytes é `ImportTooLarge`. Arquivos V1 sem mídias continuam válidos quando não referenciam capas locais.
 
-A confirmação usa blobs preparados, sem decode ou outro await externo dentro da transação. O commit revalida a estrutura/limites e referências antes de abrir a transação; quota, aborto ou revisão vencida preservam os cinco stores. Aplicação automática de descendente remoto e resolução explícita usam esse mesmo commit. Testes com imagens sintéticas reais cobrem os três formatos, referência ausente, IDs duplicados, corrupção, tamanho, conflito e rollback após escritas parciais. Limites de gravação individual, coleta de órfãs e garantia de round-trip do maior estado aceito pertencem à etapa S2.
+A confirmação usa blobs preparados, sem decode ou outro await externo dentro da transação. O commit revalida a estrutura/limites e referências antes de abrir a transação; quota, aborto ou revisão vencida preservam os cinco stores. Aplicação automática de descendente remoto e resolução explícita usam esse mesmo commit. Testes com imagens sintéticas reais cobrem os três formatos, referência ausente, IDs duplicados, corrupção, tamanho, conflito e rollback após escritas parciais. Limites de gravação individual, coleta de órfãs e round-trip do maior estado aceito foram implementados na issue #39, abaixo.
+
+### Portabilidade e gravação de capas — issue #39
+
+`COVER_LIMITS` concentra 100 mídias, 2 MiB individuais e 12 MiB agregados. O orçamento compartilhado soma o JSON dos livros, metadados das mídias, comprimento base64 exato (`4 × ceil(bytes / 3)`) e reserva conservadora de 1 KiB para envelope, preferências e newline; essa soma deve caber em 50 MiB. A exportação normaliza seu timestamp para ISO com milissegundos. A reserva significa que o conteúdo útil máximo é ligeiramente menor que 50 MiB. A mesma verificação vale para escrita, importação, exportação local e snapshot Drive.
+
+`LibraryChange.put` recebe opcionalmente uma `CoverMedia` já preparada, vinculada ao `mediaId` do livro. Novo ID de mídia não pode substituir bytes já existentes; trocar a capa usa novo ID. O commit verifica revisão, grava livro/capa, valida referências e orçamento finais, coleta órfãs e grava revisão/outbox numa única transação. Referências compartilhadas, inclusive com UUID em maiúsculas, preservam a mídia. Não existe mais `put` público isolado de mídia. A interface chama o serviço; seleção, duplicata, cancelamento, decode ou conflito não gravam blobs.
+
+`prepareCover` valida a assinatura real e o decode da imagem. Seleção em preparação bloqueia salvar e marca rascunho; resultados de seleções antigas são ignorados. Alterar apenas a capa também protege navegação/atualização e pede confirmação ao cancelar. `readCover` na porta/serviço elimina o acesso da UI ao adaptador IndexedDB.
+
+`readBackupSnapshot` conserva a leitura única e devolve somente mídias referenciadas, ordenadas por ID sem distinção de caixa; leitura/exportação não apagam órfãs. O JSON serializado também mantém essa ordem estável. Coleta ocorre somente numa escrita autorizada. Estados legados acima dos limites continuam legíveis e não são apagados na abertura: não se promete que estados antigos inválidos sejam exportáveis. Novas escritas precisam resultar num estado portátil; um legado ainda excessivo pode exigir substituição explícita por backup válido, sem migração silenciosa.
+
+Testes sintéticos cobrem limites exatos e +1, 100 capas/12 MiB/orçamento de 50 MiB no mesmo round-trip, edição/exclusão repetidas, referências compartilhadas, órfãs legadas, snapshot concorrente, duplicata, conflito, quota, cancelamento e seleção fora de ordem. Nenhuma biblioteca pessoal participa das fixtures.

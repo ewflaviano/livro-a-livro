@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
+import { openDB } from 'idb';
+import { encodedCover } from '../../../test/fixtures/covers/helpers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -16,17 +18,63 @@ const synthetic = (patch: Partial<Book> = {}) => createBook({ title: 'Livro de t
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); vi.spyOn(window, 'scrollTo').mockImplementation(() => {}); });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function setup(books: Book[] = [], route = '/adicionar') {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+  const name = crypto.randomUUID();
+  const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
   render(<MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter>);
   if (route === '/adicionar') await userEvent.click(await screen.findByRole('button', { name: 'Adicionar manualmente' }));
-  return { repository, service };
+  return { repository, service, name };
 }
 const titleField = () => screen.getByRole('textbox', { name: 'Título (obrigatório)' });
 
+const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
+  const bytes = Uint8Array.from(atob(encodedCover(mime).bytes), char => char.charCodeAt(0));
+  const file = new File([bytes], mime === 'image/png' ? 'synthetic.png' : 'synthetic.jpg', { type: mime });
+  // jsdom File does not implement this browser API.
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer });
+  return file;
+};
+
 describe('manual books and private detail', () => {
+  it('treats a cover-only edit as dirty and cancellation never persists its bytes', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 32, height: 48, close() {} })));
+    const original = synthetic(); const { repository, name } = await setup([original], `/livro/${original.id}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
+    await userEvent.upload(screen.getByLabelText(/^Capa \(opcional\)/), coverFile());
+    await screen.findByText(/Capa pronta para salvar/);
+    expect(screen.getByText('Alterações não salvas')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Descartar alterações' }));
+    expect((await repository.readBackupSnapshot()).coverMedia).toEqual([]);
+    expect((await repository.readBook(original.id)).book).toEqual(original);
+    const db = await openDB(name); expect(await db.count('coverMedia')).toBe(0); db.close();
+  });
+
+  it('blocks save during decode and retains the last selected cover if decodes complete out of order', async () => {
+    const decodes: ((image: { width: number; height: number; close(): void }) => void)[] = [];
+    const decoder = vi.fn(() => new Promise(resolve => { decodes.push(resolve); }));
+    vi.stubGlobal('createImageBitmap', decoder);
+    const { repository, service } = await setup();
+    // Browser Blob cloning is covered by repository tests; jsdom cannot clone File bytes.
+    const save = vi.spyOn(service.books, 'save').mockResolvedValue({ kind: 'duplicate', count: 1 });
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Título (obrigatório)' }), 'Capa selecionada');
+    await userEvent.upload(screen.getByLabelText(/^Capa \(opcional\)/), coverFile());
+    await vi.waitFor(() => expect(decoder).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole('button', { name: 'Salvar livro' }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.upload(screen.getByLabelText(/^Capa \(opcional\)/), coverFile('image/jpeg'));
+    await vi.waitFor(() => expect(decoder).toHaveBeenCalledTimes(2));
+    await act(async () => { decodes[1]({ width: 32, height: 48, close() {} }); });
+    await screen.findByText(/Capa pronta para salvar/);
+    await act(async () => { decodes[0]({ width: 32, height: 48, close() {} }); });
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
+    await screen.findByRole('button', { name: 'Salvar mesmo assim' });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ coverMedia: expect.objectContaining({ mimeType: 'image/jpeg' }) }));
+    expect((await repository.readBackupSnapshot()).coverMedia).toEqual([]);
+  });
+
   it('adds quickly with only a title and shows the committed local detail', async () => {
     const { repository } = await setup();
     await screen.findByRole('textbox', { name: 'Título (obrigatório)' });

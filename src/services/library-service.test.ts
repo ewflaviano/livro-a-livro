@@ -1,3 +1,4 @@
+import { syntheticCover } from '../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
@@ -15,6 +16,34 @@ async function setup() {
   return { repository, service };
 }
 describe('library editing service', () => {
+  it('keeps prepared bytes in the draft through duplicates and stale failures, then saves atomically', async () => {
+    const { repository, service } = await setup();
+    const draft = { title: 'Duplicado' };
+    await service.save({ draft, year: 2026, expected: await service.readRevision() });
+    const media = syntheticCover(); const withCover = { ...draft, cover: { provider: 'local' as const, mediaId: media.id } };
+    const expected = await service.readRevision();
+    expect(await service.save({ draft: withCover, coverMedia: media, year: 2026, expected })).toMatchObject({ kind: 'duplicate' });
+    expect(await repository.readCover(media.id)).toBeNull();
+    await service.save({ draft: { title: 'Outra aba' }, year: 2026, expected });
+    await expect(service.save({ draft: withCover, coverMedia: media, year: 2026, expected, allowDuplicate: true })).rejects.toMatchObject({ code: 'StaleRevision' });
+    expect(await repository.readCover(media.id)).toBeNull();
+    const saved = await service.save({ draft: withCover, coverMedia: media, year: 2026, expected: await service.readRevision(), allowDuplicate: true });
+    expect(saved.kind).toBe('saved');
+    expect(await (await repository.readCover(media.id))!.bytes.arrayBuffer()).toEqual(await media.bytes.arrayBuffer());
+  });
+
+  it('rolls back a new book and its cover after a late quota failure', async () => {
+    const { repository, service } = await setup(); const media = syntheticCover();
+    const put = IDBObjectStore.prototype.put;
+    const failing = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, ...args) {
+      if (this.name === 'syncOutbox') throw new DOMException('synthetic', 'QuotaExceededError');
+      return put.apply(this, args);
+    });
+    await expect(service.save({ draft: { title: 'Capa', cover: { provider: 'local', mediaId: media.id } }, coverMedia: media, year: 2026, expected: await service.readRevision() })).rejects.toMatchObject({ code: 'QuotaExceeded' });
+    failing.mockRestore();
+    expect((await repository.readAll()).books).toEqual([]); expect(await repository.readCover(media.id)).toBeNull();
+  });
+
   it('saves locally with defaults and preserves identity, creation, source and literal note on edit', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     const { repository, service } = await setup();

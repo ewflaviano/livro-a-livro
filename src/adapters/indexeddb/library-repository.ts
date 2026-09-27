@@ -1,4 +1,4 @@
-import { validateMediaCollection } from '../../backup/media';
+import { assertPortableBudget, referencedMedia, validateMediaCollection } from '../../backup/media';
 import { coverMediaSchema } from '../../media/cover';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import { z } from 'zod';
@@ -24,7 +24,12 @@ const keyOf = (id: string) => parseDomain(z.uuid(), id).toLowerCase();
 
 function prepare(change: LibraryChange): LibraryChange {
   switch (change.kind) {
-    case 'put': return { kind: 'put', book: parseBook(change.book) };
+    case 'put': {
+      const book = parseBook(change.book);
+      const media = change.coverMedia === undefined ? undefined : parseDomain(coverMediaSchema, change.coverMedia, 'InvalidBook');
+      if (media && (book.cover?.provider !== 'local' || book.cover.mediaId.toLowerCase() !== media.id.toLowerCase())) throw new DomainError('InvalidBook');
+      return { kind: 'put', book, coverMedia: media };
+    }
     case 'delete': return { kind: 'delete', id: keyOf(change.id) };
     case 'replace': return { kind: 'replace', books: parseLibrary(change.books),
       coverMedia: validateMediaCollection(change.books, change.coverMedia ?? []),
@@ -83,7 +88,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       if (meta.bookCount !== books.length || meta.serializedBytes !== bytes(books)) throw new DomainError('InvalidLibrary');
       const { shelfYear, mode, filter } = parseDomain(preferencesSchema, rawPreferences, 'InvalidLibrary');
       return { books, version: versionOf(meta), preferences: { shelfYear, mode, filter },
-        coverMedia: media.map(value => parseDomain(coverMediaSchema, value, 'InvalidLibrary')) };
+        coverMedia: referencedMedia(books, media.map(value => parseDomain(coverMediaSchema, value, 'InvalidLibrary'))) };
     }),
     readAll: () => transaction(['books', 'meta'], 'readonly', async (tx) => {
       const [values, rawMeta, keys] = await Promise.all([
@@ -115,6 +120,10 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
         return { book: book === undefined ? null : parseBook(book), version: versionOf(parseMetadata(meta)) };
       });
     },
+    readCover: (id) => transaction(['coverMedia'], 'readonly', async tx => {
+      const value = await tx.objectStore('coverMedia').get(keyOf(id));
+      return value === undefined ? null : parseDomain(coverMediaSchema, value, 'InvalidLibrary');
+    }),
     readRevision: () => transaction(['meta'], 'readonly', async (tx) =>
       versionOf(parseMetadata(await tx.objectStore('meta').get('library')))),
     commit: async (change, expected) => {
@@ -154,9 +163,25 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
             serializedBytes + LIBRARY_LIMITS.exportEnvelopeBytes > LIBRARY_LIMITS.jsonBytes) {
             throw new DomainError('ImportTooLarge');
           }
-          if (prepared.kind === 'put') await books.put(prepared.book, key);
+          if (prepared.kind === 'put') {
+            if (prepared.coverMedia) {
+              const media = tx.objectStore('coverMedia');
+              if (await media.get(prepared.coverMedia.id.toLowerCase())) throw new DomainError('InvalidBook');
+              await media.add(prepared.coverMedia, prepared.coverMedia.id.toLowerCase());
+            }
+            await books.put(prepared.book, key);
+          }
           else await books.delete(key);
         }
+        // Validate the final state and collect only unreferenced bytes in this authorized write.
+        const finalBooks = await books.getAll();
+        const mediaStore = tx.objectStore('coverMedia');
+        const storedMedia = (await mediaStore.getAll()).map(value => parseDomain(coverMediaSchema, value, 'InvalidLibrary'));
+        const retained = validateMediaCollection(finalBooks, referencedMedia(finalBooks, storedMedia));
+        assertPortableBudget(serializedBytes, retained);
+        const retainedIds = new Set(retained.map(value => value.id.toLowerCase()));
+        await Promise.all(storedMedia.filter(value => !retainedIds.has(value.id.toLowerCase()))
+          .map(value => mediaStore.delete(value.id.toLowerCase())));
         const next: LibraryMetadata = {
           ...meta, generation: generation ?? meta.generation, revision: meta.revision + 1,
           bookCount, serializedBytes,

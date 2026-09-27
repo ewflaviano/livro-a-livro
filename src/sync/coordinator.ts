@@ -1,4 +1,5 @@
-import { prepareBackupMedia } from '../backup/media';
+import { utf8ByteLength } from '../domain/library';
+import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
 import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncRecord, type SyncSnapshot, type SyncView } from './contracts';
@@ -23,6 +24,8 @@ export function createSyncCoordinator(options: Options) {
   const guard = async () => { if (closed || controller?.signal.aborted || !(await store.read()).enabled) throw new SyncError('cancelled'); await store.assertLease(owner); };
   async function library(): Promise<{ library: LibraryExport; version: LocalRevision }> {
     const snapshot = await repository.readBackupSnapshot();
+    validateMediaCollection(snapshot.books, snapshot.coverMedia);
+    assertPortableBudget(utf8ByteLength(JSON.stringify(snapshot.books)), snapshot.coverMedia);
     return { version: snapshot.version, library: { format: 'livro-a-livro', schemaVersion: 1, exportedAt: new Date().toISOString(),
       books: snapshot.books, preferences: snapshot.preferences, coverMedia: await Promise.all(snapshot.coverMedia.map(encodeCover)) } };
   }

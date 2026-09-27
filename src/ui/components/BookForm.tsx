@@ -6,7 +6,6 @@ import type { LibraryService } from '../../services/library-service';
 import { ConfirmDialog } from './ConfirmDialog';
 import { blockPwaUpdate } from '../../pwa/register';
 import { prepareCover, type CoverMedia } from '../../media/cover';
-import { openCoverMediaRepository } from '../../adapters/indexeddb/cover-media';
 
 const messages: Record<string, string> = {
   title: 'Informe um título com até 500 caracteres.',
@@ -51,8 +50,11 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const [dialog, setDialog] = useState<'cancel' | 'reload' | null>(null);
   const [conflict, setConflict] = useState(false);
   const [localCover, setLocalCover] = useState<CoverMedia | null>(null);
+  const [coverPreparing, setCoverPreparing] = useState(false);
+  const coverSelection = useRef(0);
+  useEffect(() => () => { coverSelection.current++; }, []);
   const form = useRef<HTMLFormElement>(null);
-  const dirty = JSON.stringify(initial) !== JSON.stringify(draft);
+  const dirty = coverPreparing || localCover !== null || JSON.stringify(initial) !== JSON.stringify(draft);
   useEffect(() => { if (dirty || busy) return blockPwaUpdate(); }, [dirty, busy]);
   useEffect(() => { form.current?.querySelector('input')?.focus(); }, []);
   useEffect(() => {
@@ -82,7 +84,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
     setDuplicates(0); setInvalid([]); setError('');
   };
   async function save(allowDuplicate = false) {
-    if (saving.current) return;
+    if (saving.current || coverPreparing) return;
     saving.current = true; setBusy(true); setError(''); setInvalid([]);
     const numberOrNull = (value: string) => value === '' ? null : Number(value);
     const input: NewBook = { title: draft.title, authors: draft.authors.split('\n').filter((author) => author.trim().length > 0),
@@ -93,11 +95,9 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       ...(initialDraft ? { cover: initialDraft.cover, source: initialDraft.source } : book ? { cover: book.cover, source: book.source } : {}) };
     try {
       if (localCover) {
-        const media = await openCoverMediaRepository();
-        try { await media.put(localCover); } finally { media.close(); }
         input.cover = { provider: 'local', mediaId: localCover.id };
       }
-      const result = await service.save({ draft: input, id: book?.id, year, expected: version, allowDuplicate });
+      const result = await service.save({ draft: input, id: book?.id, year, expected: version, allowDuplicate, coverMedia: localCover ?? undefined });
       if (result.kind === 'duplicate') setDuplicates(result.count);
       else onSaved(result.book, result.version);
     } catch (failure) {
@@ -115,15 +115,22 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
     <label className="form-field">{label}<input {...attributes(name)} type="number" min="1" max={name === 'pageCount' ? BOOK_LIMITS.pageCount : 9999}
       step="1" required={required} value={draft[name]} onChange={(event) => change(name, event.target.value)} />{fieldError(name)}</label>;
   return <>
-    <form className="book-form" ref={form} noValidate onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }} aria-busy={busy}>
-      <p className="local-note" role="status">{busy ? 'Salvando…' : dirty ? 'Alterações não salvas' : book ? 'Salvo neste dispositivo' : 'Somente o título é obrigatório; estado e ano já estão preenchidos.'}</p>
+    <form className="book-form" ref={form} noValidate onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }} aria-busy={busy || coverPreparing}>
+      <p className="local-note" role="status">{coverPreparing ? 'Preparando capa…' : busy ? 'Salvando…' : dirty ? 'Alterações não salvas' : book ? 'Salvo neste dispositivo' : 'Somente o título é obrigatório; estado e ano já estão preenchidos.'}</p>
       <fieldset disabled={busy}>
         <legend className="visually-hidden">Registro do livro</legend>
         <label className="form-field">Título (obrigatório)<input {...attributes('title')} required maxLength={BOOK_LIMITS.title} value={draft.title} onChange={(event) => change('title', event.target.value)} />{fieldError('title')}</label>
         <label className="form-field">Autores (opcional, um por linha)<textarea {...attributes('authors')} rows={2} value={draft.authors} onChange={(event) => change('authors', event.target.value)} />{fieldError('authors')}</label>
         <label className="form-field">Capa (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
-          const file = event.currentTarget.files?.[0]; if (!file) return;
-          void prepareCover(file, new Date().toISOString()).then(setLocalCover).catch(() => { setError('Use uma imagem JPEG, PNG ou WebP de até 2 MB e 2400 × 3600 pixels.'); event.currentTarget.value = ''; });
+          const element = event.currentTarget; const file = element.files?.[0]; if (!file) return;
+          const selected = ++coverSelection.current; setCoverPreparing(true); setError('');
+          void prepareCover(file, new Date().toISOString()).then(value => {
+            if (selected !== coverSelection.current) return;
+            setLocalCover(value); setDuplicates(0);
+          }).catch(() => {
+            if (selected !== coverSelection.current) return;
+            setError('Use uma imagem JPEG, PNG ou WebP de até 2 MB e 2400 × 3600 pixels.'); element.value = '';
+          }).finally(() => { if (selected === coverSelection.current) setCoverPreparing(false); });
         }} /><span className="field-help">A imagem fica neste dispositivo. Ao sincronizar, vai diretamente ao seu Google Drive.</span>{localCover && <span className="field-help">Capa pronta para salvar: {localCover.width} × {localCover.height} pixels.</span>}</label>
         <div className="form-columns">
           <label className="form-field">Estado<select name="status" value={draft.status} onChange={(event) => change('status', event.target.value)}>
@@ -152,8 +159,8 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       {error && <p className="form-error" role="alert">{error}</p>}
       {conflict && <button type="button" className="button button-secondary" disabled={busy} onClick={() => setDialog('reload')}>Recarregar versão salva</button>}
       {duplicates > 0 && <div className="notice-panel" role="status"><p>Já existe um registro parecido nesta estante. Pode ser uma releitura; você pode revisar ou salvar mesmo assim.</p>
-        <button type="button" className="button button-secondary" disabled={busy} onClick={() => void save(true)}>Salvar mesmo assim</button></div>}
-      <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : book ? 'Salvar alterações' : 'Salvar livro'}</button>
+        <button type="button" className="button button-secondary" disabled={busy || coverPreparing} onClick={() => void save(true)}>Salvar mesmo assim</button></div>}
+      <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || coverPreparing}>{busy ? 'Salvando…' : book ? 'Salvar alterações' : 'Salvar livro'}</button>
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => dirty ? setDialog('cancel') : onCancel()}>Cancelar</button></div>
     </form>
     {dialog && <ConfirmDialog title={dialog === 'reload' ? 'Recarregar a versão salva?' : 'Descartar as alterações?'}

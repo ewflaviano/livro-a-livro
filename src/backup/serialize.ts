@@ -15,6 +15,7 @@ export function serializeBackup(input: LibraryExport): string {
   const data = parseExportV1(input);
   // Schema parsing constructs fields in their declared order, including nested records.
   data.books.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  data.coverMedia.sort((a, b) => a.id.toLowerCase().localeCompare(b.id.toLowerCase()));
   const text = JSON.stringify(data) + '\n';
   if (utf8ByteLength(text) > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
   return text;

@@ -11,7 +11,6 @@ import { BookForm, storageMessage } from '../components/BookForm';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LibraryState } from '../components/LibraryState';
 import { blockPwaUpdate } from '../../pwa/register';
-import { openCoverMediaRepository } from '../../adapters/indexeddb/cover-media';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
@@ -84,14 +83,13 @@ function BookDetail({ id }: { id: string }) {
   }, [books, id, editing, removing, attempt, revision]);
   useEffect(() => {
     const cover = loaded?.book?.cover;
-    if (!cover || cover.provider !== 'local') { setLocalCoverUrl(null); return; }
+    if (!books || !cover || cover.provider !== 'local') { setLocalCoverUrl(null); return; }
     let active = true; let url: string | null = null;
-    void openCoverMediaRepository().then(async media => {
-      try { const stored = await media.read(cover.mediaId); if (stored && active) { url = URL.createObjectURL(stored.bytes); setLocalCoverUrl(url); } }
-      finally { media.close(); }
+    void books.readCover(cover.mediaId).then(stored => {
+      if (stored && active) { url = URL.createObjectURL(stored.bytes); setLocalCoverUrl(url); }
     }).catch(() => { if (active) setLocalCoverUrl(null); });
     return () => { active = false; if (url) URL.revokeObjectURL(url); };
-  }, [loaded?.book?.cover]);
+  }, [books, loaded?.book?.cover]);
   const reload = () => { setEditing(false); setLoaded(null); setError(''); setSaved(false); setAttempt((value) => value + 1); };
   async function remove() {
     if (!books || !loaded || busy) return;

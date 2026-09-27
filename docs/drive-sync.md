@@ -8,7 +8,7 @@ Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VI
 
 O conector não substitui o backup independente: o download da tela Dados depende de sua disponibilidade/estado, e a interface de exportação/importação sem Drive ainda não foi ligada ao serviço. As capas externas não são desenhadas na estante/detalhe.
 
-A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebidos validam os bytes de imagem antes da prévia, e a aplicação remota automática ou escolhida no conflito substitui livros, mídias, preferências, revisão e outbox numa única transação condicional. Exportações leem esses dados em um snapshot readonly coerente. A divergência de limites de gravação/exportação/restauração (S2) ainda precisa ser corrigida antes de habilitar produção.
+A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebidos validam os bytes de imagem antes da prévia, e a aplicação remota automática ou escolhida no conflito substitui livros, mídias, preferências, revisão e outbox numa única transação condicional. Exportações leem esses dados em um snapshot readonly coerente. A issue #39 unifica o orçamento de gravação/exportação/restauração (S2), com base64 e envelope incluídos, e limita snapshots às mídias referenciadas. Estados legados excessivos permanecem legíveis, sem garantia retroativa de exportação.
 
 ## Persistência e recuperação
 
