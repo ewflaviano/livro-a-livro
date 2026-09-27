@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe('IndexedDB library repository', () => {
-  it('creates V1 stores, indexes and metadata once and retains identity on reopen', async () => {
+  it('creates stores, indexes and metadata once and retains identity on reopen', async () => {
     const name = newName();
     const repo = await open(name);
     const snapshot = await repo.readAll();
@@ -42,9 +42,9 @@ describe('IndexedDB library repository', () => {
     expect(snapshot.version).toEqual({ generation: expect.any(String), revision: 0 });
     expect(await repo.readPreferences()).toEqual(DEFAULT_PREFERENCES);
     const db = await openDB<LibraryDatabase>(name);
-    expect(db.version).toBe(1);
+    expect(db.version).toBe(2);
     expect([...db.objectStoreNames]).toEqual([
-      'books', 'experimentState', 'meta', 'preferences', 'searchCache', 'syncOutbox', 'syncState',
+      'books', 'coverMedia', 'experimentState', 'meta', 'preferences', 'searchCache', 'syncOutbox', 'syncState',
     ]);
     expect([...db.transaction('books').store.indexNames]).toEqual(['byShelfYear', 'byYearStatus']);
     expect([...db.transaction('searchCache').store.indexNames]).toEqual(['byAccess']);

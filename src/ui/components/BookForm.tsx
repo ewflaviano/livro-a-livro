@@ -5,6 +5,8 @@ import type { LocalRevision } from '../../ports/library-repository';
 import type { LibraryService } from '../../services/library-service';
 import { ConfirmDialog } from './ConfirmDialog';
 import { blockPwaUpdate } from '../../pwa/register';
+import { prepareCover, type CoverMedia } from '../../media/cover';
+import { openCoverMediaRepository } from '../../adapters/indexeddb/cover-media';
 
 const messages: Record<string, string> = {
   title: 'Informe um título com até 500 caracteres.',
@@ -48,6 +50,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const [duplicates, setDuplicates] = useState(0);
   const [dialog, setDialog] = useState<'cancel' | 'reload' | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [localCover, setLocalCover] = useState<CoverMedia | null>(null);
   const form = useRef<HTMLFormElement>(null);
   const dirty = JSON.stringify(initial) !== JSON.stringify(draft);
   useEffect(() => { if (dirty || busy) return blockPwaUpdate(); }, [dirty, busy]);
@@ -58,7 +61,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       const details = form.current?.querySelector('details');
       if (details) details.open = true;
     }
-    const first = form.current?.elements.namedItem(invalid[0]);
+    const first = form.current?.querySelector<HTMLElement>(`[name="${invalid[0]}"]`);
     if (first instanceof HTMLElement) first.focus();
   }, [invalid, busy]);
   useEffect(() => {
@@ -87,8 +90,13 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       isbn: draft.isbn || null, publicationYear: numberOrNull(draft.publicationYear),
       startedOn: draft.startedOn || null, finishedOn: draft.finishedOn || null,
       rating: numberOrNull(draft.rating) as Book['rating'], note: draft.note,
-      ...(initialDraft ? { cover: initialDraft.cover, source: initialDraft.source } : {}) };
+      ...(initialDraft ? { cover: initialDraft.cover, source: initialDraft.source } : book ? { cover: book.cover, source: book.source } : {}) };
     try {
+      if (localCover) {
+        const media = await openCoverMediaRepository();
+        try { await media.put(localCover); } finally { media.close(); }
+        input.cover = { provider: 'local', mediaId: localCover.id };
+      }
       const result = await service.save({ draft: input, id: book?.id, year, expected: version, allowDuplicate });
       if (result.kind === 'duplicate') setDuplicates(result.count);
       else onSaved(result.book, result.version);
@@ -113,6 +121,10 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
         <legend className="visually-hidden">Registro do livro</legend>
         <label className="form-field">Título (obrigatório)<input {...attributes('title')} required maxLength={BOOK_LIMITS.title} value={draft.title} onChange={(event) => change('title', event.target.value)} />{fieldError('title')}</label>
         <label className="form-field">Autores (opcional, um por linha)<textarea {...attributes('authors')} rows={2} value={draft.authors} onChange={(event) => change('authors', event.target.value)} />{fieldError('authors')}</label>
+        <label className="form-field">Capa (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+          const file = event.currentTarget.files?.[0]; if (!file) return;
+          void prepareCover(file, new Date().toISOString()).then(setLocalCover).catch(() => { setError('Use uma imagem JPEG, PNG ou WebP de até 2 MB e 2400 × 3600 pixels.'); event.currentTarget.value = ''; });
+        }} /><span className="field-help">A imagem fica neste dispositivo. Ao sincronizar, vai diretamente ao seu Google Drive.</span>{localCover && <span className="field-help">Capa pronta para salvar: {localCover.width} × {localCover.height} pixels.</span>}</label>
         <div className="form-columns">
           <label className="form-field">Estado<select name="status" value={draft.status} onChange={(event) => change('status', event.target.value)}>
             <option value="want-to-read">Quero ler</option><option value="reading">Lendo</option><option value="read">Lido</option>

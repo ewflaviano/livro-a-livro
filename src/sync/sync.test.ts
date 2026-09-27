@@ -14,7 +14,7 @@ import { localTransport } from './local-client';
 const binding: Binding = { connectionId: 'synthetic-connection', generation: 1 };
 const time = '2026-09-26T12:00:00.000Z';
 const book = (title = 'Livro sintético') => createBook({ title, status: 'read' }, { id: crypto.randomUUID(), now: time, shelfYear: 2026 });
-const data = (books: ReturnType<typeof book>[] = []): LibraryExport => ({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: time, books, preferences: { shelfYear: 2026, mode: 'grid', filter: 'all' } });
+const data = (books: ReturnType<typeof book>[] = []): LibraryExport => ({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: time, books, preferences: { shelfYear: 2026, mode: 'grid', filter: 'all' }, coverMedia: [] });
 async function snap(library: LibraryExport, parent: string | null = null, resolved: string[] = []): Promise<SyncSnapshot> {
   return { format: 'livro-a-livro-sync', protocolVersion: 1, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: parent, resolvedSnapshotIds: resolved, hash: await libraryHash(library), createdAt: time, library };
 }

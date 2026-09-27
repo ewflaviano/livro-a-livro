@@ -55,6 +55,7 @@ h2 { font-size: var(--text-h2); }
 .book-entry:hover { color: var(--color-text); }
 .book-entry:hover h2 { text-decoration: underline; text-underline-offset: .2em; }
 .book-cover { aspect-ratio: var(--cover-ratio); background: var(--color-cover-plum); color: var(--color-cover-text); border-radius: var(--radius-cover); box-shadow: var(--shadow-cover); padding: var(--space-4); display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-2); overflow: hidden; border-inline-start: 5px solid var(--color-cover-rule); }
+.book-cover-image { width: 100%; aspect-ratio: var(--cover-ratio); object-fit: contain; background: var(--color-surface-subtle); border-radius: var(--radius-cover); box-shadow: var(--shadow-cover); }
 .book-cover span { font-family: var(--font-editorial); line-height: var(--leading-heading); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .book-information { min-width: 0; }
 .book-information h2 { font: var(--weight-semibold) var(--text-body)/var(--leading-compact) var(--font-ui); letter-spacing: normal; margin: var(--space-3) 0 var(--space-1); }

@@ -66,10 +66,11 @@ const bookFields = z.strictObject({
   rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).nullable(),
   // Plain text, including literal angle brackets; consumers must never interpret HTML.
   note: z.string().max(BOOK_LIMITS.note),
-  cover: z.strictObject({
-    provider: z.literal('open_library'),
-    coverId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  }).nullable(),
+  cover: z.discriminatedUnion('provider', [
+    z.strictObject({ provider: z.literal('open_library'), coverId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
+    // The book deliberately stores no URL or image bytes. Local media lives in a separate store.
+    z.strictObject({ provider: z.literal('local'), mediaId: z.uuid() }),
+  ]).nullable(),
   source: z.strictObject({
     provider: z.literal('open_library'),
     workId: z.string().regex(/^OL[1-9]\d*W$/u).nullable(),

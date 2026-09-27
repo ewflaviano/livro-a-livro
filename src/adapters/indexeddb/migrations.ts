@@ -20,9 +20,13 @@ export function migrateDatabase(
     db.createObjectStore('syncOutbox');
     db.createObjectStore('experimentState');
     db.createObjectStore('searchCache').createIndex('byAccess', 'lastAccessedAt');
+    db.createObjectStore('coverMedia');
     // Requests remain part of the upgrade; failures abort the whole migration.
     void transaction.objectStore('meta').put({ generation, revision: 0,
       recordVersion: RECORD_VERSION, bookCount: 0, serializedBytes: 2 }, 'library').catch(() => {});
     void transaction.objectStore('preferences').put(DEFAULT_PREFERENCES, 'ui').catch(() => {});
   }
+  // Fresh installations create every store in the V1 block; upgrades from an
+  // already-created V1 database add only the media store.
+  if (oldVersion >= 1 && oldVersion < 2 && !db.objectStoreNames.contains('coverMedia')) db.createObjectStore('coverMedia');
 }
