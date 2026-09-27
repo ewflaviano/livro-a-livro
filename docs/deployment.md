@@ -36,7 +36,9 @@ Os assets com hash são publicados primeiro com cache imutável. Ícones e outro
 
 `infra/api-deploy.yml` provisiona o bucket privado de artefatos e a role `livro-a-livro-api-deploy`, em `sa-east-1`. `infra/api.yml` provisiona a composição de autorização: API Gateway HTTP no domínio `api.livroalivro.app.br`, duas funções Lambda (`auth` e `revocation`), tabela DynamoDB exclusiva, chave KMS, rotina por minuto e alarmes. O endpoint padrão execute-api é desabilitado. O serviço não tem bucket para biblioteca nem permissão para S3 nas roles de execução.
 
-A publicação da API e a ativação do Drive são passos distintos. A flag pública continua desligada até concluir o [gate real](drive-release-gate.md). A página `/privacidade.html` é estática, legível sem JavaScript e incluída no cache público offline.
+A publicação da API e a ativação do Drive são passos distintos. Em 27/09/2026, o responsável reiterou a entrega em produção e informou que testa manualmente, sem usuários no projeto. O workflow passa a usar `VITE_DRIVE_ENABLED=true` tanto na validação frontend quanto na publicação, conforme a [decisão de teste manual e suas pendências](drive-release-gate.md#liberação-para-teste-manual-do-responsável). A página `/privacidade.html` é estática, legível sem JavaScript e incluída no cache público offline.
+
+Para reverter essa liberação, definir a flag como `false` nos dois jobs e publicar novamente. Isso impede a composição do conector no novo aplicativo, mas não revoga permissões Google nem apaga dados, e não interrompe imediatamente abas antigas/offline. A revogação da conexão continua uma ação explícita separada.
 
 ### Configuração da API
 

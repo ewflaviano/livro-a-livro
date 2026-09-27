@@ -19,7 +19,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
 | PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
-| Google Drive | Cliente e API de produção implementados; autorização em duas etapas e gates reais de ativação na issue #13 |
+| Google Drive | Liberado no workflow público para teste manual do responsável, com login e autorização em duas etapas; gates entre perfis ainda pendentes na issue #13 |
 | Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 
 Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. Exportação e restauração locais estão disponíveis; a validação do ciclo completo de instalação/atualização PWA permanece um gate separado. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
@@ -49,7 +49,7 @@ O comando inicia app e simulador em loopback (`5173` e `8788`), exibe uma faixa 
 - `make local-reset`, com simulador parado, remove apenas seus arquivos descartáveis; não limpa o IndexedDB.
 - `make preview` compila e serve o build. Use para verificar o service worker; o servidor de desenvolvimento não reproduz o ciclo de PWA de produção.
 
-`VITE_LOCAL_MODE` só funciona em desenvolvimento. Não habilite `VITE_DRIVE_ENABLED` em produção antes de concluir os [gates da API](docs/auth-api.md) e a [entrega](docs/deployment.md). Variáveis `VITE_*` são públicas, nunca segredos.
+`VITE_LOCAL_MODE` só funciona em desenvolvimento. O workflow usa `VITE_DRIVE_ENABLED=true` para o teste manual em produção autorizado pelo responsável, antes da entrada de usuários. Os [gates pendentes e a decisão de liberação](docs/drive-release-gate.md#liberação-para-teste-manual-do-responsável) continuam registrados; ativar a flag não os aprova. Para reproduzir o build público, use `VITE_DRIVE_ENABLED=true npm run build`. Variáveis `VITE_*` são públicas, nunca segredos.
 
 ## Verificar e contribuir
 
