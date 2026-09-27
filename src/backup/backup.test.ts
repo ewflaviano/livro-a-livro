@@ -1,6 +1,7 @@
+import { coverId, encodedCover, syntheticCover, stubImageDecoder } from '../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
 import { deleteDB } from 'idb';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../../test/fixtures/backups/v1.json';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
@@ -18,20 +19,63 @@ async function setup() {
   const repo = await openLibraryRepository({ name, channelFactory: null });
   const media = await openCoverMediaRepository({ name });
   opened.push({ repo, media, name });
-  return { repo, media, service: createBackupService(repo, undefined, media) };
+  return { repo, media, service: createBackupService(repo) };
 }
-afterEach(async () => { for (const { repo, media, name } of opened.splice(0)) { repo.close(); media.close(); await deleteDB(name); } });
+beforeEach(stubImageDecoder);
+afterEach(async () => { vi.unstubAllGlobals(); for (const { repo, media, name } of opened.splice(0)) { repo.close(); media.close(); await deleteDB(name); } });
 
 describe('portable V1 backup', () => {
+  it.each(['image/png', 'image/jpeg', 'image/webp'] as const)('prepares real synthetic %s bytes before confirmation', async mime => {
+    const { service, media } = await setup();
+    const incoming = { ...fixture, coverMedia: [encodedCover(mime)] };
+    const preview = await service.prepareImport(file(JSON.stringify(incoming)));
+    expect(await media.all()).toEqual([]);
+    await service.confirmImport(preview);
+    expect(await (await media.read(coverId))?.bytes.arrayBuffer()).toEqual(await syntheticCover(mime).bytes.arrayBuffer());
+  });
+
+  it.each([
+    ['invalid base64', { bytes: '!!!!' }], ['noncanonical base64', { bytes: 'Zh==' }],
+    ['wrong MIME', { mimeType: 'image/jpeg' }], ['wrong dimensions', { width: 33 }],
+    ['truncated image', { bytes: encodedCover().bytes.slice(0, 32) }],
+    ['false image', { bytes: btoa('not an image') }],
+  ])('rejects %s before preview and preserves media', async (_, patch) => {
+    const { repo, media, service } = await setup();
+    await media.put(syntheticCover());
+    const before = await repo.readBackupSnapshot();
+    await expect(service.prepareImport(file(JSON.stringify({ ...fixture, coverMedia: [{ ...encodedCover(), ...patch }] }))))
+      .rejects.toMatchObject({ code: 'InvalidBackup' });
+    expect(await repo.readBackupSnapshot()).toEqual(before);
+    expect(await (await media.read(coverId))?.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
+  });
+
+  it('rejects duplicate case-variant media IDs and missing references before preview', async () => {
+    const { service } = await setup();
+    await expect(service.prepareImport(file(JSON.stringify({ ...fixture, coverMedia: [encodedCover(), { ...encodedCover(), id: coverId.toUpperCase() }] }))))
+      .rejects.toMatchObject({ code: 'InvalidBackup' });
+    await expect(service.prepareImport(file(JSON.stringify({ ...fixture, books: [{ ...fixture.books[0], cover: { provider: 'local', mediaId: coverId } }] }))))
+      .rejects.toMatchObject({ code: 'InvalidBackup' });
+  });
+
+  it('checks decoded individual and aggregate sizes before allocating or decoding', async () => {
+    const { service } = await setup();
+    const oversized = btoa('x'.repeat(2 * 1024 * 1024 + 1));
+    await expect(service.prepareImport(file(JSON.stringify({ ...fixture, coverMedia: [{ ...encodedCover(), bytes: oversized }] }))))
+      .rejects.toMatchObject({ code: 'ImportTooLarge' });
+    const entries = Array.from({ length: 7 }, () => ({ ...encodedCover(), id: crypto.randomUUID(), bytes: btoa('x'.repeat(2 * 1024 * 1024)) }));
+    await expect(service.prepareImport(file(JSON.stringify({ ...fixture, coverMedia: entries })))).rejects.toMatchObject({ code: 'ImportTooLarge' });
+    expect(createImageBitmap).not.toHaveBeenCalled();
+  });
+
   it('round-trips local cover bytes separately from the book record', async () => {
     const a = await setup(); const id = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
-    await a.media.put({ id, mimeType: 'image/png', bytes: new Blob(['cover'], { type: 'image/png' }), width: 320, height: 480, createdAt: fixture.exportedAt });
+    await a.media.put(syntheticCover());
     const book = createBook({ title: 'Com capa', cover: { provider: 'local', mediaId: id } }, { id: crypto.randomUUID(), now: fixture.exportedAt, shelfYear: 2026 });
     await a.repo.commit({ kind: 'put', book }, await a.repo.readRevision());
     const exported = await a.service.exportBackup(fixture.exportedAt);
     const b = await setup(); await b.service.confirmImport(await b.service.prepareImport(file(exported.text)));
     expect((await b.repo.readAll()).books[0].cover).toEqual({ provider: 'local', mediaId: id });
-    expect(await (await b.media.read(id))?.bytes.text()).toBe('cover');
+    expect(await (await b.media.read(id))?.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
   });
   it('restores every book field and portable preference into a fresh profile', async () => {
     const a = await setup();
@@ -119,13 +163,15 @@ describe('portable V1 backup', () => {
   });
 
   it('refuses stale replacement and leaves concurrent books and preferences intact', async () => {
-    const { repo, service } = await setup();
+    const { repo, media, service } = await setup();
+    await media.put(syntheticCover());
     const preview = await service.prepareImport(file());
     const book = createBook({ title: 'Outro sintético' }, { id: crypto.randomUUID(), now: fixture.exportedAt, shelfYear: 2026 });
     await repo.commit({ kind: 'put', book }, await repo.readRevision());
     const before = await repo.readBackupSnapshot();
     await expect(service.confirmImport(preview)).rejects.toThrow('StaleRevision');
     expect(await repo.readBackupSnapshot()).toEqual(before);
+    expect(await (await media.read(coverId))?.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
   });
 
   it('allows an empty replacement after preview and records only download start explicitly', async () => {

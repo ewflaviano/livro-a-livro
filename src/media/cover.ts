@@ -16,7 +16,7 @@ export function coverError(error: unknown): DomainError {
 }
 
 type DecodedImage = { width: number; height: number; close?: () => void };
-async function decode(file: Blob): Promise<DecodedImage> {
+export async function decodeImage(file: Blob): Promise<DecodedImage> {
   if ('createImageBitmap' in globalThis) return createImageBitmap(file);
   const url = URL.createObjectURL(file);
   try {
@@ -31,7 +31,7 @@ export async function prepareCover(file: File, now: string, id = crypto.randomUU
   if (!mimeTypeSchema.safeParse(file.type).success || file.size <= 0 || file.size > COVER_LIMITS.bytes) throw new DomainError('InvalidBook');
   let image: DecodedImage | undefined;
   try {
-    image = await decode(file);
+    image = await decodeImage(file);
     if (image.width < 32 || image.height < 32 || image.width > COVER_LIMITS.width || image.height > COVER_LIMITS.height) throw new DomainError('InvalidBook');
     return parseCoverMedia({ id, mimeType: file.type, bytes: file, width: image.width, height: image.height, createdAt: now });
   } catch (error) { throw coverError(error); }

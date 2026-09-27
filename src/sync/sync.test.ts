@@ -1,5 +1,6 @@
+import { coverId, encodedCover, syntheticCover, stubImageDecoder } from '../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBook } from '../domain/book';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
@@ -21,7 +22,8 @@ async function snap(library: LibraryExport, parent: string | null = null, resolv
 }
 function file(snapshot: SyncSnapshot): DriveFile { const { library: _, ...header } = snapshot; return { id: crypto.randomUUID(), size: JSON.stringify(snapshot).length, header }; }
 const close: (() => void)[] = [];
-afterEach(() => { close.splice(0).forEach(stop => stop()); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+beforeEach(stubImageDecoder);
+afterEach(() => { vi.restoreAllMocks(); close.splice(0).forEach(stop => stop()); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function setup() {
   const name = crypto.randomUUID(); const repository = await openLibraryRepository({ name, channelFactory: null, focusTarget: null });
   const media = await openCoverMediaRepository({ name });
@@ -52,9 +54,41 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it.each(['descendant', 'conflict'] as const)('restores books and real cover bytes together through %s', async path => {
+    const s = await setup(); await s.repository.commit({ kind: 'put', book: book('Base') }, await s.repository.readRevision());
+    if (path === 'descendant') await s.coordinator.runNow();
+    const incoming = { ...book('Remote'), cover: { provider: 'local' as const, mediaId: coverId } };
+    const remote = await snap({ ...data([incoming]), coverMedia: [encodedCover()] }, s.snapshots[0]?.snapshotId ?? null);
+    s.snapshots.push(remote); await s.coordinator.runNow();
+    if (path === 'conflict') await s.coordinator.resolve(remote.snapshotId);
+    expect((await s.repository.readAll()).books).toEqual([incoming]);
+    expect(await (await s.media.read(coverId))!.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
+  });
+
+  it.each(['descendant', 'conflict'] as const)('preserves current media when revision becomes stale during %s download', async path => {
+    const s = await setup(); const local = { ...book('Base'), cover: { provider: 'local' as const, mediaId: coverId } };
+    await s.repository.commit({ kind: 'replace', books: [local], coverMedia: [syntheticCover()] }, await s.repository.readRevision());
+    if (path === 'descendant') await s.coordinator.runNow();
+    const remote = await snap(data([book('Remote')]), s.snapshots[0]?.snapshotId ?? null); s.snapshots.push(remote);
+    if (path === 'conflict') await s.coordinator.runNow();
+    vi.mocked(s.remote.download).mockImplementationOnce(async () => {
+      await s.repository.commit({ kind: 'put', book: book('Concurrent') }, await s.repository.readRevision());
+      return remote;
+    });
+    if (path === 'conflict') await s.coordinator.resolve(remote.snapshotId); else await s.coordinator.runNow();
+    expect((await s.repository.readAll()).books).toHaveLength(2);
+    expect(await (await s.media.read(coverId))!.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
+    expect(await s.store.pending()).toEqual(await s.repository.readRevision());
+  });
+
+  it('rejects corrupt image bytes in downloaded snapshots before they can reach a preview', async () => {
+    const malformed = await snap({ ...data(), coverMedia: [{ ...encodedCover(), bytes: btoa('false PNG') }] });
+    await expect(parseSnapshot(malformed)).rejects.toMatchObject({ code: 'invalid' });
+  });
+
   it('moves local cover bytes only inside the direct Drive snapshot', async () => {
     const s = await setup(); const mediaId = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
-    await s.media.put({ id: mediaId, mimeType: 'image/png', bytes: new Blob(['cover'], { type: 'image/png' }), width: 320, height: 480, createdAt: time });
+    await s.media.put(syntheticCover());
     await s.repository.commit({ kind: 'put', book: createBook({ title: 'Com capa', cover: { provider: 'local', mediaId } }, { id: crypto.randomUUID(), now: time, shelfYear: 2026 }) }, await s.repository.readRevision());
     await s.coordinator.runNow();
     expect(s.snapshots[0].library.coverMedia).toHaveLength(1);

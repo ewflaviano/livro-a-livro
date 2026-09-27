@@ -1,3 +1,4 @@
+import { syntheticCover } from '../../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
 import { openDB, deleteDB } from 'idb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +35,41 @@ afterEach(async () => {
 });
 
 describe('IndexedDB library repository', () => {
+  it.each(['QuotaExceededError', 'AbortError'] as const)('rolls back all five stores after partial replace writes: %s', async failure => {
+    const name = newName(); const repo = await open(name); const db = await openDB<LibraryDatabase>(name);
+    const media = syntheticCover(); const originalBook = { ...book(), cover: { provider: 'local' as const, mediaId: media.id } };
+    await repo.commit({ kind: 'replace', books: [originalBook], coverMedia: [media], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } }, await repo.readRevision());
+    const before = await repo.readBackupSnapshot(); const preferences = await repo.readPreferences();
+    const pending = await db.get('syncOutbox', 'pending'); const meta = await db.get('meta', 'library');
+    const put = IDBObjectStore.prototype.put;
+    const injection = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, ...args) {
+      const request = put.apply(this, args);
+      // Outbox comes after books, media, preferences and metadata have all been written.
+      if (this.name === 'syncOutbox') {
+        if (failure === 'QuotaExceededError') throw new DOMException('synthetic', failure);
+        request.addEventListener('success', () => this.transaction.abort());
+      }
+      return request;
+    });
+    await expect(repo.commit({ kind: 'replace', books: [], coverMedia: [], preferences: { shelfYear: 2026, mode: 'grid', filter: 'all' } }, before.version))
+      .rejects.toMatchObject({ code: failure === 'QuotaExceededError' ? 'QuotaExceeded' : 'StorageUnavailable' });
+    injection.mockRestore();
+    expect(await repo.readBackupSnapshot()).toEqual(before); expect(await repo.readPreferences()).toEqual(preferences);
+    expect(await db.get('meta', 'library')).toEqual(meta); expect(await db.get('syncOutbox', 'pending')).toEqual(pending);
+    expect(await (await repo.readBackupSnapshot()).coverMedia[0].bytes.arrayBuffer()).toEqual(await media.bytes.arrayBuffer());
+    db.close();
+  });
+
+  it('reads media, books, preferences and revision in one readonly transaction', async () => {
+    const name = newName(); const a = await open(name); const b = await open(name);
+    const media = syntheticCover(); const next = { ...book(), cover: { provider: 'local' as const, mediaId: media.id } };
+    const old = await a.readBackupSnapshot();
+    const writing = a.commit({ kind: 'replace', books: [next], coverMedia: [media], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } }, old.version);
+    const snapshot = await b.readBackupSnapshot(); const version = await writing;
+    expect(snapshot).toMatchObject({ version, books: [next], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } });
+    expect(await snapshot.coverMedia[0].bytes.arrayBuffer()).toEqual(await media.bytes.arrayBuffer());
+  });
+
   it('creates stores, indexes and metadata once and retains identity on reopen', async () => {
     const name = newName();
     const repo = await open(name);

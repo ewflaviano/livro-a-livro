@@ -1,3 +1,4 @@
+import { prepareBackupMedia } from '../backup/media';
 import { DomainError } from '../domain/errors';
 import { instantSchema } from '../domain/book';
 import { parseDomain } from '../domain/errors';
@@ -6,7 +7,7 @@ import type { LibraryRepository, LocalRevision } from '../ports/library-reposito
 import type { LibraryExport } from '../backup/schema';
 import { parseExportV1 } from '../backup/schema';
 import { parseBackupText, serializeBackup } from '../backup/serialize';
-import { decodeCover, encodeCover } from '../adapters/indexeddb/cover-media';
+import { encodeCover } from '../adapters/indexeddb/cover-media';
 import type { CoverMedia } from '../media/cover';
 
 export type ImportPreview = Readonly<{
@@ -14,21 +15,20 @@ export type ImportPreview = Readonly<{
   current: Readonly<{ count: number; years: readonly number[] }>;
 }>;
 export type BackupFile = { size: number; text(): Promise<string> };
-type MediaRepository = { all(): Promise<CoverMedia[]>; replace(values: CoverMedia[]): Promise<void> };
 const summary = (books: LibraryExport['books']) => Object.freeze({
   count: books.length, years: Object.freeze([...new Set(books.map(book => book.shelfYear))].sort((a, b) => a - b)),
 });
 
 export function createBackupService(repository: LibraryRepository,
-  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text), media?: MediaRepository) {
-  const pending = new WeakMap<ImportPreview, { data: LibraryExport; version: LocalRevision }>();
+  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text)) {
+  const pending = new WeakMap<ImportPreview, { data: LibraryExport; coverMedia: CoverMedia[]; version: LocalRevision }>();
   let active: ImportPreview | undefined;
   let selection = 0;
   return {
     async exportBackup(exportedAt: string) {
       parseDomain(instantSchema, exportedAt, 'InvalidBackup');
       const snapshot = await repository.readBackupSnapshot();
-      const coverMedia = media ? await Promise.all((await media.all()).map(encodeCover)) : [];
+      const coverMedia = await Promise.all(snapshot.coverMedia.map(encodeCover));
       const text = serializeBackup({ format: 'livro-a-livro', schemaVersion: 1, exportedAt,
         books: snapshot.books, preferences: snapshot.preferences, coverMedia });
       return { text, filename: `livro-a-livro-${exportedAt.slice(0, 10)}.json`,
@@ -49,10 +49,11 @@ export function createBackupService(repository: LibraryRepository,
       if (utf8ByteLength(text) > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       // Validate injected/worker result again and clone; callers never receive mutable data.
       const data = parseExportV1(await parse(text));
+      const coverMedia = await prepareBackupMedia(data);
       const current = await repository.readAll();
       if (selected !== selection) throw new DomainError('InvalidBackup');
       const preview = Object.freeze({ incoming: summary(data.books), current: summary(current.books) });
-      pending.set(preview, { data, version: current.version });
+      pending.set(preview, { data, coverMedia, version: current.version });
       active = preview;
       return preview;
     },
@@ -62,11 +63,8 @@ export function createBackupService(repository: LibraryRepository,
       if (!prepared) throw new DomainError('InvalidBackup');
       pending.delete(preview);
       active = undefined;
-      // Persist media first. A later stale library write can leave only unreferenced local bytes;
-      // it can never leave a restored book pointing to absent media.
-      if (media) await media.replace(prepared.data.coverMedia.map(decodeCover));
       return repository.commit({ kind: 'replace', books: prepared.data.books,
-        preferences: prepared.data.preferences }, prepared.version);
+        preferences: prepared.data.preferences, coverMedia: prepared.coverMedia }, prepared.version);
     },
   };
 }
