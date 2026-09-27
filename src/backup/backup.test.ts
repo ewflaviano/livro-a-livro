@@ -25,6 +25,17 @@ beforeEach(stubImageDecoder);
 afterEach(async () => { vi.unstubAllGlobals(); for (const { repo, media, name } of opened.splice(0)) { repo.close(); media.close(); await deleteDB(name); } });
 
 describe('portable V1 backup', () => {
+  it('never starts parsing an obsolete file after a later selection has won', async () => {
+    const { repo } = await setup(); const parser = vi.fn(async (value: string) => parseBackupText(value));
+    const cancelParse = vi.fn(); const service = createBackupService(repo, parser, cancelParse);
+    let release!: (text: string) => void;
+    const old = service.prepareImport({ size: text.length, text: () => new Promise(resolve => { release = resolve; }) });
+    const rejection = expect(old).rejects.toMatchObject({ code: 'InvalidBackup' });
+    const current = await service.prepareImport(file());
+    release(text); await rejection; expect(parser).toHaveBeenCalledTimes(1);
+    await service.confirmImport(current); service.cancelImport(); expect(cancelParse).toHaveBeenCalledTimes(3);
+  });
+
   it.each(['image/png', 'image/jpeg', 'image/webp'] as const)('prepares real synthetic %s bytes before confirmation', async mime => {
     const { service, media } = await setup();
     const incoming = { ...fixture, books: [{ ...fixture.books[0], cover: { provider: 'local', mediaId: coverId } }], coverMedia: [encodedCover(mime)] };

@@ -6,7 +6,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 ## Estado atual
 
-**Revisado em 27 set 2026.** O projeto tem uma base local funcional, mas ainda não concluiu os fluxos de backup, configurações e serviços opcionais. Issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 27 set 2026.** O projeto tem uma base local funcional, mas ainda não concluiu configurações e serviços opcionais. O backup local já tem fluxo independente. Issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
@@ -15,14 +15,14 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Busca Open Library | Explícita, com revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Prévia na seleção; ainda não aparecem na estante nem no detalhe salvo |
 | Capas enviadas | Cadastro e detalhe implementados; livro e capa gravados juntos, com limites portáveis; estante ainda usa fallback |
-| Backup JSON | Serviço com restauração atômica e limites compartilhados testados; exportação/importação independentes do Drive ainda não têm interface. O download oferecido pelo conector não substitui esse fluxo |
+| Backup JSON | Backup local em Seus dados, offline e sem Drive: exportação, prévia, confirmação e restauração atômica com capas |
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
 | PWA | App shell offline e aviso de atualização implementados; instalação não é backup |
 | Configurações | Rota existe, mas mostra “Em construção” |
 | Google Drive | Cliente e simulador implementados; API de produção e habilitação pendentes na issue #13 |
 | Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 
-Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. A promessa de exportar/restaurar offline continua sendo requisito de entrega, ainda pendente na interface atual. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
+Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. Exportação e restauração locais estão disponíveis; a validação do ciclo completo de instalação/atualização PWA permanece um gate separado. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
 
 ## Começar a desenvolver
 
@@ -75,4 +75,10 @@ O catálogo visual e o roteiro são referências de intenção. A tabela de esta
 
 Novas gravações aceitam até 100 capas locais, 2 MiB por imagem e 12 MiB de imagens no total. Livros, metadados, expansão base64 e uma reserva de envelope precisam caber no orçamento de 50 MiB do backup. Excesso preserva o rascunho e os dados anteriores. Troca/exclusão coleta somente capas sem referências; exportação usa uma única revisão e inclui apenas capas referenciadas.
 
-As issues #37/#39 corrigem integridade e portabilidade para novos estados aceitos. Bibliotecas legadas excessivas continuam legíveis, sem limpeza automática; podem exigir substituição explícita por uma cópia válida. A interface de backup local independente permanece pendente.
+As issues #37/#39 corrigem integridade e portabilidade para novos estados aceitos. Bibliotecas legadas excessivas continuam legíveis, sem limpeza automática; podem exigir substituição explícita por uma cópia válida. A issue #40 entrega a interface de backup local independente em Seus dados.
+
+### Exportar e restaurar sem Google Drive
+
+Em **Seus dados → Backup local**, use **Exportar JSON**. O aplicativo informa o início do download; confira se o arquivo foi salvo. Ele contém todos os anos, notas, avaliações, preferências e capas locais. Instalar a PWA não cria uma cópia desses dados.
+
+Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo e da biblioteca atual, exporte a atual se quiser guardá-la e confirme a substituição integral. Até a confirmação, cancelar não altera nada. Arquivo inválido, versão incompatível, falta de espaço ou prévia vencida preservam a biblioteca. O fluxo funciona sem rede depois de o aplicativo e seus recursos estarem disponíveis no dispositivo.

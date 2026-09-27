@@ -1,3 +1,5 @@
+import type { BackupParser } from '../backup/worker-parser';
+import { createBackupService, type ImportPreview } from './backup-service';
 import type { LibraryRepository, PortablePreferences, Snapshot } from '../ports/library-repository';
 import { createLibraryService } from './library-service';
 
@@ -7,7 +9,8 @@ export type ShelfState =
   | { status: 'ready'; snapshot: Snapshot; preferences: PortablePreferences; preferenceError: boolean };
 
 /** A projection of committed local data. Preferences never write a library snapshot. */
-export function createShelfService(repository: LibraryRepository) {
+export function createShelfService(repository: LibraryRepository, parser?: BackupParser) {
+  const backup = createBackupService(repository, parser?.parse, parser?.cancel);
   let state: ShelfState = { status: 'loading' };
   let disposed = false;
   let request = 0;
@@ -39,6 +42,12 @@ export function createShelfService(repository: LibraryRepository) {
   const unsubscribe = repository.subscribe(() => { void refresh(); });
   return {
     books: createLibraryService(repository),
+    backup: { ...backup, async confirmImport(preview: ImportPreview) {
+      await preferenceQueue;
+      const version = await backup.confirmImport(preview);
+      await refresh();
+      return version;
+    } },
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     refresh,
@@ -52,7 +61,7 @@ export function createShelfService(repository: LibraryRepository) {
         catch { if (state.status === 'ready') publish({ ...state, preferenceError: true }); }
       });
     },
-    close() { disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
+    close() { backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
   };
 }
 

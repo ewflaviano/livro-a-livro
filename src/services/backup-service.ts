@@ -20,7 +20,7 @@ const summary = (books: LibraryExport['books']) => Object.freeze({
 });
 
 export function createBackupService(repository: LibraryRepository,
-  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text)) {
+  parse: (text: string) => Promise<LibraryExport> = async text => parseBackupText(text), cancelParse: () => void = () => {}) {
   const pending = new WeakMap<ImportPreview, { data: LibraryExport; coverMedia: CoverMedia[]; version: LocalRevision }>();
   let active: ImportPreview | undefined;
   let selection = 0;
@@ -43,12 +43,14 @@ export function createBackupService(repository: LibraryRepository,
     },
     async prepareImport(file: BackupFile): Promise<ImportPreview> {
       const selected = ++selection;
+      cancelParse();
       if (active) pending.delete(active);
       active = undefined;
       if (!Number.isSafeInteger(file.size) || file.size < 0) throw new DomainError('InvalidBackup');
       if (file.size > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       let text: string;
       try { text = await file.text(); } catch { throw new DomainError('InvalidBackup'); }
+      if (selected !== selection) throw new DomainError('InvalidBackup');
       if (utf8ByteLength(text) > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       // Validate injected/worker result again and clone; callers never receive mutable data.
       const data = parseExportV1(await parse(text));
@@ -60,7 +62,7 @@ export function createBackupService(repository: LibraryRepository,
       active = preview;
       return preview;
     },
-    cancelImport() { selection++; if (active) pending.delete(active); active = undefined; },
+    cancelImport() { selection++; cancelParse(); if (active) pending.delete(active); active = undefined; },
     async confirmImport(preview: ImportPreview): Promise<LocalRevision> {
       const prepared = pending.get(preview);
       if (!prepared) throw new DomainError('InvalidBackup');
@@ -71,3 +73,5 @@ export function createBackupService(repository: LibraryRepository,
     },
   };
 }
+
+export type BackupService = ReturnType<typeof createBackupService>;

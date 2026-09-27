@@ -65,8 +65,8 @@ Na auditoria de 27/09/2026, `npm test` apresentou falhas de tempo/espera; `npm t
 - **Interface:** desktop 1440 px; 768, 390 e 320 px; zoom de 200%; teclado, foco, Escape e retorno de diálogos; títulos longos, autor ausente e erros. Conferir conteúdo e ações, não apenas ausência de rolagem horizontal.
 - **Biblioteca:** adicionar, editar, recarregar, excluir com confirmação; duas abas com revisões concorrentes; falha de gravação preservando o rascunho.
 - **Capas:** seleção → salvar → estante → detalhe → recarregar; imagem ausente, inválida e offline; memória/object URLs e limites acumulados.
-- **Backup:** exportar e restaurar em origem de teste independente, sem Drive e offline; comparar livros e capas. Cobrir arquivo inválido, versão futura, limite máximo e conflito depois da prévia. A UI independente de backup é uma pendência atual, não um passo já disponível.
-- **PWA:** primeira visita online ao preview, preparação offline, navegação/edição offline; atualização com rascunho e outra aba aberta. Não apagar dados reais nem remover indiscriminadamente todos os caches.
+- **Backup:** exportar e restaurar em origem de teste independente, sem Drive e offline; comparar livros e capas. Cobrir arquivo inválido, versão futura, limite máximo e conflito depois da prévia. O fluxo está em Seus dados → Backup local: Exportar JSON → conferir arquivo salvo → Importar JSON em outra origem → conferir prévia → exportar biblioteca atual se necessário → confirmar. Verificar foco, cancelamento, arquivo selecionado novamente e unmount durante validação.
+- **PWA:** primeira visita online ao preview do build, preparação offline, navegação/edição/importação offline (incluindo o chunk import-worker no precache); atualização com rascunho e outra aba aberta. Não apagar dados reais nem remover indiscriminadamente todos os caches.
 - **Drive:** simulador, retomada, resposta perdida, contas/versões diferentes e conflito; só depois validar OAuth real em ambiente autorizado. O simulador não substitui integração AWS/GCP.
 - **Experimentos:** comprovar consentimento → catálogo → variante visível, controle em erro/expiração e saída imediata. Esses consumidores ainda precisam ser integrados.
 
@@ -83,3 +83,9 @@ Na descrição do PR, separe checks automatizados, observações de navegador e 
 - Não adicione IA, login obrigatório, recomendações, feed, metas, notificações ou coleta pessoal sem issue e decisão explícita.
 
 Ao encontrar uma falha, prepare uma reprodução mínima com dados sintéticos e descreva impacto, pré-condições e limite da evidência. Nunca anexe credenciais ou uma biblioteca real para demonstrá-la.
+
+### Parser de importação e teste sem rede
+
+O build real compõe um Worker descartável para o parser. O servidor de desenvolvimento precisa buscar o módulo do Worker na primeira utilização; para comprovar importação offline, use o build/preview, aguarde o service worker declarar o shell disponível e só então desligue a rede. O serviço permite parser injetado nos testes; isso não valida a entrega do chunk, que deve ser conferida em `dist/sw.js` e no navegador.
+
+Teste sempre com biblioteca sintética e origem separada. Nunca limpe IndexedDB de produção para simular perfil novo. O arquivo exportado deve ser comparado em memória com registros/capas/preferências, sem conteúdo pessoal em logs ou PRs.
