@@ -1,6 +1,6 @@
 import { canonicalJson, headerOf, sameHeader, type SyncSnapshotV2 } from './protocol';
 import type { SyncCommitFence, SyncResolutionRepository } from '../ports/sync-resolution-repository';
-import { prepareMerge, materializeMerge, type PreparedMerge, type ResolutionChoices } from './merge';
+import { prepareMerge, materializeUnion, unionPolicy, type PreparedMerge } from './merge';
 import { utf8ByteLength } from '../domain/library';
 import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
@@ -407,14 +407,14 @@ export function createSyncCoordinator(options: Options) {
       if (requestId !== preparationId || closed || options.hasDraft() || canonicalJson(fence(current)) !== canonicalJson(fence(context))) throw new SyncError('conflict');
       const plan = prepareMerge({ id: crypto.randomUUID(), sources: [{ id: 'local', label: 'Neste dispositivo', library: local.library }, ...heads.map((head,index) => ({ id: head.header.snapshotId, label: `Drive — versão ${index + 1}`, library: contents.get(head.header.snapshotId)!.library }))], base: trusted, baseSourceId: trusted ? base?.header.snapshotId : undefined });
       conflict = { binding, heads, version: local.version, accountChanged: selected.accountChanged };
-      preview = { plan, context, binding, heads, local }; return structuredClone(plan.preview);
+      preview = { plan, context, binding, heads, local }; return unionPolicy(plan).preview;
     },
     cancelResolution(id: string) { if (preview?.plan.preview.id === id) preview = null; if (confirmationId === id) confirmationId = null; },
-    async confirmResolution(id: string, choices: ResolutionChoices): Promise<'localCommittedPending' | 'synchronized'> {
+    async confirmResolution(id: string): Promise<'localCommittedPending' | 'synchronized'> {
       const selected = preview;
       if (!selected || selected.plan.preview.id !== id) throw new SyncError('conflict');
-      const data = materializeMerge(selected.plan, choices);
-      preview = null; confirmationId = id; // Pure choice/budget errors remain editable; a commit attempt consumes the preview.
+      const data = materializeUnion(selected.plan);
+      preview = null; confirmationId = id; // A budget failure keeps the summary available; a commit attempt consumes the preview.
       return (await locked(async signal => {
         const context = await store.context();
         if (canonicalJson(fence(context)) !== canonicalJson(fence(selected.context))) throw new SyncError('conflict');

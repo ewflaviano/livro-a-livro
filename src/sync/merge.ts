@@ -10,9 +10,9 @@ export type MergeSource = { id: string; label?: string; library: LibraryExport }
 export type ResolutionSource = MergeSource;
 export type ResolutionVariant = { sourceId: string; book: LibraryExport['books'][number]; media?: EncodedCover };
 export type ResolutionBook = { id: string; variants: ResolutionVariant[]; requiresChoice: boolean; defaultSourceId?: string; removed: boolean; unbasedAbsence: boolean };
-export type ResolutionPreview = { id: string; sources: { id: string; label: string; count: number; preferences: LibraryExport['preferences'] }[]; books: ResolutionBook[]; preferencesDiffer: boolean; defaultPreferencesSourceId: string; sourceBytes: number };
+export type PreparedMergePreview = { id: string; sources: { id: string; label: string; count: number; preferences: LibraryExport['preferences'] }[]; books: ResolutionBook[]; preferencesDiffer: boolean; defaultPreferencesSourceId: string; sourceBytes: number };
 export type ResolutionChoices = { books: { bookId: string; sourceId: string | null }[]; preferencesSourceId: string; includeUnbased: boolean };
-export type PreparedMerge = { preview: ResolutionPreview; sources: MergeSource[]; mediaIds: Map<string, string> };
+export type PreparedMerge = { preview: PreparedMergePreview; sources: MergeSource[]; mediaIds: Map<string, string> };
 const key = (value: string) => value.toLowerCase();
 const provenance = (source: string, id: string) => `${source}:${key(id)}`;
 const mediaValue = ({ id: _, ...media }: EncodedCover) => canonicalJson(media);
@@ -97,4 +97,25 @@ export function materializeMerge(plan: PreparedMerge, choices: ResolutionChoices
     books.push(book);
   }
   return validate({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: prefs.library.exportedAt, books, preferences: { ...prefs.library.preferences }, coverMedia: [...media.values()] });
+}
+
+/** Public summary contains no library content; the service retains all choices. */
+export type ResolutionPreview = { id: string; totalCount: number; addedCount: number; divergentCount: number; remoteOnlyDivergentCount: number; remoteSourceCount: number };
+export function unionPolicy(plan: PreparedMerge): { preview: ResolutionPreview; choices: ResolutionChoices } {
+  if (!plan.sources.some(source => source.id === 'local')) throw new Error('Biblioteca local ausente.');
+  const mediaValues = new Map(plan.sources.flatMap(source => source.library.coverMedia.map(media => [media, mediaValue(media)] as const)));
+  let addedCount = 0, divergentCount = 0, remoteOnlyDivergentCount = 0;
+  const books = plan.preview.books.map(group => {
+    const local = group.variants.find(variant => variant.sourceId === 'local');
+    const first = group.variants[0];
+    const divergent = group.variants.some(variant => variantValue(variant) !== variantValue(first) || (variant.media ? mediaValues.get(variant.media) : null) !== (first.media ? mediaValues.get(first.media) : null));
+    if (!local) addedCount++;
+    if (divergent) { divergentCount++; if (!local) remoteOnlyDivergentCount++; }
+    const winner = local ?? [...group.variants].sort((a, b) => binaryCompare(key(a.sourceId), key(b.sourceId)))[0];
+    return { bookId: group.id, sourceId: winner.sourceId };
+  });
+  return { preview: { id: plan.preview.id, totalCount: books.length, addedCount, divergentCount, remoteOnlyDivergentCount, remoteSourceCount: plan.sources.length - 1 }, choices: { books, preferencesSourceId: 'local', includeUnbased: true } };
+}
+export function materializeUnion(plan: PreparedMerge): LibraryExport {
+  return materializeMerge(plan, unionPolicy(plan).choices);
 }

@@ -1,5 +1,5 @@
 import { MergePreview } from '../components/MergePreview';
-import type { ResolutionChoices, ResolutionPreview } from '../../sync/merge';
+import type { ResolutionPreview } from '../../sync/merge';
 import { BackupPanel } from '../components/BackupPanel';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -78,11 +78,11 @@ export function DataPage() {
     } catch { if (epoch === mergeEpoch.current) setError('Não foi possível preparar a união. Confira a conexão e os limites de 100 MiB de fontes. Você ainda pode baixar cópias ou escolher uma biblioteca inteira.'); }
     finally { if (epoch === mergeEpoch.current) { setBusy(false); setPreparingMerge(false); } }
   }
-  async function confirmMerge(choices: ResolutionChoices) {
+  async function confirmMerge() {
     if (!merge) return;
     const epoch = mergeEpoch.current; setBusy(true); setMergeError('');
     try {
-      const result = await coordinator!.confirmResolution(merge.id, choices);
+      const result = await coordinator!.confirmResolution(merge.id);
       if (epoch !== mergeEpoch.current) return;
       mergeRef.current = null; setMerge(null);
       setMergeNotice(result === 'synchronized' ? 'Bibliotecas unidas e cópia confirmada no Drive.' : 'Bibliotecas unidas e salvas neste dispositivo; envio pendente. Sua cópia anterior está preservada.');
@@ -136,8 +136,7 @@ export function DataPage() {
       </div>}
     </>}
     {preparingMerge && <p role="status">Preparando as versões… <button className="button button-secondary" onClick={closeMerge}>Cancelar preparação</button></p>}
-    {merge && state.accountChanged && <p className="notice-panel">A conta ou autorização mudou. Ao confirmar a união, você escolhe enviar os livros selecionados para esta conexão.</p>}
-    {merge && <MergePreview key={merge.id} preview={merge} busy={busy} error={mergeError} onCancel={closeMerge} onConfirm={choices => void confirmMerge(choices)} />}
+    {merge && <MergePreview key={merge.id} preview={merge} busy={busy} error={mergeError} accountChanged={state.accountChanged} onCancel={closeMerge} onConfirm={() => void confirmMerge()} />}
     {mergeNotice && <p role="status">{mergeNotice}</p>}
     <h2>Experimentos e métricas</h2>
     <p>Essas escolhas não dependem do Google Drive e não mudam sua biblioteca. São desligadas por padrão.</p>

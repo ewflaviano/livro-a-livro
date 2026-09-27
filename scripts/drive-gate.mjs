@@ -439,29 +439,22 @@ async function mergeGate() {
     await expect(pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true })).toBeVisible({ timeout: smoke ? 10_000 : 120_000 });
     check(isDeepStrictEqual(b, await snapshot(pages.B)));
     stage = 'MERGE_CANCEL'; await pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click();
-    await expect(pages.B.getByRole('heading', { name: 'Prévia da união', exact: true })).toBeVisible();
-    await pages.B.getByRole('button', { name: 'Cancelar união', exact: true }).click();
+    await expect(pages.B.getByRole('heading', { name: 'Juntar bibliotecas?', exact: true })).toBeVisible();
+    await pages.B.getByRole('alertdialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
     check(isDeepStrictEqual(b, await snapshot(pages.B)));
     stage = 'MERGE_CHOOSE'; await pages.B.getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click();
-    await expect(pages.B.getByRole('heading', { name: 'Prévia da união', exact: true })).toBeVisible();
+    await expect(pages.B.getByRole('heading', { name: 'Juntar bibliotecas?', exact: true })).toBeVisible();
     if (smoke) {
       await pages.B.setViewportSize({ width: 320, height: 900 });
-      await pages.B.getByRole('heading', { name: 'Prévia da união', exact: true }).scrollIntoViewIfNeeded();
+      await pages.B.getByRole('heading', { name: 'Juntar bibliotecas?', exact: true }).scrollIntoViewIfNeeded();
       check(await pages.B.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
       if (process.env.LAL_GATE_SCREENSHOT) {
         await pages.B.screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT) });
-        const divergent = pages.B.getByRole('group', { name: /^Livro [0-9]+: Livro sintético$/ });
-        await divergent.scrollIntoViewIfNeeded();
-        await pages.B.screenshot({ path: resolve(process.env.LAL_GATE_SCREENSHOT.replace(/\.png$/, '-book.png')) });
       }
       await pages.B.setViewportSize({ width: 1280, height: 720 });
     }
-    await pages.B.getByRole('group', { name: /^Livro [0-9]+: Livro sintético$/ }).getByRole('radio', { name: 'Usar versão deste dispositivo', exact: true }).check();
-    await pages.B.getByRole('radio', { name: /^Preferências deste dispositivo:/ }).check();
-    const absence = pages.B.getByRole('checkbox', { name: /^Incluir livros presentes só em algumas versões/ });
-    if (await absence.count()) await absence.check();
-    stage = 'MERGE_COMMIT'; await pages.B.getByRole('button', { name: 'Revisar e juntar', exact: true }).click();
-    await pages.B.getByRole('alertdialog').getByRole('button', { name: 'Confirmar união', exact: true }).click(); await synced('B');
+    check(await pages.B.getByRole('alertdialog').getByRole('radio').count() === 0);
+    stage = 'MERGE_COMMIT'; await pages.B.getByRole('alertdialog').getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click(); await synced('B');
     const expected = { ...b, books: [...b.books, a.books.find(book => book.id === extraBooks.A.id)].sort((x, y) => x.id.localeCompare(y.id)) };
     stage = 'MERGE_RECOVERY'; check(isDeepStrictEqual(expected, await snapshot(pages.B))); check(isDeepStrictEqual(b, await recovery(pages.B)));
     stage = 'MERGE_CONVERGENCE'; await pages.A.reload(); await synced('A'); check(isDeepStrictEqual(expected, await snapshot(pages.A)));

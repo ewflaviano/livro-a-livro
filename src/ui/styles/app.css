@@ -223,16 +223,3 @@ h2 { font-size: var(--text-h2); }
 .global-action-error { flex-basis: 100%; margin: 0; font-size: var(--text-small); }
 
 .header-login-state { display: block; font-size: .68rem; line-height: 1.2; color: var(--color-text-secondary); }
-
-.merge-preview { margin-block: 1.5rem; min-width: 0; }
-.merge-preview fieldset { min-width: 0; margin-block: 1rem; padding: 1rem; border: 1px solid var(--color-border, #d4cec3); border-radius: .5rem; }
-.merge-preview legend, .merge-preview p, .merge-preview dd, .merge-preview strong { overflow-wrap: anywhere; }
-.merge-choice { display: flex; align-items: flex-start; gap: .6rem; padding-block: .7rem; min-height: 44px; }
-.merge-choice input { flex-shrink: 0; margin-top: .25rem; }
-.merge-versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
-.merge-version { min-width: 0; padding: .75rem; background: var(--color-surface, #fffdf8); border-radius: .5rem; }
-.merge-version dl { font-size: .9rem; }
-.merge-version dt { font-weight: 600; margin-top: .6rem; }
-.merge-version dd { margin-inline-start: 0; }
-.merge-note { white-space: pre-wrap; max-height: 14rem; overflow: auto; }
-.merge-cover { display: block; width: 72px; height: 108px; object-fit: contain; margin-bottom: .75rem; }
