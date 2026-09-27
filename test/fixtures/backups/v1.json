@@ -1,0 +1,24 @@
+{
+  "format": "livro-a-livro",
+  "schemaVersion": 1,
+  "exportedAt": "2026-09-26T15:00:00.000Z",
+  "books": [{
+    "id": "ef9b4013-f78c-4918-9b92-a71d445b9b82",
+    "title": "Livro sintético",
+    "authors": ["Autora sintética", "Outro autor"],
+    "status": "read",
+    "shelfYear": 2025,
+    "pageCount": 123,
+    "isbn": "9780306406157",
+    "publicationYear": 2020,
+    "startedOn": "2024-12-31",
+    "finishedOn": "2025-01-02",
+    "rating": 5,
+    "note": "  nota sintética\n<texto> 📚\r\n",
+    "cover": { "provider": "open_library", "coverId": 123 },
+    "source": { "provider": "open_library", "workId": "OL123W", "editionId": "OL123M", "retrievedAt": "2026-09-26T12:00:00Z" },
+    "createdAt": "2026-09-26T12:00:00Z",
+    "updatedAt": "2026-09-26T13:00:00.123456Z"
+  }],
+  "preferences": { "shelfYear": 2025, "mode": "list", "filter": "read" }
+}
