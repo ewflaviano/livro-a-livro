@@ -19,7 +19,7 @@ export function PwaStatus({ detailed = false }: { detailed?: boolean }) {
       state.availability === 'preparing' ? 'Preparando o aplicativo para uso offline…' :
       'Não foi possível confirmar o uso offline. Tente abrir o aplicativo novamente com conexão.'
     }</p>
-    <p className="field-help">Instalar o aplicativo não cria uma cópia de segurança dos seus livros. A busca e capas externas precisam de conexão.</p>
+    {detailed && <p className="field-help">Instalar não cria backup. Busca e capas externas precisam de conexão.</p>}
     {detailed && <button className="button button-secondary" disabled={checking || !state.online || state.availability === 'unsupported'} onClick={() => void check()}>{checking ? 'Verificando…' : 'Verificar atualização'}</button>}
     {checkMessage && <p role="status">{checkMessage}</p>}
 

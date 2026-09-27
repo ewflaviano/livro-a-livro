@@ -35,7 +35,7 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) 
   return <div className="book-search">
     <form onSubmit={(event) => { event.preventDefault(); void search(query); }}>
       <label className="form-field">Título, autor ou ISBN<input ref={input} value={query} maxLength={200} onChange={(event) => setQuery(event.target.value)} aria-describedby="search-privacy" /></label>
-      <p className="field-help" id="search-privacy">Ao buscar, sua consulta vai para a Open Library. Sua biblioteca, nota e avaliação não são enviadas. A capa usa rede somente após escolher um resultado.</p>
+      <p className="field-help" id="search-privacy">A busca consulta a Open Library. Seus livros e notas não são enviados.</p>
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Buscar</button>
         {busy && <button className="button button-secondary" type="button" onClick={() => { sequence.current++; service.cancel(); setBusy(false); }}>Cancelar busca</button>}
         <button className="button button-secondary" type="button" onClick={onManual}>Adicionar manualmente</button></div>

@@ -70,6 +70,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lidos' }));
     await userEvent.click(screen.getByRole('button', { name: 'Lista' }));
     expect(screen.getByLabelText('Avaliação: 5 de 5 estrelas')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
     await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'registro');
     const link = screen.getByRole('link', { name: /Registro privado/ });
     expect(link.getAttribute('href')).toMatch(/^\/livro\/[0-9a-f-]+$/);
@@ -98,6 +99,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     const { repository } = await setup([book('Árvore de papel', { authors: ['Cláudia'] }), book('Outra leitura', { status: 'reading' })]);
     const before = await repository.readPreferences();
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
     const input = screen.getByRole('searchbox', { name: 'Buscar na estante' });
     await userEvent.type(input, 'ARVORE');
     expect(screen.getByRole('heading', { name: 'Árvore de papel' })).toBeTruthy();

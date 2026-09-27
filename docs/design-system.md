@@ -266,6 +266,8 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 
 ## 17. Direção de navegação mobile — revisão de 27 set 2026
 
+**Revisão de UX da issue #65:** a estante dá prioridade à coleção antes das estatísticas, e a busca local abre por um botão identificado. O consentimento de visitas fica suspenso no rodapé, acima da navegação mobile, sem empurrar os livros. O foco programático no conteúdo permanece para navegação de rotas, mas o contêiner `main` não desenha anel; links, campos e botões continuam com foco visível. No cadastro, Estado usa rádios nativos com alvos visíveis e Ano da estante oferece passos anterior/próximo junto à entrada numérica para anos distantes. A capa opcional fica em Mais detalhes. Textos de orientação são curtos; confirmação de envio, substituição e erros conservam as consequências da ação. A marca possui favicon SVG/ICO e ícones PNG para instalação. A [revisão completa](ux-review-2026-09-27.md) registra achados e verificação local.
+
 A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações, Instalar e Apoiar. Lendo e Quero ler continuam como filtros e rotas diretas.
 
 Rótulos e ícones permanecem visíveis, seleção usa `aria-current`, alvos têm pelo menos 44 px e o rodapé reserva área segura. A barra usa a camada sticky, abaixo dos diálogos. Os links seguem a proteção existente de rascunho e operações de backup; navegação muda o foco para o conteúdo. Não duplicar Adicionar no cabeçalho mobile.

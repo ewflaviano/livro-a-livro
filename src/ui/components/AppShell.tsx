@@ -60,7 +60,6 @@ function Shell() {
               </NavLink>
             ))}
           </nav>
-          <p className="sidebar-note">Uma leitura<br />de cada vez.</p>
         </aside>
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>

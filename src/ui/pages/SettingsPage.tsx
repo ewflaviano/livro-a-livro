@@ -13,7 +13,6 @@ export function SettingsPage() {
   return <section className="page-content" aria-labelledby="settings-title">
     <h1 id="settings-title">Configurações</h1>
     <h2>Sua estante</h2>
-    <p>As escolhas abaixo também se aplicam à estante. Você pode alterá-las a qualquer momento.</p>
     {state.status !== 'ready' ? <LibraryState state={state.status} onRetry={retry} /> : <div className="settings-preferences">
       <label className="form-field">Ano da estante<select value={state.preferences.shelfYear ?? 'current'} onChange={event => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
         <option value="current">Ano atual (automático)</option>{years.map(year => <option key={year} value={year}>{formatShelfYear(year)}</option>)}

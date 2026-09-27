@@ -113,31 +113,32 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const fieldError = (name: string) => invalid.includes(name) ? <span className="field-error" aria-hidden="true" id={`${name}-error`}>{messages[name]}</span> : null;
   const attributes = (name: string) => ({ name, id: `book-${name}`, 'aria-invalid': invalid.includes(name),
     'aria-describedby': invalid.includes(name) ? `${name}-error` : undefined });
-  const numberField = (name: 'shelfYear' | 'pageCount' | 'publicationYear', label: string, required = false) =>
+  const numberField = (name: 'pageCount' | 'publicationYear', label: string) =>
     <label className="form-field">{label}<input {...attributes(name)} type="number" min="1" max={name === 'pageCount' ? BOOK_LIMITS.pageCount : 9999}
-      step="1" required={required} value={draft[name]} onChange={(event) => change(name, event.target.value)} />{fieldError(name)}</label>;
+      step="1" value={draft[name]} onChange={(event) => change(name, event.target.value)} />{fieldError(name)}</label>;
   return <>
     <form className="book-form" ref={form} noValidate onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }} aria-busy={busy || coverPreparing}>
-      <p className="local-note" role="status">{coverPreparing ? 'Preparando capa…' : busy ? 'Salvando…' : dirty ? 'Alterações não salvas' : book ? 'Salvo neste dispositivo' : 'Somente o título é obrigatório; estado e ano já estão preenchidos.'}</p>
+      {(coverPreparing || busy || dirty) && <p className="local-note" role="status">{coverPreparing ? 'Preparando capa…' : busy ? 'Salvando…' : 'Alterações não salvas'}</p>}
       <fieldset disabled={busy}>
         <legend className="visually-hidden">Registro do livro</legend>
         <label className="form-field">Título (obrigatório)<input {...attributes('title')} required maxLength={BOOK_LIMITS.title} value={draft.title} onChange={(event) => change('title', event.target.value)} />{fieldError('title')}</label>
         <label className="form-field">Autores (opcional, um por linha)<textarea {...attributes('authors')} rows={2} value={draft.authors} onChange={(event) => change('authors', event.target.value)} />{fieldError('authors')}</label>
-        <label className="form-field">Capa (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
-          const element = event.currentTarget; const file = element.files?.[0]; if (!file) return;
-          const selected = ++coverSelection.current; setCoverPreparing(true); setError('');
-          void prepareCover(file, new Date().toISOString()).then(value => {
-            if (selected !== coverSelection.current) return;
-            setLocalCover(value); setDuplicates(0);
-          }).catch(() => {
-            if (selected !== coverSelection.current) return;
-            setError('Use uma imagem JPEG, PNG ou WebP de até 2 MB e 2400 × 3600 pixels.'); element.value = '';
-          }).finally(() => { if (selected === coverSelection.current) setCoverPreparing(false); });
-        }} /><span className="field-help">A imagem fica neste dispositivo. Ao sincronizar, vai diretamente ao seu Google Drive.</span>{localCover && <span className="field-help">Capa pronta para salvar: {localCover.width} × {localCover.height} pixels.</span>}</label>
-        <div className="form-columns">
-          <label className="form-field">Estado<select name="status" value={draft.status} onChange={(event) => change('status', event.target.value)}>
-            <option value="want-to-read">Quero ler</option><option value="reading">Lendo</option><option value="read">Lido</option>
-          </select></label>{numberField('shelfYear', 'Ano da estante', true)}
+        <div className="form-columns book-primary-choices">
+          <fieldset className="status-field"><legend>Estado</legend><div className="status-options">
+            {([['want-to-read', 'Quero ler'], ['reading', 'Lendo'], ['read', 'Lido']] as const).map(([value, label]) =>
+              <label key={value} className="status-option"><input type="radio" name="status" value={value} checked={draft.status === value}
+                onChange={() => change('status', value)} /><span>{label}</span></label>)}
+          </div></fieldset>
+          <div className="year-choice"><label htmlFor="book-shelfYear">Ano da estante</label>
+            <div className="year-stepper">
+              <button type="button" aria-label="Ano anterior" disabled={Number(draft.shelfYear) <= 1}
+                onClick={() => change('shelfYear', String(Number(draft.shelfYear || year) - 1))}>−</button>
+              <input {...attributes('shelfYear')} type="number" min="1" max="9999" step="1" required inputMode="numeric"
+                value={draft.shelfYear} onChange={(event) => change('shelfYear', event.target.value)} />
+              <button type="button" aria-label="Próximo ano" disabled={Number(draft.shelfYear) >= 9999}
+                onClick={() => change('shelfYear', String(Number(draft.shelfYear || year) + 1))}>+</button>
+            </div>{fieldError('shelfYear')}
+          </div>
         </div>
         {(draft.status !== 'want-to-read' || draft.startedOn || draft.finishedOn) && <div className="form-columns">
           <label className="form-field">Comecei em (opcional)<input {...attributes('startedOn')} type="date" value={draft.startedOn} onChange={(event) => change('startedOn', event.target.value)} />{fieldError('startedOn')}</label>
@@ -147,6 +148,17 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
           <p className="field-error">O novo estado não permite essas datas. Revise os campos e apague as datas incompatíveis para continuar.</p>}
         {draft.finishedOn && <p className="field-help">O término deve estar no ano da estante. Você pode ajustar o ano acima ou corrigir a data.</p>}
         <details open={Boolean(book)}><summary>Mais detalhes (opcional)</summary>
+          <label className="form-field">Capa (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+            const element = event.currentTarget; const file = element.files?.[0]; if (!file) return;
+            const selected = ++coverSelection.current; setCoverPreparing(true); setError('');
+            void prepareCover(file, new Date().toISOString()).then(value => {
+              if (selected !== coverSelection.current) return;
+              setLocalCover(value); setDuplicates(0);
+            }).catch(() => {
+              if (selected !== coverSelection.current) return;
+              setError('Use uma imagem JPEG, PNG ou WebP de até 2 MB e 2400 × 3600 pixels.'); element.value = '';
+            }).finally(() => { if (selected === coverSelection.current) setCoverPreparing(false); });
+          }} />{localCover && <span className="field-help">Capa pronta para salvar: {localCover.width} × {localCover.height} pixels.</span>}</label>
           <div className="form-columns">{numberField('pageCount', 'Páginas')}{numberField('publicationYear', 'Ano de publicação')}</div>
           <label className="form-field">ISBN<input {...attributes('isbn')} value={draft.isbn} onChange={(event) => change('isbn', event.target.value)} />{fieldError('isbn')}</label>
           <fieldset className="rating-field"><legend>Minha avaliação</legend><div className="rating-options">

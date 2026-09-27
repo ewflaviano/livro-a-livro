@@ -63,8 +63,7 @@ export function GlobalSyncControls({ children }: { children: ReactNode }) {
     {prompt && <ConfirmDialog title={prompt === 'connect' ? 'Entrar com Google?' : 'Guardar sua biblioteca no Drive?'}
       confirmLabel={prompt === 'connect' ? 'Entrar com Google' : 'Autorizar Drive'} cancelLabel={prompt === 'connect' ? 'Cancelar' : 'Agora não'}
       variant="primary" returnFocus={trigger} busy={busy} onCancel={dismiss} onConfirm={() => void confirm()}>
-      <p>{prompt === 'connect' ? 'Esta etapa entra com sua Conta Google e mantém sua sessão neste navegador. Ela ainda não autoriza o Drive nem envia sua biblioteca. Você voltará ao aplicativo para decidir se deseja autorizar o Drive.' : 'Você entrou com Google. O Drive ainda não foi autorizado. Se você permitir, seus livros, notas, avaliações e capas serão enviados diretamente para a área privada do aplicativo no seu Google Drive.'}</p>
-      {prompt !== 'connect' && <p>Essa permissão é opcional. Sem ela, sua biblioteca e o backup JSON continuam disponíveis neste navegador. O Google pode apresentar sua própria seleção de permissões.</p>}
+      <p>{prompt === 'connect' ? 'Entre com Google agora. Depois você decide se quer conectar o Drive; sua biblioteca não será enviada nesta etapa.' : 'Autorizar o Drive sincroniza livros, notas, avaliações e capas diretamente com sua conta Google. Você pode continuar usando a estante sem autorizar.'}</p>
       {state.revocationPending && <p>A revogação anterior ainda não foi confirmada. Entrar novamente não remove esse bloqueio; consulte os detalhes em Seus dados.</p>}
       {error && <p role="alert">{error}</p>}
     </ConfirmDialog>}

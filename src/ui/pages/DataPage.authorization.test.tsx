@@ -19,11 +19,11 @@ describe('optional two-step Google authorization', () => {
   it('requires a separate confirmed action after identity, keeping backup available', async () => {
     const view = render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
     await userEvent.click(screen.getByRole('button', { name: 'Entrar com Google' }));
-    expect(screen.getByText(/Ela ainda não autoriza o Drive nem envia sua biblioteca/)).toBeTruthy();
+    expect(screen.getByText(/sua biblioteca não será enviada nesta etapa/)).toBeTruthy();
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Entrar com Google' }));
     expect(sync.coordinator.connect).toHaveBeenCalledOnce(); expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
     sync.state = { status: 'authorize-drive' }; view.rerender(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
-    expect(screen.getAllByText(/Você entrou com Google. O Drive ainda não foi autorizado/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Você escolhe se quer sincronizar sua biblioteca com o Drive/)).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Exportar JSON' }) as HTMLButtonElement).disabled).toBe(false);
     expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
