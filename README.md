@@ -14,8 +14,8 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
 | Busca Open Library | Explícita, com revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Prévia na seleção; ainda não aparecem na estante nem no detalhe salvo |
-| Capas enviadas | Cadastro e detalhe implementados; estante usa fallback; portabilidade tem pendências de integridade |
-| Backup JSON | Serviço e testes existem; exportação/importação independentes do Drive ainda não têm interface. O download oferecido pelo conector não substitui esse fluxo |
+| Capas enviadas | Cadastro e detalhe implementados; livro e capa gravados juntos, com limites portáveis; estante ainda usa fallback |
+| Backup JSON | Serviço com restauração atômica e limites compartilhados testados; exportação/importação independentes do Drive ainda não têm interface. O download oferecido pelo conector não substitui esse fluxo |
 | Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
 | PWA | App shell offline e aviso de atualização implementados; instalação não é backup |
 | Configurações | Rota existe, mas mostra “Em construção” |
@@ -70,3 +70,9 @@ Inclui testes TypeScript, simulador, tipos, build, formatação/Clippy e testes 
 - [Apoiar ou sugerir melhorias](docs/support.md)
 
 O catálogo visual e o roteiro são referências de intenção. A tabela de estado acima descreve a integração atual. Stack: React, TypeScript, Vite, IndexedDB e API opcional Rust/Axum.
+
+### Limites de biblioteca e capas
+
+Novas gravações aceitam até 100 capas locais, 2 MiB por imagem e 12 MiB de imagens no total. Livros, metadados, expansão base64 e uma reserva de envelope precisam caber no orçamento de 50 MiB do backup. Excesso preserva o rascunho e os dados anteriores. Troca/exclusão coleta somente capas sem referências; exportação usa uma única revisão e inclui apenas capas referenciadas.
+
+As issues #37/#39 corrigem integridade e portabilidade para novos estados aceitos. Bibliotecas legadas excessivas continuam legíveis, sem limpeza automática; podem exigir substituição explícita por uma cópia válida. A interface de backup local independente permanece pendente.

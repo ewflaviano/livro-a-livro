@@ -1,4 +1,4 @@
-import { prepareBackupMedia } from '../backup/media';
+import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } from '../backup/media';
 import { DomainError } from '../domain/errors';
 import { instantSchema } from '../domain/book';
 import { parseDomain } from '../domain/errors';
@@ -27,7 +27,10 @@ export function createBackupService(repository: LibraryRepository,
   return {
     async exportBackup(exportedAt: string) {
       parseDomain(instantSchema, exportedAt, 'InvalidBackup');
+      exportedAt = new Date(exportedAt).toISOString(); // Bounded envelope independent of caller timestamp precision.
       const snapshot = await repository.readBackupSnapshot();
+      validateMediaCollection(snapshot.books, snapshot.coverMedia);
+      assertPortableBudget(utf8ByteLength(JSON.stringify(snapshot.books)), snapshot.coverMedia);
       const coverMedia = await Promise.all(snapshot.coverMedia.map(encodeCover));
       const text = serializeBackup({ format: 'livro-a-livro', schemaVersion: 1, exportedAt,
         books: snapshot.books, preferences: snapshot.preferences, coverMedia });

@@ -4,7 +4,7 @@ import type { Book, ReadingStatus } from '../domain/book';
 export type LocalRevision = { generation: string; revision: number };
 export type Snapshot = { books: Book[]; version: LocalRevision };
 export type LibraryChange =
-  | { kind: 'put'; book: Book }
+  | { kind: 'put'; book: Book; coverMedia?: CoverMedia }
   | { kind: 'delete'; id: string }
   | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences; coverMedia?: CoverMedia[] };
 
@@ -22,6 +22,7 @@ export interface LibraryRepository {
   readBackupSnapshot(): Promise<Snapshot & { preferences: PortablePreferences; coverMedia: CoverMedia[] }>;
   readYear(year: number): Promise<Snapshot>;
   readBook(id: string): Promise<{ book: Book | null; version: LocalRevision }>;
+  readCover(id: string): Promise<CoverMedia | null>;
   readRevision(): Promise<LocalRevision>;
   commit(change: LibraryChange, expected: LocalRevision): Promise<LocalRevision>;
   readPreferences(): Promise<LibraryPreferences>;

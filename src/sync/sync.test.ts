@@ -88,8 +88,7 @@ describe('durable local first coordinator', () => {
 
   it('moves local cover bytes only inside the direct Drive snapshot', async () => {
     const s = await setup(); const mediaId = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
-    await s.media.put(syntheticCover());
-    await s.repository.commit({ kind: 'put', book: createBook({ title: 'Com capa', cover: { provider: 'local', mediaId } }, { id: crypto.randomUUID(), now: time, shelfYear: 2026 }) }, await s.repository.readRevision());
+    await s.repository.commit({ kind: 'put', book: createBook({ title: 'Com capa', cover: { provider: 'local', mediaId } }, { id: crypto.randomUUID(), now: time, shelfYear: 2026 }), coverMedia: syntheticCover() }, await s.repository.readRevision());
     await s.coordinator.runNow();
     expect(s.snapshots[0].library.coverMedia).toHaveLength(1);
     expect(s.snapshots[0].library.coverMedia[0].id).toBe(mediaId);
