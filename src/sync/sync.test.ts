@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBook } from '../domain/book';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
+import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
 import { openSyncStore } from './outbox';
 import { createSyncCoordinator } from './coordinator';
 import { createAuthClient } from './api';
@@ -23,12 +24,13 @@ const close: (() => void)[] = [];
 afterEach(() => { close.splice(0).forEach(stop => stop()); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function setup() {
   const name = crypto.randomUUID(); const repository = await openLibraryRepository({ name, channelFactory: null, focusTarget: null });
+  const media = await openCoverMediaRepository({ name });
   const store = await openSyncStore({ name }); const snapshots: SyncSnapshot[] = [];
   const auth: AuthClient = { session: vi.fn(async () => binding), token: vi.fn(async () => 'synthetic-token'), invalidate: vi.fn(), start: vi.fn(async () => 'https://accounts.google.com/o/oauth2/v2/auth'), disconnect: vi.fn(async () => {}) };
   const drive: DriveClient = { list: vi.fn(async () => snapshots.map(file)), download: vi.fn(async head => snapshots.find(item => item.snapshotId === head.header.snapshotId)!), upload: vi.fn(async value => { snapshots.push(value); }) };
-  const options = { repository, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
+  const options = { repository, media, store, auth, drive: () => drive, online: () => true, visible: () => true, hasDraft: () => false, navigate: vi.fn() };
   const coordinator = createSyncCoordinator(options);
-  close.push(() => { coordinator.close(); repository.close(); store.close(); });
+  close.push(() => { coordinator.close(); repository.close(); media.close(); store.close(); });
   await store.write({ ...defaultSyncRecord, enabled: true });
   return { ...options, options, coordinator, snapshots, remote: drive };
 }
@@ -50,6 +52,14 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it('moves local cover bytes only inside the direct Drive snapshot', async () => {
+    const s = await setup(); const mediaId = 'a5f7ab9f-c2ed-4779-b274-f89ae62716ed';
+    await s.media.put({ id: mediaId, mimeType: 'image/png', bytes: new Blob(['cover'], { type: 'image/png' }), width: 320, height: 480, createdAt: time });
+    await s.repository.commit({ kind: 'put', book: createBook({ title: 'Com capa', cover: { provider: 'local', mediaId } }, { id: crypto.randomUUID(), now: time, shelfYear: 2026 }) }, await s.repository.readRevision());
+    await s.coordinator.runNow();
+    expect(s.snapshots[0].library.coverMedia).toHaveLength(1);
+    expect(s.snapshots[0].library.coverMedia[0].id).toBe(mediaId);
+  });
   it('marks every commit atomically pending and never performs network when disabled/offline', async () => {
     const s = await setup(); const revision = await s.repository.commit({ kind: 'put', book: book() }, await s.repository.readRevision());
     expect(await s.store.pending()).toEqual(revision);
