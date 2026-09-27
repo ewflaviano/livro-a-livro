@@ -303,6 +303,8 @@ Não usar salvamento otimista para afirmar persistência. Não manter um efeito 
 
 ### Abrir estante e livro
 
+**Implementado na issue #5:** a composição abre o adaptador IndexedDB e oferece um serviço de projeção local à interface. A estante reutiliza as funções puras de ano/ordenação/estatísticas; as rotas Lendo e Quero ler mantêm o mesmo ano e as métricas dos Lidos. Inicialização e falha não exibem uma estante vazia antecipadamente. Revisões publicadas pelo repositório (incluindo observação por foco) recarregam um snapshot consistente com preferências; respostas antigas são descartadas. Modo, ano e filtro são gravados por patches serializados, sem alterar revisão ou sobrescrever livros/histórico de exportação. Preferências são compartilhadas no dispositivo: uma reconsulta pode incorporar as gravadas por outra aba; interações locais em curso têm prioridade sobre a leitura iniciada antes delas. Falhas dessas preferências recebem aviso, sem sucesso fictício de persistência. Retorno do livro preserva contexto e posição em memória nesta sessão. Nesta etapa todas as capas são fallbacks tipográficos locais; carregamento externo/cache pertence à integração Open Library (#7).
+
 1. Abrir banco e checar versão compatível; estado de carregamento não mostra biblioteca vazia prematuramente.
 2. Ler ano + versão numa transação consistente, calcular métricas a partir de todo o ano e aplicar filtro apenas à coleção visível.
 3. Renderizar capa local/cache ou fallback; nenhuma busca bibliográfica ao montar um livro.
