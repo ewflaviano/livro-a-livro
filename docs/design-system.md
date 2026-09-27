@@ -101,7 +101,7 @@ Escala de 4 px: `--space-0/1/2/3/4/5/6/8/10/12/16/20/24` = 0/4/8/12/16/20/24/32/
 - Capa: proporção 2:3; preservar capa real inteira com `object-fit: contain`. Cor de fundo neutra absorve proporções diferentes. Sem capa: composição tipográfica marcada “Sem capa”, com título e autor completos ao lado/abaixo.
 - Raios: 2 px capa; 6 px controle; 10 px cartão; 16 px painel. Pílula só para estado curto. A estante usa espaço em branco e uma linha de apoio, não uma caixa com sombra por livro.
 - Borda antes de sombra. `--shadow-cover` apenas nas capas, `--shadow-popover` em flutuantes e `--shadow-dialog` em modal. Não empilhar elevações.
-- Camadas: base 0, sticky 10, popover 20, dialog 30, toast 40. Elementos fixos respeitam áreas seguras e nunca encobrem foco/ações; a V1 não exige barra inferior fixa.
+- Camadas: base 0, sticky 10, popover 20, dialog 30, toast 40. Elementos fixos respeitam áreas seguras e nunca encobrem foco/ações; a barra inferior mobile respeita a área segura e reserva espaço no conteúdo.
 
 ## 6. Ícones e imagens
 
@@ -192,7 +192,7 @@ Margem segura de 8% nas laterais, 12% no topo/rodapé do Story e 8% no Quadrado.
 
 ## 13. Privacidade, armazenamento e cópia
 
-“Seus dados” tem acesso estável no cabeçalho. Mensagem base: **“Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. Exporte uma cópia JSON para guardar seus registros.”** Instalar a PWA não cria backup. A V1 não pede login e não envia notas/avaliações à Open Library. Consultas e carregamento de capas externas usam rede; explicar esse limite sem chamar o app inteiro de “100% offline” ou “sem qualquer envio de dados”.
+“Seus dados” tem acesso estável em Mais no mobile e na lateral do desktop. Mensagem base: **“Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. Exporte uma cópia JSON para guardar seus registros.”** Instalar a PWA não cria backup. A V1 não pede login e não envia notas/avaliações à Open Library. Consultas e carregamento de capas externas usam rede; explicar esse limite sem chamar o app inteiro de “100% offline” ou “sem qualquer envio de dados”.
 
 | Situação | Mensagem | Próxima ação |
 | --- | --- | --- |
@@ -264,9 +264,13 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 
 ## 17. Direção de navegação mobile — revisão de 27 set 2026
 
-A [auditoria](audit-2026-09-27.md) e a solicitação do responsável pelo produto orientam uma próxima entrega com barra inferior **Estante · Adicionar · Mais**. Mais dá acesso a Seus dados, Configurações e Apoiar; Lendo e Quero ler permanecem filtros da estante. Desktop conserva navegação lateral.
+A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações e Apoiar; a instalação pertence à etapa seguinte. Lendo e Quero ler continuam como filtros e rotas diretas.
 
-Essa direção ainda não está implementada e não altera os tokens ou o catálogo histórico nesta entrega documental. Ao implementá-la, atualizar guia, catálogo e testes juntos: rótulos visíveis, estado ativo acessível, alvos de 44 px, área segura inferior e espaço no conteúdo para evitar sobreposição. Validar teclado virtual, foco, diálogos, rascunhos e paisagem. Remover a navegação superior duplicada no mobile e corrigir o truncamento observado no tablet.
+Rótulos e ícones permanecem visíveis, seleção usa `aria-current`, alvos têm pelo menos 44 px e o rodapé reserva área segura. A barra usa a camada sticky, abaixo dos diálogos. Os links seguem a proteção existente de rascunho e operações de backup; navegação muda o foco para o conteúdo. Não duplicar Adicionar no cabeçalho mobile.
+
+A estante usa duas colunas abaixo de 640 px e quatro no tablet, com títulos completos e capas 2:3 inteiras. Cabeçalho, métricas e ferramentas são compactos; compartilhar fica depois da coleção e desaparece quando não há Lidos. Busca por título/autoria filtra apenas os registros locais do ano/estado selecionados, sem rede. Limpar busca preserva ano, filtro e modo. Consulta e rolagem sobrevivem à visita ao detalhe na sessão; a consulta não vai para URL, preferências ou telemetria.
+
+Resultados externos têm título, autoria, origem e primeira publicação da obra quando conhecida em linhas compactas. A pessoa revisa os dados da edição antes de salvar; entrada manual continua disponível. Validar 320/390/768/1440 px, paisagem, foco, diálogos, formulário e zoom de 200%.
 
 ### Backup local — estados entregues na issue #40
 

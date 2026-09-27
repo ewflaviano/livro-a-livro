@@ -318,6 +318,8 @@ Não usar salvamento otimista para afirmar persistência. Não manter um efeito 
 
 Usar HashRouter com `#/estante`, `#/adicionar`, `#/livro/<uuid>` e `#/dados`. Ano/filtro/modo/rolagem podem ficar no estado de navegação e preferências; títulos, notas e consultas não entram na URL. Fragmentos não são enviados na requisição HTTP, mas continuam visíveis a scripts da origem e no histórico: não são um mecanismo de sigilo.
 
+**Navegação e busca local — issue #44:** abaixo de 1024 CSS px o shell usa Estante/Adicionar/Mais; desktop mantém lateral. Mais reúne Dados/Configurações/Apoiar. Links passam pelas guardas de rascunho e backup existentes. A consulta de título/autoria vive exclusivamente no `LibraryProvider` em memória e filtra a projeção já carregada, após ano/estado. Não altera preferências portáveis, não faz rede e não entra em URL ou telemetria. Detalhe/retorno preservam consulta, ano, filtro, modo e posição durante a sessão; recarregar encerra a consulta. Resultados externos continuam explícitos e revisão antes do commit.
+
 ### Busca e enriquecimento
 
 Submeter consulta → cache/limite → fetch abortável → validar resposta → candidatos → escolher um → normalizar revisão editável → salvar pelo mesmo serviço de cadastro manual. Seleção não faz commit; atualização externa nunca modifica um registro já salvo automaticamente.

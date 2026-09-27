@@ -56,6 +56,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
   it('shows a confirmed empty shelf with zero metrics and a manual add destination', async () => {
     await setup();
     expect(screen.getByRole('heading', { name: 'Sua estante de 2026 começa aqui.' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Compartilhar ano' })).toBeNull();
     expect(screen.getByRole('definition', { name: '0 livros lidos em 2026' }).textContent).toBe('0');
     expect(screen.getByRole('definition', { name: '0 páginas informadas em livros lidos' }).textContent).toBe('0');
     expect(screen.getAllByRole('link', { name: 'Adicionar livro' }).every((link) => link.getAttribute('href') === '/adicionar')).toBe(true);
@@ -69,6 +70,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lidos' }));
     await userEvent.click(screen.getByRole('button', { name: 'Lista' }));
     expect(screen.getByLabelText('Avaliação: 5 de 5 estrelas')).toBeTruthy();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'registro');
     const link = screen.getByRole('link', { name: /Registro privado/ });
     expect(link.getAttribute('href')).toMatch(/^\/livro\/[0-9a-f-]+$/);
     expect(screen.queryByText('Nota privada')).toBeNull();
@@ -77,6 +79,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByRole('heading', { name: 'Estante 2025' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Lista' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Lidos' }).getAttribute('aria-pressed')).toBe('true');
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('registro');
     expect(window.scrollTo).toHaveBeenCalledWith(0, 340);
     await waitFor(async () => expect(await repository.readPreferences()).toMatchObject({ shelfYear: 2025, mode: 'list', filter: 'read' }));
   });
@@ -89,6 +92,26 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByRole('definition', { name: '1 livros lidos em 2026' })).toBeTruthy();
     await userEvent.click(screen.getByRole('link', { name: /Selecionado/ }));
     expect(screen.getByRole('link', { name: 'Voltar para a estante' }).getAttribute('href')).toBe(route);
+  });
+
+  it('searches local titles and authors without changing preferences or sending a query', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([book('Árvore de papel', { authors: ['Cláudia'] }), book('Outra leitura', { status: 'reading' })]);
+    const before = await repository.readPreferences();
+    const input = screen.getByRole('searchbox', { name: 'Buscar na estante' });
+    await userEvent.type(input, 'ARVORE');
+    expect(screen.getByRole('heading', { name: 'Árvore de papel' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Outra leitura' })).toBeNull();
+    await userEvent.clear(input); await userEvent.type(input, 'claudia');
+    expect(screen.getByRole('heading', { name: 'Árvore de papel' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+    expect(screen.getByRole('heading', { name: 'Outra leitura' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Lendo' }).getAttribute('aria-pressed')).toBe('true');
+    expect(await repository.readPreferences()).toMatchObject({ ...before, filter: 'reading' });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('link').every(link => !/ARVORE|claudia/.test(link.getAttribute('href') ?? ''))).toBe(true);
   });
 
   it('updates after a local commit and restores imported preferences with the library', async () => {

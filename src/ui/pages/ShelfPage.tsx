@@ -13,10 +13,11 @@ const YearSharePreview = lazy(() => import('../components/YearSharePreview'));
 
 const labels = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler', all: 'Todos' };
 const statusLabels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
+const searchText = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR');
 const number = new Intl.NumberFormat('pt-BR');
 
 export function ShelfPage({ status }: { status?: ReadingStatus }) {
-  const { state, retry, updatePreferences, positions } = useLibrary();
+  const { state, retry, updatePreferences, positions, shelfQuery, setShelfQuery } = useLibrary();
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
@@ -42,7 +43,9 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const years = [...new Set([currentYear, year, ...snapshot.books.map((book) => book.shelfYear)])].sort((a, b) => b - a);
   const yearBooks = booksForYear(snapshot.books, year);
   const filter = status ?? preferences.filter;
-  const visible = filter === 'all' ? yearBooks : yearBooks.filter((book) => book.status === filter);
+  const filtered = filter === 'all' ? yearBooks : yearBooks.filter((book) => book.status === filter);
+  const query = searchText(shelfQuery.trim());
+  const visible = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
   const metrics = statisticsForYear(yearBooks, year);
   function selectFilter(next: typeof filter) {
     updatePreferences({ filter: next });
@@ -50,7 +53,6 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   }
 
   return <section className="shelf-page" aria-labelledby="shelf-title">
-    <p className="eyebrow">Sua história em livros</p>
     <div className="shelf-heading">
       <h1 id="shelf-title">{status ? `${labels[status]} · ${yearText}` : `Estante ${yearText}`}</h1>
       <label className="year-field">Ano da estante
@@ -59,7 +61,6 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         </select>
       </label>
     </div>
-    <p className="page-description">Uma leitura de cada vez. Toda a sua história aqui.</p>
     <dl className="shelf-metrics" aria-label={`Livros lidos em ${yearText}`}>
       <div><dt>Livros</dt><dd aria-label={`${number.format(metrics.books)} livros lidos em ${yearText}`}>{number.format(metrics.books)}</dd></div>
       <div><dt>Páginas</dt><dd aria-label={metrics.pages === null ? 'Páginas não informadas' : `${number.format(metrics.pages)} páginas informadas em livros lidos`}>{metrics.pages === null ? '—' : number.format(metrics.pages)}</dd></div>
@@ -67,15 +68,14 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
     </dl>
     {metrics.books > 0 && (metrics.booksWithPages < metrics.books || metrics.booksWithAuthors < metrics.books) &&
       <p className="metric-note">Páginas e autores consideram somente as informações registradas nos livros lidos.</p>}
-    <div className="share-entry">
-      <button ref={shareButton} className="button button-secondary" disabled={metrics.books === 0}
-        aria-describedby={metrics.books === 0 ? 'share-empty' : undefined}
-        onClick={() => setShare(projectYearShare(snapshot.books, year, true))}>Compartilhar ano</button>
-      {metrics.books === 0 && <p id="share-empty" className="field-help">A imagem fica disponível após marcar um livro como Lido neste ano.</p>}
-    </div>
     {share && <Suspense fallback={<p role="status">Preparando a prévia…</p>}>
       <YearSharePreview key={share.year} projection={share} onClose={() => { setShare(null); shareButton.current?.focus(); }} />
     </Suspense>}
+    <div className="shelf-search">
+      <label className="form-field">Buscar na estante<input type="search" value={shelfQuery} maxLength={200}
+        placeholder="Título ou autor" onChange={event => setShelfQuery(event.target.value)} /></label>
+      {shelfQuery && <button className="button button-secondary" onClick={() => setShelfQuery('')}>Limpar busca</button>}
+    </div>
     <div className="shelf-tools">
       <div className="segmented-control shelf-filters" role="group" aria-label="Filtrar por estado">
         {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
@@ -87,7 +87,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       </div>
     </div>
     {state.preferenceError && <p role="status">Não foi possível guardar sua preferência de visualização. Seus livros continuam salvos.</p>}
-    {yearBooks.length === 0 ? <LibraryState state="empty" year={year} returnTo={location.pathname} /> : visible.length === 0 ?
+    {yearBooks.length === 0 ? <LibraryState state="empty" year={year} returnTo={location.pathname} /> : visible.length === 0 && query ?
+      <div className="notice-panel" role="status"><h2>Nenhum livro encontrado.</h2><p>Tente outro título ou autor. A busca considera o ano e o filtro selecionados.</p></div> : visible.length === 0 ?
       <div className="notice-panel"><h2>Nenhum livro em {labels[filter]} nesta estante.</h2>
         <button className="button button-secondary" onClick={() => selectFilter('all')}>Limpar filtro</button></div> :
       <ol className={`book-collection book-collection--${preferences.mode}`} aria-label={`Livros da estante de ${yearText}`}>
@@ -102,6 +103,10 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
           </Link>
         </li>)}
       </ol>}
+    {metrics.books > 0 && <div className="share-entry">
+      <button ref={shareButton} className="button button-quiet"
+        onClick={() => setShare(projectYearShare(snapshot.books, year, true))}>Compartilhar ano</button>
+    </div>}
     {visible.some(book => book.cover?.provider === 'open_library') && <p className="field-help">Capas da Open Library usam conexão. Sem uma imagem disponível, o título e seus registros continuam aqui.</p>}
     <p className="local-note">Seus livros ficam neste dispositivo, neste navegador. <Link to="/dados">Seus dados</Link></p>
   </section>;

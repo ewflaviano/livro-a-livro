@@ -82,3 +82,7 @@ As issues #37/#39 corrigem integridade e portabilidade para novos estados aceito
 Em **Seus dados → Backup local**, use **Exportar JSON**. O aplicativo informa o início do download; confira se o arquivo foi salvo. Ele contém todos os anos, notas, avaliações, preferências e capas locais. Instalar a PWA não cria uma cópia desses dados.
 
 Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo e da biblioteca atual, exporte a atual se quiser guardá-la e confirme a substituição integral. Até a confirmação, cancelar não altera nada. Arquivo inválido, versão incompatível, falta de espaço ou prévia vencida preservam a biblioteca. O fluxo funciona sem rede depois de o aplicativo e seus recursos estarem disponíveis no dispositivo.
+
+### Navegação e busca local
+
+Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações e Apoiar; desktop mantém a lateral. A estante busca título e autoria localmente, sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas; compartilhar ano aparece após a coleção quando há livros lidos.

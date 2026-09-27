@@ -38,6 +38,20 @@ const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
 };
 
 describe('manual books and private detail', () => {
+  it.each(['Estante', 'Mais'])('protects a draft when leaving through mobile %s', async destination => {
+    const { repository } = await setup();
+    await userEvent.type(titleField(), 'Rascunho local');
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const link = within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: destination });
+    await userEvent.click(link);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect((titleField() as HTMLInputElement).value).toBe('Rascunho local');
+    confirm.mockReturnValue(true);
+    await userEvent.click(link);
+    expect(await screen.findByRole('heading', { name: destination === 'Mais' ? 'Mais' : 'Estante 2026', level: 1 })).toBeTruthy();
+    expect((await repository.readAll()).books).toEqual([]);
+  });
+
   it('treats a cover-only edit as dirty and cancellation never persists its bytes', async () => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 32, height: 48, close() {} })));
     const original = synthetic(); const { repository, name } = await setup([original], `/livro/${original.id}`);

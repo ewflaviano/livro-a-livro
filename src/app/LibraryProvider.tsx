@@ -9,6 +9,8 @@ type LibraryContext = {
   retry: () => void;
   updatePreferences: (patch: Partial<PortablePreferences>) => void;
   positions: Map<string, number>;
+  shelfQuery: string;
+  setShelfQuery: (query: string) => void;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
 };
@@ -23,6 +25,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const [service, setService] = useState<ShelfService | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [shelfQuery, setShelfQuery] = useState('');
   const positions = useRef(new Map<string, number>());
   useEffect(() => {
     let active = true;
@@ -40,7 +43,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const state = useSyncExternalStore(service?.subscribe ?? subscribeNothing, service?.getSnapshot ?? loadingSnapshot);
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
-    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, books: service?.books ?? null, backup: service?.backup ?? null,
+    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfQuery, setShelfQuery, books: service?.books ?? null, backup: service?.backup ?? null,
   }}>{children}</Context.Provider>;
 }
 
