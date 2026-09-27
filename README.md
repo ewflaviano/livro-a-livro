@@ -9,9 +9,15 @@ Um registro pessoal, privado e local-first da história dos livros que você lê
 - Sincronização opcional pelo Google Drive no futuro.
 - Código aberto, experiências pequenas e escolhas explicáveis.
 
-## Estado inicial
+## Estado atual
 
-O repositório começa intencionalmente sem produto implementado. A primeira entrega é o design system: fundamentos, tokens e catálogo visual para orientar a V1.
+O domínio, o repositório IndexedDB e os serviços de backup têm implementação e testes. O aplicativo já inicia com o design system e navegação responsiva por hash: Estante, Lendo, Quero ler, Adicionar, Livro, Seus dados e Configurações.
+
+As páginas ainda são placeholders identificados como “Em construção”. A interface não abre o banco nem consulta serviços externos; não apresenta uma estante vazia como se tivesse lido os dados. Os componentes de inicialização, falha local e vazio estão preparados para a próxima etapa de integração da estante. Cadastro, busca, backup visual, PWA e serviços opcionais serão conectados em suas issues.
+
+## Desenvolvimento
+
+Use `npm install` e `npm run dev` para abrir o aplicativo localmente. `npm test`, `npm run typecheck` e `npm run build` verificam testes, tipos e produção. O build é estático e fica em `dist/`.
 
 ## Design system
 
