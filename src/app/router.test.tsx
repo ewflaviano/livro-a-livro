@@ -9,12 +9,12 @@ import { LibraryState } from '../ui/components/LibraryState';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.location.hash = ''; });
 
 describe('application shell', () => {
-  it('opens the shelf without network calls or pretending to read a library', async () => {
+  it('opens the shelf without network calls or presenting unconfirmed empty data', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     render(<MemoryRouter><AppRoutes /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Minha estante', level: 1 })).toBeTruthy();
-    expect(screen.getByText('Em construção')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.queryByText(/0 livros/)).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });

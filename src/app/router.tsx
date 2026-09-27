@@ -1,15 +1,19 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '../ui/components/AppShell';
 import { PlaceholderPage } from '../ui/pages/PlaceholderPage';
+import { ShelfPage } from '../ui/pages/ShelfPage';
+import { LibraryProvider } from './LibraryProvider';
+import type { ShelfService } from '../services/shelf-service';
 
-export function AppRoutes() {
+export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
+    <LibraryProvider openService={openService}>
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
-        <Route path="estante" element={<PlaceholderPage title="Minha estante" description="A história dos seus livros, uma leitura de cada vez." detail="Sua estante anual está sendo preparada. Aqui você poderá ver livros, páginas e autores, em grade ou lista." />} />
-        <Route path="lendo" element={<PlaceholderPage title="Lendo" description="As leituras que estão com você agora." detail="Seus livros em leitura aparecerão aqui quando o cadastro estiver disponível." />} />
-        <Route path="quero-ler" element={<PlaceholderPage title="Quero ler" description="Um lugar para os livros que despertam sua curiosidade." detail="Os livros que você quiser ler aparecerão aqui quando o cadastro estiver disponível." />} />
+        <Route path="estante" element={<ShelfPage key="shelf" />} />
+        <Route path="lendo" element={<ShelfPage key="reading" status="reading" />} />
+        <Route path="quero-ler" element={<ShelfPage key="want" status="want-to-read" />} />
         <Route path="adicionar" element={<PlaceholderPage title="Adicionar livro" description="Toda história começa com um livro." detail="O cadastro manual e a busca por título, autor ou ISBN estarão disponíveis em uma próxima etapa." back />} />
         <Route path="livro/:id" element={<PlaceholderPage title="Livro" description="Um espaço para guardar sua leitura." detail="A página de detalhes está em preparação. Nenhum registro foi consultado ou alterado." back />} />
         <Route path="dados" element={<PlaceholderPage title="Seus dados" description="Sua biblioteca pertence a você." detail="Seus livros ficarão neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. A exportação e a importação de uma cópia JSON estarão disponíveis aqui." />} />
@@ -17,6 +21,7 @@ export function AppRoutes() {
         <Route path="*" element={<PlaceholderPage title="Página não encontrada" description="Este endereço não faz parte da sua estante." detail="Volte para continuar navegando." back />} />
       </Route>
     </Routes>
+    </LibraryProvider>
   );
 }
 
