@@ -1,3 +1,4 @@
+import type { CoverMedia } from '../media/cover';
 import type { Book, ReadingStatus } from '../domain/book';
 
 export type LocalRevision = { generation: string; revision: number };
@@ -5,7 +6,7 @@ export type Snapshot = { books: Book[]; version: LocalRevision };
 export type LibraryChange =
   | { kind: 'put'; book: Book }
   | { kind: 'delete'; id: string }
-  | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences };
+  | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences; coverMedia?: CoverMedia[] };
 
 export type PortablePreferences = Pick<LibraryPreferences, 'shelfYear' | 'mode' | 'filter'>;
 
@@ -18,7 +19,7 @@ export type LibraryPreferences = {
 
 export interface LibraryRepository {
   readAll(): Promise<Snapshot>;
-  readBackupSnapshot(): Promise<Snapshot & { preferences: PortablePreferences }>;
+  readBackupSnapshot(): Promise<Snapshot & { preferences: PortablePreferences; coverMedia: CoverMedia[] }>;
   readYear(year: number): Promise<Snapshot>;
   readBook(id: string): Promise<{ book: Book | null; version: LocalRevision }>;
   readRevision(): Promise<LocalRevision>;

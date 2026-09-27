@@ -8,7 +8,7 @@ Conectar é opt-in. O padrão compilado mantém o recurso indisponível até `VI
 
 O conector não substitui o backup independente: o download da tela Dados depende de sua disponibilidade/estado, e a interface de exportação/importação sem Drive ainda não foi ligada ao serviço. As capas externas não são desenhadas na estante/detalhe.
 
-A inclusão de mídia local introduziu riscos na restauração: mídia e livros são substituídos em transações separadas, e os limites de gravação/exportação/restauração divergem. Ver S1/S2/S4 da [auditoria](audit-2026-09-27.md). Corrigir e testar essas garantias antes de habilitar produção; não considerar a cópia de recuperação uma prova de preservação integral de capas.
+A issue #37 corrige S1/S4 da [auditoria](audit-2026-09-27.md): snapshots recebidos validam os bytes de imagem antes da prévia, e a aplicação remota automática ou escolhida no conflito substitui livros, mídias, preferências, revisão e outbox numa única transação condicional. Exportações leem esses dados em um snapshot readonly coerente. A divergência de limites de gravação/exportação/restauração (S2) ainda precisa ser corrigida antes de habilitar produção.
 
 ## Persistência e recuperação
 

@@ -1,14 +1,14 @@
+import { prepareBackupMedia } from '../backup/media';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
 import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncRecord, type SyncSnapshot, type SyncView } from './contracts';
 import { libraryHash, remoteHeads } from './snapshot';
 import type { SyncStore } from './outbox';
 import type { LibraryExport } from '../backup/schema';
-import { decodeCover, encodeCover } from '../adapters/indexeddb/cover-media';
-import type { CoverMedia } from '../media/cover';
+import { encodeCover } from '../adapters/indexeddb/cover-media';
 
 type Options = { repository: LibraryRepository; store: SyncStore; auth: AuthClient; drive: (binding: Binding) => DriveClient;
-  media?: { all(): Promise<CoverMedia[]>; replace(values: CoverMedia[]): Promise<void> }; online: () => boolean; visible: () => boolean; hasDraft: () => boolean; navigate: (url: string) => void };
+  online: () => boolean; visible: () => boolean; hasDraft: () => boolean; navigate: (url: string) => void };
 type Conflict = { binding: Binding; heads: DriveFile[]; version: LocalRevision; accountChanged: boolean };
 const ids = (files: DriveFile[]) => files.map(file => file.header.snapshotId).sort().join(',');
 
@@ -24,7 +24,7 @@ export function createSyncCoordinator(options: Options) {
   async function library(): Promise<{ library: LibraryExport; version: LocalRevision }> {
     const snapshot = await repository.readBackupSnapshot();
     return { version: snapshot.version, library: { format: 'livro-a-livro', schemaVersion: 1, exportedAt: new Date().toISOString(),
-      books: snapshot.books, preferences: snapshot.preferences, coverMedia: options.media ? await Promise.all((await options.media.all()).map(encodeCover)) : [] } };
+      books: snapshot.books, preferences: snapshot.preferences, coverMedia: await Promise.all(snapshot.coverMedia.map(encodeCover)) } };
   }
   async function snapshot(data: LibraryExport, parent: string | null, resolved: string[] = []): Promise<SyncSnapshot> {
     return { format: 'livro-a-livro-sync', protocolVersion: 1, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(),
@@ -112,8 +112,10 @@ export function createSyncCoordinator(options: Options) {
     const recovery = await snapshot(local.library, record.base.snapshotId);
     await guard(); if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
     await store.preserve(recovery);
-    if (options.media) await options.media.replace(incoming.library.coverMedia.map(decodeCover));
-    const version = await repository.commit({ kind: 'replace', books: incoming.library.books, preferences: incoming.library.preferences }, local.version);
+    const coverMedia = await prepareBackupMedia(incoming.library);
+    await guard();
+    if (options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
+    const version = await repository.commit({ kind: 'replace', books: incoming.library.books, preferences: incoming.library.preferences, coverMedia }, local.version);
     await accepted(record, remote, version);
   }
   async function locked(action: (signal: AbortSignal) => Promise<void>) {
@@ -197,8 +199,10 @@ export function createSyncCoordinator(options: Options) {
         await guard(); await store.preserve(await snapshot(local.library, null));
         if (choice !== 'local') {
           if (options.hasDraft()) throw new SyncError('conflict');
-          if (options.media) await options.media.replace(data.coverMedia.map(decodeCover));
-          version = await repository.commit({ kind: 'replace', books: data.books, preferences: data.preferences }, local.version);
+          const coverMedia = await prepareBackupMedia(data);
+          await guard();
+          if (options.hasDraft()) throw new SyncError('conflict');
+          version = await repository.commit({ kind: 'replace', books: data.books, preferences: data.preferences, coverMedia }, local.version);
         }
         const next = await snapshot(data, heads[0]?.header.snapshotId ?? null, heads.map(head => head.header.snapshotId));
         const record = { ...await store.read(), binding, base: null, enabled: true };

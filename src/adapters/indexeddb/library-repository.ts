@@ -1,3 +1,5 @@
+import { validateMediaCollection } from '../../backup/media';
+import { coverMediaSchema } from '../../media/cover';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import { z } from 'zod';
 import { parseBook, shelfYearSchema } from '../../domain/book';
@@ -25,6 +27,7 @@ function prepare(change: LibraryChange): LibraryChange {
     case 'put': return { kind: 'put', book: parseBook(change.book) };
     case 'delete': return { kind: 'delete', id: keyOf(change.id) };
     case 'replace': return { kind: 'replace', books: parseLibrary(change.books),
+      coverMedia: validateMediaCollection(change.books, change.coverMedia ?? []),
       ...(change.preferences === undefined ? {} : { preferences: parseDomain(
         preferencesSchema.omit({ lastExport: true }), change.preferences, 'InvalidBackup') }) };
     default: throw new DomainError('InvalidLibrary');
@@ -70,16 +73,17 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   }
 
   const repository: LibraryRepository = {
-    readBackupSnapshot: () => transaction(['books', 'meta', 'preferences'], 'readonly', async (tx) => {
-      const [values, rawMeta, rawPreferences] = await Promise.all([
+    readBackupSnapshot: () => transaction(['books', 'meta', 'preferences', 'coverMedia'], 'readonly', async (tx) => {
+      const [values, rawMeta, rawPreferences, media] = await Promise.all([
         tx.objectStore('books').getAll(), tx.objectStore('meta').get('library'),
-        tx.objectStore('preferences').get('ui'),
+        tx.objectStore('preferences').get('ui'), tx.objectStore('coverMedia').getAll(),
       ]);
       const books = parseLibrary(values);
       const meta = parseMetadata(rawMeta);
       if (meta.bookCount !== books.length || meta.serializedBytes !== bytes(books)) throw new DomainError('InvalidLibrary');
       const { shelfYear, mode, filter } = parseDomain(preferencesSchema, rawPreferences, 'InvalidLibrary');
-      return { books, version: versionOf(meta), preferences: { shelfYear, mode, filter } };
+      return { books, version: versionOf(meta), preferences: { shelfYear, mode, filter },
+        coverMedia: media.map(value => parseDomain(coverMediaSchema, value, 'InvalidLibrary')) };
     }),
     readAll: () => transaction(['books', 'meta'], 'readonly', async (tx) => {
       const [values, rawMeta, keys] = await Promise.all([
@@ -120,7 +124,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       const replacementBytes = prepared.kind === 'replace' ? bytes(prepared.books) : 0;
       const putBytes = prepared.kind === 'put' ? bytes(prepared.book) : 0;
       const generation = prepared.kind === 'replace' ? globalThis.crypto.randomUUID() : null;
-      const version = await transaction(['books', 'meta', 'preferences', 'syncOutbox'], 'readwrite', async (tx) => {
+      const version = await transaction(['books', 'meta', 'preferences', 'coverMedia', 'syncOutbox'], 'readwrite', async (tx) => {
         const books = tx.objectStore('books');
         const meta = parseMetadata(await tx.objectStore('meta').get('library'));
         if (!sameRevision(meta, expectedVersion)) throw new DomainError('StaleRevision');
@@ -131,6 +135,8 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
           bookCount = prepared.books.length;
           serializedBytes = replacementBytes;
           await books.clear();
+          await tx.objectStore('coverMedia').clear();
+          await Promise.all((prepared.coverMedia ?? []).map(value => tx.objectStore('coverMedia').add(value, value.id.toLowerCase())));
           await Promise.all(prepared.books.map(async (book) => books.add(book, book.id.toLowerCase())));
           if (prepared.preferences) {
             await tx.objectStore('preferences').put({ ...prepared.preferences, lastExport: null }, 'ui');

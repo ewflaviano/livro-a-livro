@@ -6,7 +6,7 @@ O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com bibliotec
 
 Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
 
-**Lacunas atuais:** Configurações é placeholder; o backup independente não tem interface; capas Open Library não são renderizadas na biblioteca; experimentos/métricas não têm consumidores runtime. A restauração com mídias tem riscos confirmados de atomicidade e limites (S1, S2 e S4 da auditoria). As garantias de recuperação descritas abaixo são requisitos a cumprir, não declaração de que esses defeitos foram corrigidos.
+**Lacunas atuais:** Configurações é placeholder; o backup independente não tem interface; capas Open Library não são renderizadas na biblioteca; experimentos/métricas não têm consumidores runtime. A issue #37 corrige atomicidade e validação da restauração com mídias (S1/S4); os limites de gravação e portabilidade (S2) continuam pendentes.
 
 A orientação vigente inclui Drive opcional e experimentos desde a arquitetura inicial, sem tornar conta ou conexão requisitos do fluxo local. Ela substitui a exclusão histórica de Drive do roteiro visual. O [design system](design-system.md) e o [catálogo](design-system.html) continuam referências visuais, não inventário funcional.
 
@@ -247,7 +247,7 @@ Ano vazio mostra 0 livros; se há lidos e nenhuma página/autoria informada, usa
 
 Os metadados V1 contêm `generation`, `revision`, `recordVersion`, `bookCount` e `serializedBytes` (array JSON em UTF-8, incluindo colchetes/vírgulas e excluindo o envelope reservado). Escritas individuais calculam deltas na transação; substituições validam e calculam o total antes dela. A chave externa de `books` é o UUID em minúsculas; o valor preserva a grafia original do ID. Isso mantém a identidade sem distinguir caixa e permite restaurar os valores originais. Ao abrir, livros, chaves e metadados são validados; corrupção impede expor um repositório gravável, sem reparo ou limpeza automática.
 
-Preferências usam `shelfYear: null` até haver escolha/contexto, `mode: 'grid'`, `filter: 'all'` e `lastExport: null`. `lastExport` agrupa instante do download iniciado e revisão exportada. `updatePreferences` mescla somente os campos recebidos numa transação própria, preservando alterações concorrentes em outros campos; o último commit vence quando duas abas alteram o mesmo campo. Preferências não incrementam revisão da biblioteca e sobrevivem a `replace`.
+Preferências usam `shelfYear: null` até haver escolha/contexto, `mode: 'grid'`, `filter: 'all'` e `lastExport: null`. `lastExport` agrupa instante do download iniciado e revisão exportada. `updatePreferences` mescla somente os campos recebidos numa transação própria, preservando alterações concorrentes em outros campos; o último commit vence quando duas abas alteram o mesmo campo. Preferências não incrementam revisão da biblioteca; `replace` preserva-as quando omitidas e substitui as portáveis, limpando `lastExport`, quando fornecidas.
 
 A criação V1 é a única migração de produção existente. Upgrades futuros devem acrescentar passos explícitos em `migrations.ts`; falhas abortam integralmente. Uma abertura bloqueada falha com `StorageUnavailable` e evento `blocked`; sua requisição pendente será abortada quando puder prosseguir, impedindo migração tardia depois de o chamador receber erro. Nunca há downgrade nem exclusão automática. `syncState`, `syncOutbox`, `experimentState` e `searchCache` usam estruturas isoladas. A etapa de experimentos usa `experimentState` apenas para consentimentos, seed local e atribuições; não entra no backup, no Drive ou na API. O índice de cache é `byAccess` sobre `lastAccessedAt`.
 
@@ -275,7 +275,7 @@ type Snapshot = { books: Book[]; version: LocalRevision };
 type LibraryChange =
   | { kind: 'put'; book: Book }
   | { kind: 'delete'; id: string }
-  | { kind: 'replace'; books: Book[] };
+  | { kind: 'replace'; books: Book[]; preferences?: PortablePreferences; coverMedia?: CoverMedia[] };
 
 interface LibraryRepository {
   readAll(): Promise<Snapshot>;
@@ -354,7 +354,7 @@ Nome: `livro-a-livro-AAAA-MM-DD.json`. O texto de confirmação é **“Arquivo 
 - Validar envelope estrito e cada registro com schema da versão declarada. UUID repetido é erro; título repetido não é. Versão futura recusa com mensagem para atualizar o app, sem reinterpretar como V1 nem descartar campos.
 - Limites atingidos não autorizam truncar notas/autores ou importar parcialmente. Worker responde com contagens, anos e erros sem mutar IndexedDB; pessoa pode cancelar até iniciar o commit.
 - Prévia usa a mesma coleção validada que será aplicada, mantida imutável. Arquivo alterado/selecionado novamente invalida a prévia. Se outra aba mudar a biblioteca após prévia, reabrir confirmação com dados atuais; não repetir destrutivamente em segundo plano.
-- `replace` limpa `books`, insere todos e atualiza metadados na **mesma transação**. Qualquer erro aborta tudo. Só depois da conclusão anunciar importação e descartar projeções antigas. A confirmação final informa quantos registros serão removidos/substituídos; importação de biblioteca vazia requer o mesmo cuidado.
+- `replace` compara geração/revisão, substitui `books` e `coverMedia`, aplica preferências fornecidas e atualiza `meta` e `syncOutbox` na **mesma transação**. Omissão de `coverMedia` significa coleção vazia, preservando backups V1 anteriores às capas. Qualquer erro aborta tudo. Só depois da conclusão anunciar importação e descartar projeções antigas. A confirmação final informa quantos registros serão removidos/substituídos; importação de biblioteca vazia requer o mesmo cuidado.
 - Oferecer exportar a atual antes de substituir, sem marcar download como terminado. Não criar mesclagem automática, resolução por data ou cópia oculta permanente na V1.
 - O backup é texto legível. Não prometer criptografia, autenticação do arquivo ou proteção contra arquivo adulterado mas estruturalmente válido. Mostrar a origem local selecionada e resumo para decisão; não enviar arquivo a serviço algum.
 
@@ -390,7 +390,7 @@ O store reservado `searchCache` guarda somente páginas normalizadas e os prazos
 
 Na revisão, somente após selecionar um resultado, a capa é carregada por URL construída a partir de `coverId` validado, com CORS anônimo, sem referrer e fallback local. Os resultados não carregam imagens. Esta fatia preserva a referência de capa no livro; a estante e o detalhe ainda usam fallback tipográfico. Cache raster validado e reutilização de capas em estante/compartilhamento pertencem à integração seguinte. A busca não instala service worker nem proxy. As diretrizes e endpoints oficiais abaixo foram conferidos antes da implementação; nenhum teste automatizado acessa o serviço público.
 
-**Capas locais adicionadas na issue #21:** o domínio aceita `provider: 'local'`, os bytes ficam em `coverMedia` e o detalhe mostra a imagem enviada. A estante ainda usa fallback. Backup e sincronização carregam mídias, mas a auditoria identificou falhas de atomicidade e limites; sua portabilidade precisa ser corrigida antes de ser considerada completa. Capas não passam pela API/AWS.
+**Capas locais adicionadas na issue #21:** o domínio aceita `provider: 'local'`, os bytes ficam em `coverMedia` e o detalhe mostra a imagem enviada. A estante ainda usa fallback. Backup e sincronização carregam mídias; a issue #37 corrige a substituição atômica e a validação prévia. A divergência de limites na gravação/exportação (S2) permanece pendente. Capas não passam pela API/AWS.
 
 O provedor publica limites de **1 requisição/s sem identificação e 3/s com identificação**, pede cache e uso humano de baixo volume, e não se propõe a servir como backend de alto tráfego. Não distribuir tráfego deliberadamente por IPs para contornar limites. Revalidar essas regras antes do lançamento e de cada expansão relevante. [Diretrizes oficiais](https://openlibrary.org/developers/api).
 
@@ -774,3 +774,11 @@ A sequência mantém o [build-plan.md](build-plan.md): contrato/IndexedDB/backup
 Antes do primeiro commit de implementação: transformar os contratos deste documento em schemas e fixtures e escolher os limites em constantes compartilhadas. Antes do lançamento: fixar domínio canônico, navegador/aparelho de referência, ferramenta de build do SW, orçamento AWS e condições de uso público da Open Library. São tarefas operacionais delimitadas; nenhuma torna login obrigatório; API é opcional para a biblioteca e IA continua ausente.
 
 Mudança de semântica de ano, estatística, conteúdo exportado, origem de capas ou privacidade deve atualizar roteiro e design system junto com os schemas. Não introduzir novos estados de leitura ou recurso social como detalhe de implementação. A presença da API e a fronteira PWA ↔ Drive sem conteúdo de biblioteca na infraestrutura própria estão decididas neste documento. Nova finalidade de dados, IA, conta obrigatória ou sincronização com semântica diferente exigem nova decisão registrada; não inferir autorização de um experimento.
+
+### Restauração com mídias — issue #37
+
+`readBackupSnapshot` lê livros, preferências portáveis, revisão e blobs de `coverMedia` numa única transação readonly. A conversão para base64 ocorre depois de concluída essa leitura, sem reler mídias numa conexão separada.
+
+Antes de produzir a prévia local ou aceitar um snapshot Drive, `prepareBackupMedia` verifica IDs únicos sem distinção de maiúsculas, referências locais existentes, base64 canônico, limites de 2 MiB por capa e 12 MiB agregados, assinatura PNG/JPEG/WebP, decode nativo e dimensões reais correspondentes à declaração (máximos 2400 × 3600). O envelope limita 100 mídias e 50 MiB de JSON. Erros de mídia são `InvalidBackup`; excesso de bytes é `ImportTooLarge`. Arquivos V1 sem mídias continuam válidos quando não referenciam capas locais.
+
+A confirmação usa blobs preparados, sem decode ou outro await externo dentro da transação. O commit revalida a estrutura/limites e referências antes de abrir a transação; quota, aborto ou revisão vencida preservam os cinco stores. Aplicação automática de descendente remoto e resolução explícita usam esse mesmo commit. Testes com imagens sintéticas reais cobrem os três formatos, referência ausente, IDs duplicados, corrupção, tamanho, conflito e rollback após escritas parciais. Limites de gravação individual, coleta de órfãs e garantia de round-trip do maior estado aceito pertencem à etapa S2.

@@ -1,3 +1,4 @@
+import { prepareBackupMedia } from '../backup/media';
 import { LIBRARY_LIMITS, utf8ByteLength } from '../domain/library';
 import { parseExportV1 } from '../backup/schema';
 import { serializeBackup } from '../backup/serialize';
@@ -20,6 +21,7 @@ export async function parseSnapshot(input: unknown): Promise<SyncSnapshot> {
     if (parsed.snapshotId === parsed.parentSnapshotId || parsed.resolvedSnapshotIds.includes(parsed.snapshotId) ||
       new Set(parsed.resolvedSnapshotIds).size !== parsed.resolvedSnapshotIds.length ||
       utf8ByteLength(JSON.stringify(parsed)) > MAX_SYNC_BYTES || await libraryHash(parsed.library) !== parsed.hash) throw new SyncError('invalid');
+    await prepareBackupMedia(parsed.library);
     return parsed;
   } catch { throw new SyncError('invalid'); }
 }
