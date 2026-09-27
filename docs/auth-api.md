@@ -6,7 +6,7 @@ A issue #10 implementa o núcleo Rust/Axum, o cliente OAuth Google e a entrada r
 
 O serviço recebe exclusivamente os controles de autorização. As rotas de controle exigem body vazio; queries são recusadas fora do callback. Um limite de 16 KiB também rejeita payloads grandes antes do handler. Não existem contratos de livro, nota, avaliação, backup, hash da biblioteca, imagem ou transferência de Drive. O provider conhece apenas endpoints fixos de token, JWKS e revogação Google.
 
-O cliente da issue #11 pede um access token e faz as transferências **diretamente entre PWA e Google Drive** ([conector e modo local](drive-sync.md)). A habilitação em produção depende da composição AWS e configuração GCP. Capas enviadas pelo usuário, quando implementadas, seguem a mesma fronteira direta e nunca transitam por esta API.
+O cliente da issue #11 pede um access token e faz as transferências **diretamente entre PWA e Google Drive** ([conector e modo local](drive-sync.md)). A habilitação em produção depende da composição AWS e configuração GCP. Capas locais já têm implementação no cliente e seguem a mesma fronteira direta; nunca transitam por esta API. Sua recuperação ainda tem pendências registradas na [auditoria](audit-2026-09-27.md).
 
 ## Contrato HTTP
 
