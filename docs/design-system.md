@@ -264,7 +264,7 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 
 ## 17. Direção de navegação mobile — revisão de 27 set 2026
 
-A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações e Apoiar; a instalação pertence à etapa seguinte. Lendo e Quero ler continuam como filtros e rotas diretas.
+A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações, Instalar e Apoiar. Lendo e Quero ler continuam como filtros e rotas diretas.
 
 Rótulos e ícones permanecem visíveis, seleção usa `aria-current`, alvos têm pelo menos 44 px e o rodapé reserva área segura. A barra usa a camada sticky, abaixo dos diálogos. Os links seguem a proteção existente de rascunho e operações de backup; navegação muda o foco para o conteúdo. Não duplicar Adicionar no cabeçalho mobile.
 
@@ -283,3 +283,11 @@ Cancelar diálogo retorna ao acionador; cancelar importação, concluir ou recus
 Revisão da busca, estante em Grade/Lista e detalhe compartilham a mesma moldura 2:3. Usar `object-fit: contain`; nenhuma parte da imagem é cortada para preencher o espaço. Capas enviadas continuam disponíveis offline. Referências Open Library usam conexão, com aviso na estante/detalhe e fallback tipográfico em erro, ausência ou offline.
 
 Título e autoria são conteúdo adjacente, não dependem da imagem nem ficam dentro do recorte. A imagem tem alt vazio por ser decorativa junto ao título; fallback é oculto para leitores de tela para evitar repetir o nome. Na busca, carregar apenas a capa do resultado já escolhido; a lista de resultados não dispara download de imagens. O catálogo permanece uma demonstração estática sem imagens remotas.
+
+### Configurações e instalação — issue #45
+
+Configurações oferece os controles existentes de ano (incluindo atual automático), Grade/Lista e filtro. Preferências são salvas pelo serviço; falha informa que a sessão conserva a escolha e oferece tentar salvar. A seção Aplicativo mostra versão/build públicos, disponibilidade offline, atualização e links para Instalar e backup.
+
+Instalar oferece instruções Chrome/Android e Safari/iPhone/iPad. Botão só aparece com evento nativo disponível. Cancelamento e falha mantêm instruções; pedido aceito não vira instalado até observação do navegador. Estado instalado deixa backup acessível. Instalação não promete cópia ou conservação garantida dos registros.
+
+A preparação offline inicial nunca usa a mensagem de atualização. Versão nova aguardando permite consentir, respeitando rascunhos/operações e outras abas. A página desconhecida oferece Estante e backup, sem “Em construção”.
