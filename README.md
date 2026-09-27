@@ -43,6 +43,8 @@ O modo local mostra uma faixa em todas as telas, usa banco IndexedDB separado e 
 - [Catálogo visual e Estante 2026](docs/design-system.html) — abra o arquivo diretamente no navegador, sem instalar dependências. Os exemplos são estáticos e não salvam dados.
 - [Roteiro de construção da V1](docs/build-plan.md)
 - [Arquitetura técnica: biblioteca local, API opcional, Drive e experimentos](docs/architecture.md)
+- [Entrega, domínio e publicação](docs/deployment.md)
+- [Como participar do desenvolvimento](CONTRIBUTING.md)
 - [Sequência de entrega e papéis dos agentes](docs/delivery-plan.md)
 
 ## Tecnologia planejada

@@ -20,11 +20,16 @@ Os CNAMEs de validação DNS do ACM já existem na zona. Após a delegação se 
 
 Os certificados devem estar com status `ISSUED` antes de serem associados aos recursos de produção.
 
-## Próxima implantação
+## Publicação do site
 
-Ainda não há site nem API para apontar. Quando cada recurso existir, criar na mesma zona:
+`infra/frontend.yml` cria uma distribuição CloudFront com origem S3 privada/OAC, o alias `A`/`AAAA` da raiz e os cabeçalhos de segurança. O bucket recebe somente o build estático; não recebe bibliotecas, backups, capas enviadas ou arquivos de Drive.
 
-- Alias `A`/`AAAA` de `livroalivro.app.br` para a distribuição CloudFront.
-- Domínio regional do API Gateway com o certificado de `sa-east-1` e Alias `A` de `api.livroalivro.app.br` para ele.
+Os assets com hash são publicados primeiro com cache imutável. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline.
 
-Não criar CNAMEs de placeholder: eles poderiam aparentar que o produto está publicado antes de existir um destino válido.
+## API
+
+O certificado regional de `sa-east-1` continua reservado para o domínio `api.livroalivro.app.br`. Ele será associado ao API Gateway somente quando a composição OAuth durável estiver pronta. Até lá, o frontend não habilita o conector de Drive em produção e não existe CNAME de placeholder.
+
+## CI/CD
+
+`.github/workflows/ci.yml` testa frontend e Rust em jobs independentes. Publicações da `main` assumem a role OIDC limitada definida em `infra/github-oidc.yml`; não usam chaves AWS estáticas. A role só pode ler os outputs da stack, publicar os assets no bucket deste site e invalidar sua distribuição.
