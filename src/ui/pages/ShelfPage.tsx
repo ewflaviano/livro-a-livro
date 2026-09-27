@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Grid2X2, List, BookOpen } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
@@ -6,6 +6,9 @@ import type { ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
+import { projectYearShare, type YearShare } from '../../sharing/projection';
+
+const YearSharePreview = lazy(() => import('../components/YearSharePreview'));
 
 const labels = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler', all: 'Todos' };
 const statusLabels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
@@ -16,6 +19,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
+  const shareButton = useRef<HTMLButtonElement>(null);
+  const [share, setShare] = useState<YearShare | null>(null);
   const title = status ? labels[status] : 'Minha estante';
   useEffect(() => { document.title = `${title} · Livro a Livro`; }, [title]);
   useLayoutEffect(() => {
@@ -61,6 +66,15 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
     </dl>
     {metrics.books > 0 && (metrics.booksWithPages < metrics.books || metrics.booksWithAuthors < metrics.books) &&
       <p className="metric-note">Páginas e autores consideram somente as informações registradas nos livros lidos.</p>}
+    <div className="share-entry">
+      <button ref={shareButton} className="button button-secondary" disabled={metrics.books === 0}
+        aria-describedby={metrics.books === 0 ? 'share-empty' : undefined}
+        onClick={() => setShare(projectYearShare(snapshot.books, year, true))}>Compartilhar ano</button>
+      {metrics.books === 0 && <p id="share-empty" className="field-help">A imagem fica disponível após marcar um livro como Lido neste ano.</p>}
+    </div>
+    {share && <Suspense fallback={<p role="status">Preparando a prévia…</p>}>
+      <YearSharePreview key={share.year} projection={share} onClose={() => { setShare(null); shareButton.current?.focus(); }} />
+    </Suspense>}
     <div className="shelf-tools">
       <div className="segmented-control shelf-filters" role="group" aria-label="Filtrar por estado">
         {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>

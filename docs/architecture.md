@@ -439,6 +439,8 @@ O ciclo de instalação/ativação e os contextos seguros são descritos na [doc
 
 ## 10. Interface, design system e estado
 
+**Compartilhamento implementado na issue #9:** o botão da estante captura uma projeção imutável com allowlist de ano, quantidade de Lidos, páginas informadas, autores distintos e até seis títulos. O compositor carregado sob demanda recebe somente essa projeção, sem `Book`, notas, avaliações, IDs, ISBN, datas, URLs ou referências de capa. Canvas gera a prévia exata de 1080 × 1920 ou 1080 × 1080; o download PNG depende de ação posterior. Títulos podem ser retirados antes do download, e a descrição textual copiável corresponde à escolha. Nesta etapa todas as capas são tipográficas locais: não há cache raster confiável para reutilizar, download remoto, imagens externas ou risco de canvas contaminado por CORS. Ano sem Lidos explica a indisponibilidade. Mais de seis registros produz `+ N livros`; títulos longos têm limite visual sem alterar o registro. Gerar/baixar imagem não altera livros, revisão ou histórico de backup. A prévia é um retrato do momento em que foi aberta; abrir novamente incorpora novas leituras.
+
 `main.tsx` importa `../docs/tokens.css` ou caminho relativo equivalente; não duplicar tokens em uma segunda fonte divergente. Componentes usam apenas nomes semânticos e pt-BR. Preservar Georgia/system-ui locais, foco visível, 44 px de alvo, campos de 16 px, redução de movimento e responsividade de 320 px a desktop.
 
 | Design system / roteiro | Contrato arquitetural |
