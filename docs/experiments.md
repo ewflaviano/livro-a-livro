@@ -2,7 +2,7 @@
 
 Participação em experimentos e métricas técnicas é opcional, independente do Google Drive e desligada por padrão. Nenhuma escolha altera a biblioteca local.
 
-O diagnóstico de erros da issue #95 tem consentimento e rota próprios. Não usa o catálogo, a semente, as atribuições ou a telemetria desta página; sua ativação não ativa experimentos. A integração de experimentos continua pendente da issue #47.
+O diagnóstico de erros da issue #95 tem rota própria. A issue #97 unifica sua escolha com a de visitas do Google Analytics; essa escolha não usa o catálogo, a semente, as atribuições ou a telemetria desta página e não ativa experimentos. A integração de experimentos continua pendente da issue #47.
 
 ## Estado da integração — 27 set 2026
 
