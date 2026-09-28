@@ -1,11 +1,12 @@
 # Runtime OAuth AWS
 
-A API só recebe controles OAuth/sessão. Nenhum contrato de livro, nota, capa, backup ou hash da biblioteca existe neste runtime.
+A API recebe controles OAuth/sessão e códigos fixos de diagnóstico consentido. Nenhum contrato de livro, nota, capa, backup ou hash da biblioteca existe neste runtime.
 
 ## Executáveis e configuração
 
 - `auth` (`--features lambda`): Axum via Lambda HTTP API v2.
 - `revocation` (`--features lambda`): EventBridge com evento vazio, orçamento de trabalho de 20 s. Timeout Lambda deve ser 25 s, menor que lease de 30 s.
+- `diagnostics` (`--features lambda`): entrada separada de erros consentidos, sem acesso a tabela, KMS, segredo ou biblioteca.
 - `auth-admin` (`--features aws`): ferramenta local IAM; **não publicar como endpoint/Lambda**.
 
 Variáveis de runtime: `AUTH_TABLE_NAME`, `AUTH_KMS_KEY_ID` (ARN), `AUTH_SECRET_ARN`, `APP_ENVIRONMENT=production`, `AWS_REGION=sa-east-1`. Origem/callback/destino permanecem literais em `Config::production`.
@@ -66,7 +67,9 @@ O comando só aceita uncertain, chave completa e lease não vigente; CAS + incre
 
 ## Observabilidade
 
-Não inicializar subscriber de tracing nem logging HTTP/SDK. Auth só emite EMF fixo RevocationUncertain quando tentativa imediata fica incerta. Worker emite uma linha EMF agregada por execução em `LivroALivro/Auth`, sem dimensões/IDs: Processed, RevocationUncertain, CleanupCompleted, Failed, Incomplete e Duration. INFO deve permitir esses eventos; nenhuma entrada/erro externo é serializada. Alarmar Failed/Incomplete/Uncertain e ausência de invocações, além de erros/throttles Lambda. Um lote vazio bem-sucedido emite zeros.
+Não inicializar subscriber de tracing nem logging HTTP/SDK. Auth emite EMF fixo RevocationUncertain quando tentativa imediata fica incerta e código estático `auth_error` para respostas 5xx. Worker emite uma linha EMF agregada por execução em `LivroALivro/Auth`, sem dimensões/IDs: Processed, RevocationUncertain, CleanupCompleted, Failed, Incomplete e Duration. INFO deve permitir esses eventos; nenhuma entrada/erro externo é serializada. Alarmar Failed/Incomplete/Uncertain e ausência de invocações, além de erros/throttles Lambda. Um lote vazio bem-sucedido emite zeros.
+
+`POST /v1/diagnostics/errors` é uma rota pública exata, sem cookie, com Origin de produção exato e corpo JSON de até 512 bytes. Aceita somente `{area,code,count}`: pares permitidos `runtime`/`render_failure|runtime_exception|unhandled_rejection`, `storage`/`storage_unavailable`, `drive`/`drive_sync_failed`, `search`/`search_failed` e `backup`/`backup_failed`, com `count` entre 1 e 10. Rejeita extras, texto livre e cookies sem eco ou log do payload. A função escreve somente a combinação validada. A opção do navegador é independente de Analytics e experimentos; a API não recebe prova de consentimento e depende do cliente publicado e testado para respeitá-lo. CloudWatch tem retenção de 14 dias; os alarmes ficam para consulta manual, sem notificação por e-mail nesta etapa.
 
 ## Checks e gates reais
 

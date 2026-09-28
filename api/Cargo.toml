@@ -19,6 +19,11 @@ path = "src/bin/revocation.rs"
 required-features = ["lambda"]
 
 [[bin]]
+name = "diagnostics"
+path = "src/bin/diagnostics.rs"
+required-features = ["lambda"]
+
+[[bin]]
 name = "auth-admin"
 path = "src/bin/auth-admin.rs"
 required-features = ["aws"]

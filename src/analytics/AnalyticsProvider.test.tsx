@@ -15,6 +15,8 @@ vi.mock('./ga4', () => ({ enableAnalytics: harness.enable, disableAnalytics: har
 vi.mock('../pwa/register', () => ({ getPwaState: () => ({ blocked: false, update: 'none' }) }));
 vi.mock('../ui/interaction-guard', () => ({ getUiOccupancy: () => 1 }));
 vi.mock('../ui/components/PwaStatus', () => ({ PwaStatus: () => null }));
+vi.mock('../diagnostics/DiagnosticsProvider', () => ({ useDiagnostics: () => ({ choice: null, loading: false, saving: false, error: false, reviewing: false,
+  choose: vi.fn(), retry: vi.fn(), review: vi.fn(), closeReview: vi.fn() }) }));
 import { AnalyticsProvider, useAnalytics } from './AnalyticsProvider';
 import { AnalyticsBanner } from '../ui/components/AnalyticsBanner';
 import { SettingsPage } from '../ui/pages/SettingsPage';

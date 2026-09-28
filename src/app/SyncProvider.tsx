@@ -1,4 +1,5 @@
 import { openSyncResolutionRepository } from '../adapters/indexeddb/sync-resolution-repository';
+import { recordDiagnostic } from '../diagnostics/client';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { openSyncStore } from '../sync/outbox';
@@ -45,7 +46,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         window.addEventListener('online', wake); window.addEventListener('focus', wake); document.addEventListener('visibilitychange', wake);
         await next.start();
         if (active) setCoordinator(next);
-      } catch { cleanup(); if (active) setCoordinator(null); /* Optional sync cannot prevent local startup. */ }
+      } catch { cleanup(); if (active) { recordDiagnostic({ area: 'drive', code: 'drive_sync_failed' }); setCoordinator(null); } /* Optional sync cannot prevent local startup. */ }
       finally { if (active) setInitializing(false); }
     })();
     return () => { active = false; cleanup(); };

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { recordDiagnostic } from '../diagnostics/client';
 import type { ShelfService, ShelfState } from '../services/shelf-service';
 import type { PortablePreferences } from '../ports/library-repository';
 import { openShelfService } from './composition';
@@ -43,7 +44,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
       opened = next;
       setService(next);
       void next.refresh();
-    }).catch(() => { if (active) setFailed(true); });
+    }).catch(() => { if (active) { recordDiagnostic({ area: 'storage', code: 'storage_unavailable' }); setFailed(true); } });
     return () => { active = false; opened?.close(); };
   }, [openService, attempt]);
   const state = useSyncExternalStore(service?.subscribe ?? subscribeNothing, service?.getSnapshot ?? loadingSnapshot);

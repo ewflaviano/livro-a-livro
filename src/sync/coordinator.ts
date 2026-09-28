@@ -1,4 +1,5 @@
 import { canonicalJson, headerOf, sameHeader, type SyncSnapshotV3 } from './protocol';
+import { recordDiagnostic } from '../diagnostics/client';
 import type { SyncCommitFence, SyncResolutionRepository } from '../ports/sync-resolution-repository';
 import { prepareMerge, materializeUnion, unionPolicy, type PreparedMerge } from './merge';
 import { utf8ByteLength } from '../domain/library';
@@ -269,8 +270,10 @@ export function createSyncCoordinator(options: Options) {
       if (rethrow) throw error;
       const failure = error instanceof SyncError ? error : new SyncError('invalid');
       if (failure.code === 'cancelled' || closed || controller?.signal.aborted) return;
+      if (failure.code === 'invalid' || failure.code === 'quota') recordDiagnostic({ area: 'drive', code: 'drive_sync_failed' });
       if (failure.code === 'retry') {
         const record = await store.read(); const attempts = record.attempts + 1;
+        if (attempts >= 5) recordDiagnostic({ area: 'drive', code: 'drive_sync_failed' });
         const delay = Math.max(failure.retryAfter, Math.min(60_000, 1000 * 2 ** Math.min(attempts, 6)) * (0.8 + Math.random() * 0.2));
         try { await store.update({ attempts, nextAttempt: Date.now() + delay }, owner); } catch { return; }
         if (controller?.signal.aborted) return;
