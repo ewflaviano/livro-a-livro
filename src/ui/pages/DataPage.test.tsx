@@ -84,6 +84,7 @@ describe('independent local backup interface', () => {
   it('round-trips all fields and real cover bytes into a distinct profile, offline without Drive', async () => {
     const source = await setup(true);
     expect(screen.getAllByRole('heading', { level: 2 })[0].textContent).toBe('Backup local');
+    expect(screen.queryByRole('heading', { name: 'Visitas ao site' })).toBeNull();
     expect(screen.getByText(/conector está em preparação/)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Fazer backup' }));
     await screen.findByText(/Download iniciado; confira/);

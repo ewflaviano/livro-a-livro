@@ -9,7 +9,6 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useGlobalSyncControls } from '../components/GlobalSyncControls';
 import { authorizationStates, syncLabels as labels } from '../components/sync-presentation';
 import type { LibraryExport } from '../../backup/schema';
-import { useAnalytics } from '../../analytics/AnalyticsProvider';
 
 export function downloadLibrary(data: LibraryExport, suffix: string) {
   const url = URL.createObjectURL(new Blob([serializeBackup(data)], { type: 'application/json;charset=utf-8' }));
@@ -20,7 +19,6 @@ export function DataPage() {
   const location = useLocation();
   const { coordinator, state, available, local, initializing } = useSync();
   const controls = useGlobalSyncControls();
-  const analytics = useAnalytics();
   const [confirm, setConfirm] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const [merge, setMerge] = useState<ResolutionPreview | null>(null);
   const [preparingMerge, setPreparingMerge] = useState(false);
@@ -122,10 +120,6 @@ export function DataPage() {
     {preparingMerge && <p role="status">Preparando as versões… <button className="button button-secondary" onClick={closeMerge}>Cancelar preparação</button></p>}
     {merge && <MergePreview key={merge.id} preview={merge} busy={busy} error={mergeError} accountChanged={state.accountChanged} onCancel={closeMerge} onConfirm={() => void confirmMerge()} />}
     {mergeNotice && <p role="status">{mergeNotice}</p>}
-    <h2>Visitas ao site</h2>
-    <p>O Google Analytics conta visitas somente com sua permissão. Seus livros não são enviados.</p>
-    <p>Escolha atual: {analytics.loading ? 'Verificando…' : analytics.error ? 'Não foi possível verificar' : analytics.choice === 'accepted' ? 'Aceito' : analytics.choice === 'rejected' ? 'Recusado' : 'Ainda não escolhida'}.</p>
-    <button className="button button-secondary" onClick={analytics.review}>Revisar escolha de Analytics</button>
     {error && <p role="alert">{error}</p>}
     {confirm && <ConfirmDialog title={confirm === 'revoke' ? 'Desconectar Google Drive?' : confirm === 'logout' ? 'Sair deste navegador?' : 'Confirmar a versão escolhida?'}
       confirmLabel="Confirmar" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => void act(() => {

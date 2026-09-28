@@ -14,8 +14,10 @@ vi.mock('./consent', () => ({ openAnalyticsConsentStore: async () => { if (harne
 vi.mock('./ga4', () => ({ enableAnalytics: harness.enable, disableAnalytics: harness.disable, suspendAnalytics: harness.disable, recordPublicPage: harness.page }));
 vi.mock('../pwa/register', () => ({ getPwaState: () => ({ blocked: false, update: 'none' }) }));
 vi.mock('../ui/interaction-guard', () => ({ getUiOccupancy: () => 1 }));
+vi.mock('../ui/components/PwaStatus', () => ({ PwaStatus: () => null }));
 import { AnalyticsProvider, useAnalytics } from './AnalyticsProvider';
 import { AnalyticsBanner } from '../ui/components/AnalyticsBanner';
+import { SettingsPage } from '../ui/pages/SettingsPage';
 function View() { const analytics = useAnalytics(); const navigate = useNavigate(); return <><AnalyticsBanner /><button onClick={() => navigate('/livro/private-id?secret=1')}>Abrir livro</button><button onClick={analytics.review}>Revisar escolha</button><span>{analytics.choice ?? 'indeciso'}</span></>; }
 const mount = () => render(<MemoryRouter initialEntries={['/estante']}><AnalyticsProvider><View /></AnalyticsProvider></MemoryRouter>);
 beforeEach(() => { harness.openFail = false; harness.persisted = null; harness.read.mockClear(); harness.write.mockClear(); harness.enable.mockClear(); harness.disable.mockClear(); harness.page.mockClear(); });
@@ -83,6 +85,15 @@ it('suspends immediately on cross-tab invalidation until IDB confirms consent', 
 it('returns keyboard focus to the review action after closing the banner', async () => {
   harness.persisted = 'rejected'; mount();
   const trigger = screen.getByRole('button', { name: 'Revisar escolha' });
+  await userEvent.click(trigger);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Recusar' })));
+  await userEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+it('returns focus to the review action in Settings after closing the banner', async () => {
+  harness.persisted = 'rejected';
+  render(<MemoryRouter><AnalyticsProvider><SettingsPage /><AnalyticsBanner /></AnalyticsProvider></MemoryRouter>);
+  const trigger = screen.getByRole('button', { name: 'Revisar escolha de Analytics' });
   await userEvent.click(trigger);
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Recusar' })));
   await userEvent.click(screen.getByRole('button', { name: 'Fechar' }));
