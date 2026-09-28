@@ -47,7 +47,7 @@ Instalação realmente vazia, sem histórico, pendência ou preferência editada
 
 ## Agendamento e falhas
 
-Commits disparam debounce de 1,5 s com máximo de 10 s, abertura/foco/retomada e online retomam o trabalho, e polling visível usa 60–70 s. Rede oculta/offline não inicia novos ciclos; uma requisição já em voo pode terminar. Retry exponencial com jitter respeita `Retry-After`, limitado a cinco tentativas por ciclo; reabrir/retomar permite outro ciclo. 401 renova token uma vez, quota e autorização exigem ação, conteúdo inválido não é aplicado. Uma falha nunca impede salvar localmente.
+Commits disparam debounce de 1,5 s com máximo de 10 s. Abertura, retorno de foco/visibilidade e reconexão retomam o trabalho; despertares próximos são limitados a uma consulta Drive por minuto quando há conexão. Uma página parada não consulta o Drive periodicamente. Mudanças feitas apenas em outro dispositivo aparecem ao voltar ao aplicativo ou após uma ação explícita de sincronização. Rede oculta/offline não inicia novos ciclos; uma requisição já em voo pode terminar. Retry exponencial com jitter respeita `Retry-After`, limitado a cinco tentativas por ciclo; reabrir/retomar permite outro ciclo. 401 renova token uma vez, quota e autorização exigem ação, conteúdo inválido não é aplicado. Uma falha nunca impede salvar localmente.
 
 Rascunhos desta aba bloqueiam substituição automática; mudanças concorrentes em outra aba preservam o rascunho existente e impedem seu commit antigo pelas revisões do repositório. Não há Background Sync, sendBeacon, upload no service worker ou execução com navegador fechado. O mesmo cache público de app shell continua excluindo todos os endpoints autenticados.
 
