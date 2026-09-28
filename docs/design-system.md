@@ -174,7 +174,7 @@ Cadastro mínimo: título obrigatório; autor opcional (“Autoria não informad
 
 ## 10. Página do livro
 
-Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado editável; avaliação opcional; campo “Observações”; Salvar alterações e ação de exclusão secundária. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Observações têm largura de leitura confortável e crescem com o conteúdo.
+Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado e ação **Editar livro** junto ao cabeçalho. Páginas, ano de publicação, ISBN, avaliação e Observações aparecem no detalhe somente quando informados; o formulário de edição oferece todos os campos. **Remover livro** fica em Opções do livro e continua exigindo confirmação. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Observações têm largura de leitura confortável e crescem com o conteúdo.
 
 Datas legadas permanecem no registro e no backup, embora não apareçam no fluxo atual. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Observações e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
 

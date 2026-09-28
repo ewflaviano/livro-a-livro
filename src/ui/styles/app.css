@@ -130,6 +130,10 @@ h2 { font-size: var(--text-h2); }
 .confirm-dialog h2 { margin-top: 0; }
 .book-detail-heading { display: grid; grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
 .book-detail-heading p { overflow-wrap: anywhere; }
+.book-detail-actions { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-3); margin-top: var(--space-6); }
+.book-options summary { list-style: none; }
+.book-options summary::-webkit-details-marker { display: none; }
+.book-options-menu { margin-top: var(--space-2); padding: var(--space-2); background: var(--color-surface); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-control); }
 .book-facts { margin-block: var(--space-8); display: grid; gap: var(--space-4); }
 .book-facts dt { font-size: var(--text-small); color: var(--color-text-secondary); }
 .book-facts dd { margin: 0; }
