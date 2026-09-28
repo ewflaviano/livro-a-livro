@@ -15,7 +15,7 @@ Decisão do responsável em 27 set 2026, após a união simplificada da PR #61. 
 
 ## Interface
 
-Aviso compacto imediatamente abaixo do cabeçalho em todas as rotas. Atualizar aplicativo quando a versão aguarda; Reabrir aplicativo quando já ativou, mas a recarga foi adiada. Informar edição/operação ou outras abas que precisam terminar. Sem modal adicional. Rodapé e configurações conservam informações de disponibilidade offline e a verificação manual, sem duplicar o botão de aplicação.
+Aviso compacto imediatamente abaixo do cabeçalho em todas as rotas. Enquanto rascunho, diálogo, sincronização, preferência pendente ou outra ocupação bloquearem a ação, o banner não aparece; o estado pendente reaparece assim que a trava é liberada, sem nova verificação. O progresso de uma aplicação já iniciada permanece visível. Falha e recusa por outras abas mantêm suas explicações quando o banner reaparece, junto da tentativa explícita. O gate em `register.ts` revalida a segurança antes de ativar ou recarregar. Sem modal adicional. Rodapé e configurações conservam informações de disponibilidade offline e a verificação manual, sem duplicar o botão de aplicação.
 
 Uma instalação que ainda execute o cliente anterior pode precisar da última atualização manual para receber este comportamento. A próxima abertura usando o cliente novo passa a seguir a política automática; não forçar recarga da versão antiga com rascunho aberto.
 
