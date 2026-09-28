@@ -120,6 +120,8 @@ h2 { font-size: var(--text-h2); }
 .rating-option input:focus-visible + span { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); border-radius: var(--radius-control); }
 .rating-clear { margin-inline-start: var(--space-2); }
 .form-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+.data-management { margin-top: var(--space-6); }
+.data-management summary { cursor: pointer; min-height: var(--target-min); display: flex; align-items: center; font-weight: 600; }
 .button-danger { background: var(--color-danger); color: var(--color-text-on-action); }
 .button-danger:hover { background: var(--color-danger-hover); }
 .button:disabled { cursor: wait; background: var(--color-disabled-bg); color: var(--color-disabled-text); border-color: var(--color-disabled-border); }
