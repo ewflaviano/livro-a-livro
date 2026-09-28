@@ -13,30 +13,43 @@
     <main>
       <h1>Privacidade</h1>
       <p>Atualizada em 27 de setembro de 2026.</p>
+      <p class="privacy-summary">Sua biblioteca é salva neste navegador; o backup JSON é criado aqui. Com sua autorização separada do login, o Drive recebe uma cópia diretamente do aplicativo. Analytics requer aceite; buscas enviadas e capas externas usam Open Library.</p>
+      <nav class="privacy-nav" aria-label="Nesta página">
+        <h2>Nesta página</h2>
+        <ul>
+          <li><a href="#biblioteca">Biblioteca</a></li>
+          <li><a href="#google-drive">Google Drive</a></li>
+          <li><a href="#prazos-remocao">Prazos e remoção</a></li>
+          <li><a href="#busca-capas">Busca e capas</a></li>
+          <li><a href="#analytics">Analytics</a></li>
+          <li><a href="#infraestrutura-terceiros">Infraestrutura e terceiros</a></li>
+          <li><a href="#contato">Contato</a></li>
+        </ul>
+      </nav>
       <p>O Livro a Livro é uma biblioteca pessoal que funciona neste navegador. Você não precisa criar conta para cadastrar, editar, consultar ou exportar seus livros.</p>
-      <h2>Sua biblioteca fica no seu dispositivo</h2>
+      <h2 id="biblioteca">Sua biblioteca fica no seu dispositivo</h2>
       <p>Livros, notas, avaliações e capas enviadas ficam no armazenamento local do navegador. O projeto não recebe esses dados. O backup JSON é criado e restaurado no seu dispositivo e contém suas informações privadas: guarde-o em um lugar de confiança.</p>
       <p>Limpar os dados do navegador, trocar de navegador ou de endereço pode deixar a estante vazia. Instalar o aplicativo não cria backup nem garante a conservação dos registros.</p>
-      <h2>Google Drive é opcional</h2>
+      <h2 id="google-drive">Google Drive é opcional</h2>
       <p>Se você escolher “Entrar com Google”, a primeira etapa confirma sua conta e mantém seu login neste navegador, sem acessar o Drive. Ao voltar ao aplicativo, a conexão pode ser recuperada sem um novo login. Depois, você pode escolher “Autorizar Google Drive” para permitir acesso à pasta privada do Livro a Livro (<code>drive.appdata</code>). Essa segunda permissão não dá ao aplicativo acesso aos seus outros documentos do Drive.</p>
       <p>A biblioteca e suas capas passam diretamente entre o aplicativo no navegador e o Google Drive. A API do Livro a Livro não recebe livros, notas, avaliações, capas, snapshots ou backups. O envio depende do aplicativo aberto e de conexão; alterações podem aguardar até você voltar.</p>
       <p>O serviço de autorização, hospedado na AWS, processa o identificador técnico recebido do Google. A primeira etapa guarda uma sessão própria e um vínculo técnico opaco; não cria sessão Drive nem conserva uma credencial de renovação do Google. Só depois da autorização do Drive o serviço guarda o vínculo, sessões e uma credencial de renovação cifrada. Não guarda nome ou e-mail de perfil. Tokens de acesso curtos ficam apenas na memória do aplicativo; cookies de login e autorização são protegidos contra leitura por JavaScript.</p>
       <p>Pausar o envio mantém a conexão. Sair encerra o login e o acesso ao Drive deste navegador, mantendo outros dispositivos. Desconectar o Drive mantém o login, bloqueia o vínculo com o Drive no serviço e solicita a revogação ao Google, sem apagar sua biblioteca local. Se não for possível confirmar a saída, os envios ficam pausados e o aplicativo avisa para tentar novamente. Tokens já emitidos podem continuar válidos até a revogação ou expiração. Você também pode remover a autorização nas <a href="https://myaccount.google.com/connections" rel="noreferrer">conexões da sua Conta Google</a>. Revogar o acesso não significa apagar automaticamente cópias já guardadas no Drive.</p>
-      <h2>Prazos e remoção</h2>
+      <h2 id="prazos-remocao">Prazos e remoção</h2>
       <p>Tentativas de autorização e seus controles de cancelamento expiram em até dez minutos. O login e as sessões Drive têm prazo móvel de até 30 dias, renovável até o limite absoluto de 180 dias desde sua criação; uma conexão sem atividade por 180 dias deixa de autorizar acesso. Os prazos são verificados mesmo quando a limpeza física do armazenamento ainda não terminou.</p>
       <p>Após desconectar, a credencial só pode ser usada para tentar a revogação por até 24 horas. Uma rotina remove a credencial retida; falhas de infraestrutura podem atrasar a remoção física. O registro técnico do bloqueio pode permanecer para impedir que operações antigas reativem a conexão. Uma resposta incerta do Google mantém a conexão bloqueada até resolução segura.</p>
       <p>Você pode excluir registros pela interface ou remover os dados deste site nas configurações do navegador. Antes disso, exporte um backup se quiser conservar uma cópia. Para solicitar ajuda sobre dados mantidos pelo serviço de autorização, use o contato abaixo.</p>
-      <h2>Busca e capas externas</h2>
+      <h2 id="busca-capas">Busca e capas externas</h2>
       <p>Uma busca enviada por você consulta a Open Library. A exibição de uma capa externa também faz uma solicitação ao fornecedor. Esses serviços recebem os dados necessários à solicitação e dados de conexão, como endereço IP. O cadastro manual e as capas locais continuam disponíveis sem essas consultas.</p>
-      <h2>Contagem de visitas com Google Analytics</h2>
+      <h2 id="analytics">Contagem de visitas com Google Analytics</h2>
       <p>Ao abrir o site, você pode recusar ou aceitar o Google Analytics. Se recusar ou ainda não escolher, o aplicativo não carrega o script do Analytics nem envia medições a ele. O Google Drive e o uso da biblioteca funcionam independentemente dessa escolha.</p>
       <p>Se aceitar, enviamos visitas a páginas públicas por categorias fixas, como Estante, Dados e Livro. O endereço enviado omite a URL real, identificadores dos livros, consulta, título, nota, avaliação, capa e dados de login. O Google recebe dados de conexão necessários à solicitação, como endereço IP, e pode guardar cookies <code>_ga</code> neste navegador por até 30 dias. A retenção dos dados de eventos na propriedade foi configurada para dois meses. Publicidade, Google signals e personalização estão desligados.</p>
       <p>Sua escolha é guardada neste navegador, fora da biblioteca e do backup. Você pode <a href="/#/configuracoes">revisá-la em Configurações</a>. Ao revogar, o aplicativo interrompe novas medições, apaga cookies do Analytics acessíveis a este site e oferece uma reabertura segura quando possível. Cookies em outros domínios ou abas não controladas pelo aplicativo podem exigir os controles do navegador.</p>
       <p>Experimentos de interface e métricas técnicas próprios continuam inativos. Escolhas antigas referentes a esses recursos não são interpretadas como aceite do Google Analytics.</p>
-      <h2>Infraestrutura e terceiros</h2>
+      <h2 id="infraestrutura-terceiros">Infraestrutura e terceiros</h2>
       <p>A AWS distribui o aplicativo e hospeda a autorização. AWS, Google e Open Library processam dados de conexão necessários aos seus serviços, sujeitos às respectivas políticas. A infraestrutura pode tratar dados técnicos para segurança e operação; isso não equivale a receber sua biblioteca. Não usamos publicidade comportamental nem vendemos sua biblioteca.</p>
       <p>Os logs da aplicação não incluem conteúdo da biblioteca, tokens ou dados brutos das solicitações. Registros operacionais mínimos de execução têm retenção de 14 dias. Serviços de infraestrutura podem manter registros administrativos e de segurança conforme suas próprias regras.</p>
-      <h2>Contato</h2>
+      <h2 id="contato">Contato</h2>
       <p>Para falar com o responsável pelo Livro a Livro sobre privacidade e suporte: <a href="mailto:ewanderson.flaviano@gmail.com">ewanderson.flaviano@gmail.com</a>. Não envie senhas, tokens nem sua biblioteca completa; descreva primeiro o problema.</p>
       <p><a href="/">Voltar ao Livro a Livro</a></p>
     </main>

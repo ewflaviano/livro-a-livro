@@ -194,6 +194,8 @@ Margem segura de 8% nas laterais, 12% no topo/rodapé do Story e 8% no Quadrado.
 
 “Seus dados” tem acesso estável em Mais no mobile e na lateral do desktop. Mensagem base: **“Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. Exporte uma cópia JSON para guardar seus registros.”** Instalar a PWA não cria backup. A V1 não pede login e não envia notas/avaliações à Open Library. Consultas e carregamento de capas externas usam rede; explicar esse limite sem chamar o app inteiro de “100% offline” ou “sem qualquer envio de dados”.
 
+A página pública de Privacidade abre com resumo curto e índice de âncoras para Biblioteca, Drive, Prazos, Analytics, Busca/Capas, Infraestrutura e Contato. O HTML permanece legível sem JavaScript, com alvos de toque de 44 px no índice. O resumo não substitui prazos, consentimentos separados, condições de revogação nem informações sobre terceiros no texto completo.
+
 | Situação | Mensagem | Próxima ação |
 | --- | --- | --- |
 | Local confirmado | “Salvo neste dispositivo” | Seus dados |
