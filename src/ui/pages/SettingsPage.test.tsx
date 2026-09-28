@@ -5,9 +5,14 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 const analytics = vi.hoisted(() => ({ view: { choice: null as 'accepted' | 'rejected' | null, loading: false, error: false, review: vi.fn() } }));
 vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => analytics.view }));
+const diagnostics = vi.hoisted(() => ({ view: { choice: null as 'accepted' | 'rejected' | null, loading: false, saving: false, error: false, reviewing: false,
+  choose: vi.fn(), retry: vi.fn(), review: vi.fn(), closeReview: vi.fn() } }));
+vi.mock('../../diagnostics/DiagnosticsProvider', () => ({ useDiagnostics: () => diagnostics.view }));
 import { SettingsPage } from './SettingsPage';
 
-beforeEach(() => { analytics.view.choice = null; analytics.view.loading = false; analytics.view.error = false; analytics.view.review.mockClear(); });
+beforeEach(() => { analytics.view.choice = null; analytics.view.loading = false; analytics.view.error = false; analytics.view.review.mockClear();
+  diagnostics.view.choice = null; diagnostics.view.loading = false; diagnostics.view.error = false; diagnostics.view.reviewing = false;
+  diagnostics.view.choose.mockClear(); diagnostics.view.review.mockClear(); });
 afterEach(cleanup);
 const mount = () => render(<MemoryRouter><SettingsPage /></MemoryRouter>);
 
@@ -29,6 +34,17 @@ it.each([
 it('keeps an uncertain consent state honest', () => {
   analytics.view.error = true; mount();
   expect(screen.getByText('Google Analytics: Não foi possível verificar.')).toBeTruthy();
+});
+it('keeps diagnostic choice independent from Analytics', async () => {
+  mount();
+  expect(screen.getByText('Envio de códigos técnicos: Desligado.')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Aceitar diagnóstico' }));
+  expect(diagnostics.view.choose).toHaveBeenCalledWith('accepted');
+  expect(analytics.view.review).not.toHaveBeenCalled();
+  diagnostics.view.choice = 'rejected'; cleanup(); mount();
+  expect(screen.getByText('Envio de códigos técnicos: Recusado.')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Rever diagnóstico' }));
+  expect(diagnostics.view.review).toHaveBeenCalledOnce();
 });
 
 it('shows build and offline state while keeping install and update controls secondary', async () => {

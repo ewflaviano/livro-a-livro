@@ -1,4 +1,5 @@
 import { holdPwaReload } from '../pwa/register';
+import { recordDiagnostic } from '../diagnostics/client';
 import { createBackupWorkerParser } from '../backup/worker-parser';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
 import { createShelfService } from '../services/shelf-service';
@@ -22,8 +23,8 @@ export function openBookSearch() {
 export async function openShelfService() {
   let service: ReturnType<typeof createShelfService> | undefined;
   const repository = await openLibraryRepository({
-    onDatabaseEvent: () => { void service?.refresh(); },
-    onObservationError: () => { void service?.refresh(); },
+    onDatabaseEvent: event => { if (event !== 'versionchange') recordDiagnostic({ area: 'storage', code: 'storage_unavailable' }); void service?.refresh(); },
+    onObservationError: () => { recordDiagnostic({ area: 'storage', code: 'storage_unavailable' }); void service?.refresh(); },
   });
   service = createShelfService(repository, createBackupWorkerParser(), holdPwaReload);
   return service;

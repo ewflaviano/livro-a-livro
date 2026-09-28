@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Livro a Livro OAuth control plane. No library, notes, media or backup ingress.
+Description: Livro a Livro OAuth controls and fixed-code diagnostics. No library or backup ingress.
 Parameters:
   CertificateArn: { Type: String }
   HostedZoneId: { Type: String }
@@ -7,6 +7,7 @@ Parameters:
   ArtifactBucket: { Type: String }
   AuthCodeKey: { Type: String }
   RevocationCodeKey: { Type: String }
+  DiagnosticsCodeKey: { Type: String }
 Resources:
   AuthTable:
     Type: AWS::DynamoDB::Table
@@ -52,6 +53,9 @@ Resources:
   RevocationLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /aws/lambda/livro-a-livro-revocation, RetentionInDays: 14 }
+  DiagnosticsLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/livro-a-livro-diagnostics, RetentionInDays: 14 }
   AuthRole:
     Type: AWS::IAM::Role
     Properties:
@@ -120,6 +124,23 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt RevocationLogs.Arn
+  DiagnosticsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-diagnostics-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt DiagnosticsLogs.Arn
   AuthFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -158,6 +179,18 @@ Resources:
           APP_ENVIRONMENT: production
       # Worker writes only fixed EMF counters. No request, identifier or SDK debug output.
       LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref RevocationLogs }
+  DiagnosticsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: livro-a-livro-diagnostics
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures: [x86_64]
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt DiagnosticsRole.Arn
+      Code: { S3Bucket: !Ref ArtifactBucket, S3Key: !Ref DiagnosticsCodeKey }
+      LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref DiagnosticsLogs }
   RevocationSchedule:
     Type: AWS::Events::Rule
     Properties:
@@ -202,13 +235,37 @@ Resources:
       ApiId: !Ref HttpApi
       RouteKey: '$default'
       Target: !Sub 'integrations/${AuthIntegration}'
+  DiagnosticsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt DiagnosticsFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 4000
+  DiagnosticsPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /v1/diagnostics/errors'
+      Target: !Sub 'integrations/${DiagnosticsIntegration}'
+  DiagnosticsOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'OPTIONS /v1/diagnostics/errors'
+      Target: !Sub 'integrations/${DiagnosticsIntegration}'
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
+    DependsOn: [DiagnosticsPostRoute, DiagnosticsOptionsRoute]
     Properties:
       ApiId: !Ref HttpApi
       StageName: '$default'
       AutoDeploy: true
       DefaultRouteSettings: { ThrottlingBurstLimit: 5, ThrottlingRateLimit: 2 }
+      RouteSettings:
+        'POST /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
+        'OPTIONS /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
       # No request/access logs: URL queries and auth headers must not be recorded.
   ApiPermission:
     Type: AWS::Lambda::Permission
@@ -217,6 +274,104 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+  DiagnosticsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DiagnosticsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/v1/diagnostics/errors'
+  AuthFunctionFailures:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Auth Lambda failed; inspect fixed codes only and avoid request payloads.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref AuthFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  AuthFunctionThrottles:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Auth Lambda invocation was throttled; local library remains available.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref AuthFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  AuthServerFailures:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Auth returned a server error using a fixed code.
+      Namespace: LivroALivro/Auth
+      MetricName: ServerFailure
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  ClientErrorReports:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: An opted-in browser reported a fixed client error.
+      Namespace: LivroALivro/Diagnostics
+      MetricName: ClientErrorReport
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  DiagnosticsFunctionFailures:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Diagnostics Lambda invocation failed.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref DiagnosticsFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  DiagnosticsFunctionThrottles:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Diagnostics Lambda invocation was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref DiagnosticsFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  ApiServerErrors:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: HTTP API returned a 5xx response; inspect fixed application codes only.
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions:
+        - { Name: ApiId, Value: !Ref HttpApi }
+        - { Name: Stage, Value: !Ref ApiStage }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
   ApiDomain:
     Type: AWS::ApiGatewayV2::DomainName
     Properties:

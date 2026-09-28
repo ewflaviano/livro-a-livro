@@ -46,7 +46,7 @@ jobs:
           "$RUNNER_TEMP/lambda-tools/bin/pip" install cargo-lambda==1.9.2 ziglang==0.14.1
           echo "$RUNNER_TEMP/lambda-tools/bin" >> "$GITHUB_PATH"
       - name: Build Lambda release artifacts
-        run: cargo lambda build --manifest-path api/Cargo.toml --release --locked --all-features --bin auth --bin revocation --x86-64 --output-format zip
+        run: cargo lambda build --manifest-path api/Cargo.toml --release --locked --all-features --bin auth --bin revocation --bin diagnostics --x86-64 --output-format zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: api-release
@@ -95,6 +95,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.detect.outputs.changed }}
+      auth: ${{ steps.detect.outputs.auth }}
+      revocation: ${{ steps.detect.outputs.revocation }}
+      diagnostics: ${{ steps.detect.outputs.diagnostics }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
@@ -102,11 +105,35 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]] || ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/; then
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          auth=false
+          revocation=false
+          diagnostics=false
+          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
+            auth=true
+            revocation=true
+            diagnostics=true
+          elif ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/; then
+            shared=(api/Cargo.lock api/src/aws api/src/config.rs api/src/google.rs api/src/lib.rs api/src/metrics.rs api/src/ports.rs api/src/service.rs)
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- "${shared[@]}"; then
+              auth=true
+              revocation=true
+              diagnostics=true
+            fi
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/http.rs api/src/bin/auth.rs; then auth=true; fi
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/bin/revocation.rs; then revocation=true; fi
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/diagnostics.rs api/src/bin/diagnostics.rs; then diagnostics=true; fi
+            # Manifest-only changes may affect every binary. Adding a diagnostics bin
+            # alongside its source does not republish unchanged auth/worker functions.
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/Cargo.toml && [[ "$auth$revocation$diagnostics" == falsefalsefalse ]]; then
+              auth=true
+              revocation=true
+              diagnostics=true
+            fi
           fi
+          echo "auth=$auth" >> "$GITHUB_OUTPUT"
+          echo "revocation=$revocation" >> "$GITHUB_OUTPUT"
+          echo "diagnostics=$diagnostics" >> "$GITHUB_OUTPUT"
+          if [[ "$auth$revocation$diagnostics" == falsefalsefalse ]]; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
 
   publish_api:
     if: github.event_name == 'workflow_dispatch' || needs.api_changes.outputs.changed == 'true'
@@ -129,11 +156,32 @@ jobs:
         env:
           ARTIFACT_BUCKET: ${{ vars.AWS_API_ARTIFACT_BUCKET }}
           RELEASE_ID: ${{ github.sha }}
+          PUBLISH_AUTH: ${{ needs.api_changes.outputs.auth }}
+          PUBLISH_REVOCATION: ${{ needs.api_changes.outputs.revocation }}
+          PUBLISH_DIAGNOSTICS: ${{ needs.api_changes.outputs.diagnostics }}
         run: |
           test -n "$ARTIFACT_BUCKET"
           for FUNCTION in auth revocation; do
+            if [[ "$GITHUB_EVENT_NAME" != 'workflow_dispatch' ]]; then
+              case "$FUNCTION" in
+                auth) [[ "$PUBLISH_AUTH" == true ]] || continue ;;
+                revocation) [[ "$PUBLISH_REVOCATION" == true ]] || continue ;;
+              esac
+            fi
             KEY="releases/$RELEASE_ID/$FUNCTION.zip"
             aws s3 cp "release/$FUNCTION/bootstrap.zip" "s3://$ARTIFACT_BUCKET/$KEY" --only-show-errors
             aws lambda update-function-code --function-name "livro-a-livro-$FUNCTION" --s3-bucket "$ARTIFACT_BUCKET" --s3-key "$KEY" --query '{State:State,LastUpdateStatus:LastUpdateStatus}'
             aws lambda wait function-updated --function-name "livro-a-livro-$FUNCTION"
           done
+          if [[ "$PUBLISH_DIAGNOSTICS" == true ]]; then
+            KEY="releases/$RELEASE_ID/diagnostics.zip"
+            aws s3 cp release/diagnostics/bootstrap.zip "s3://$ARTIFACT_BUCKET/$KEY" --only-show-errors
+            # The operator adds this function and its restricted role via CloudFormation.
+            # A code-only CI role cannot create infrastructure.
+            if aws lambda get-function-configuration --function-name livro-a-livro-diagnostics --query 'FunctionName' --output text >/dev/null 2>&1; then
+              aws lambda update-function-code --function-name livro-a-livro-diagnostics --s3-bucket "$ARTIFACT_BUCKET" --s3-key "$KEY" --query '{State:State,LastUpdateStatus:LastUpdateStatus}'
+              aws lambda wait function-updated --function-name livro-a-livro-diagnostics
+            else
+              echo 'Diagnostics function is not provisioned yet; operator must apply infra/api.yml.'
+            fi
+          fi

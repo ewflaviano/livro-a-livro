@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { recordDiagnostic } from '../../diagnostics/client';
 import { openBookSearch } from '../../app/composition';
 import { candidateDraft, SearchError, type BookCandidate, type SearchPage } from '../../ports/book-search';
 import type { NewBook } from '../../domain/book';
@@ -38,7 +39,11 @@ export function BookSearch({ active, onSelect, onManual }: { active: boolean; on
     const request = ++sequence.current;
     setBusy(true); setError(''); setResult(null); setDetailsError(null); setChoosing(null); setSubmitted(text);
     try { const next = await service.search(text, page); if (sequence.current === request) setResult(next); }
-    catch (failure) { if (sequence.current === request) setError(messages[failure instanceof SearchError ? failure.code : 'unavailable']); }
+    catch (failure) { if (sequence.current === request) {
+      const code = failure instanceof SearchError ? failure.code : 'unavailable';
+      if (code === 'invalid-response' || !(failure instanceof SearchError)) recordDiagnostic({ area: 'search', code: 'search_failed' });
+      setError(messages[code]);
+    } }
     finally { if (sequence.current === request) setBusy(false); }
   }
   async function choose(candidate: BookCandidate) {
@@ -48,7 +53,10 @@ export function BookSearch({ active, onSelect, onManual }: { active: boolean; on
       const details = await service.details(candidate);
       if (sequence.current === request) onSelect(candidateDraft(details));
     } catch (failure) {
-      if (sequence.current === request && !(failure instanceof SearchError && failure.code === 'cancelled')) setDetailsError(candidate.workId);
+      if (sequence.current === request && !(failure instanceof SearchError && failure.code === 'cancelled')) {
+        if (!(failure instanceof SearchError) || failure.code === 'invalid-response') recordDiagnostic({ area: 'search', code: 'search_failed' });
+        setDetailsError(candidate.workId);
+      }
     } finally { if (sequence.current === request) setChoosing(null); }
   }
   return <div className="book-search">

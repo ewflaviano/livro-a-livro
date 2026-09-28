@@ -17,6 +17,8 @@ O Livro a Livro é privado, local-first, sem conta obrigatória e sem componente
 5. **Local não significa cópia de segurança.** Comunicar onde os registros estão, o que foi salvo e o que uma exportação realmente confirma.
 6. **O básico independe de catálogo externo.** A entrada manual continua disponível quando não há rede, capa ou resultado de busca.
 
+Diagnóstico de erros usa escolha própria em Configurações, desligada por padrão e independente do Analytics. A interface mostra estado curto, ações Aceitar/Recusar/Rever e erro de armazenamento honesto. Mensagens de falha conservam a ação de tentar novamente; nenhum detalhe livre do erro vai ao diagnóstico.
+
 O BioRotina é a referência funcional para conexão global, sincronização, resolução de divergências e escolhas iniciais de privacidade. A [correção de direção de 27 set 2026](paridade-biorotina.md) define a entrega sequencial dessas equivalências. Esta identidade usa linguagem editorial, serifas, tinta ameixa e marcador amarelo próprios. Os estados históricos abaixo não substituem essa decisão nem afirmam que toda a correção já foi entregue.
 
 ## 2. Identidade e tom de voz

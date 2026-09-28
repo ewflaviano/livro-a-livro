@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLibrary } from '../../app/LibraryProvider';
 import { DomainError } from '../../domain/errors';
+import { recordDiagnostic } from '../../diagnostics/client';
 import type { BackupFile, ImportPreview } from '../../services/backup-service';
 import { blockPwaUpdate } from '../../pwa/register';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -13,6 +14,11 @@ function importMessage(error: unknown): string {
   if (code === 'ImportTooLarge') return 'O arquivo excede os limites de tamanho, livros ou capas do aplicativo. Sua biblioteca não foi alterada.';
   if (code === 'InvalidBackup') return 'O arquivo não é um backup válido do Livro a Livro ou contém capas inválidas. Sua biblioteca não foi alterada.';
   return 'Não foi possível restaurar neste dispositivo. Sua biblioteca foi preservada. Selecione o arquivo novamente para tentar.';
+}
+function reportBackupFailure(error: unknown) {
+  if (!(error instanceof DomainError) || error.code === 'StorageUnavailable' || error.code === 'QuotaExceeded') {
+    recordDiagnostic({ area: 'backup', code: 'backup_failed' });
+  }
 }
 const bookCount = (count: number) => `${count} ${count === 1 ? 'livro' : 'livros'}`;
 const years = (values: readonly number[]) => values.length ? values.join(', ') : 'nenhum';
@@ -80,6 +86,7 @@ export function BackupPanel() {
       const next = await backup.prepareImport(file);
       if (active.current && selected === operation.current) setPreview(next);
     } catch (failure) {
+      reportBackupFailure(failure);
       if (active.current && selected === operation.current) { setError(importMessage(failure)); if (input.current) input.current.value = ''; }
     } finally {
       if (active.current && selected === operation.current) { inFlight.current = null; setBusy(null); }
@@ -99,7 +106,8 @@ export function BackupPanel() {
       } catch {
         if (active.current && selected === operation.current) setMessage('Download iniciado, mas não foi possível registrar a data neste dispositivo. Confira se o arquivo foi salvo.');
       }
-    } catch {
+    } catch (failure) {
+      reportBackupFailure(failure);
       if (active.current && selected === operation.current) setError('Não foi possível iniciar a exportação. Seus registros continuam aqui. Tente novamente.');
     } finally {
       if (active.current && selected === operation.current) { inFlight.current = null; setBusy(null); }
@@ -113,6 +121,7 @@ export function BackupPanel() {
       await backup.confirmImport(preview);
       if (active.current && selected === operation.current) setMessage(`${count} ${count === 1 ? 'livro importado' : 'livros importados'} neste dispositivo.`);
     } catch (failure) {
+      reportBackupFailure(failure);
       if (active.current && selected === operation.current) setError(importMessage(failure));
     } finally {
       if (active.current && selected === operation.current) { returnFocus.current = true; clearSelection(); inFlight.current = null; setBusy(null); }

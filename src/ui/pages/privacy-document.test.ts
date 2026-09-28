@@ -9,7 +9,7 @@ it('offers unique, working section links without JavaScript', () => {
   expect(document.querySelector('script')).toBeNull();
   const links = [...document.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Nesta página"] a')];
   expect(links.map(link => link.textContent?.trim())).toEqual([
-    'Biblioteca', 'Google Drive', 'Prazos e remoção', 'Busca e capas', 'Analytics', 'Infraestrutura e terceiros', 'Contato',
+    'Biblioteca', 'Google Drive', 'Prazos e remoção', 'Busca e capas', 'Analytics', 'Diagnóstico de erros', 'Infraestrutura e terceiros', 'Contato',
   ]);
   const ids = [...document.querySelectorAll<HTMLElement>('[id]')].map(element => element.id);
   expect(new Set(ids).size).toBe(ids.length);
@@ -31,6 +31,7 @@ it('retains the material privacy topics below the summary', () => {
     'Revogar o acesso não significa apagar automaticamente cópias',
     'dez minutos', '30 dias', '180 dias', '24 horas',
     'não carrega o script do Analytics nem envia medições',
+    'diagnóstico de erros fica desligado até você aceitar',
     'Open Library', '14 dias', 'ewanderson.flaviano@gmail.com',
   ]) expect(text).toContain(phrase);
 });

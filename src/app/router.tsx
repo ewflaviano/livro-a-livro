@@ -1,4 +1,6 @@
 import { AnalyticsProvider } from '../analytics/AnalyticsProvider';
+import { DiagnosticsProvider } from '../diagnostics/DiagnosticsProvider';
+import { ErrorBoundary } from '../diagnostics/ErrorBoundary';
 import { useEffect } from 'react';
 import { armPwaStartup, reevaluatePwaStartup } from '../pwa/register';
 import { getUiOccupancy, subscribeUiOccupancy } from '../ui/interaction-guard';
@@ -20,7 +22,7 @@ import { SupportPage } from '../ui/pages/SupportPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
-    <LibraryProvider openService={openService}><SyncProvider><AnalyticsProvider><PwaStartup />
+    <DiagnosticsProvider><ErrorBoundary><LibraryProvider openService={openService}><SyncProvider><AnalyticsProvider><PwaStartup />
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
@@ -37,7 +39,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
-    </AnalyticsProvider></SyncProvider></LibraryProvider>
+    </AnalyticsProvider></SyncProvider></LibraryProvider></ErrorBoundary></DiagnosticsProvider>
   );
 }
 

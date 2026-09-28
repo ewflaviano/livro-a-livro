@@ -455,6 +455,10 @@ impl IntoResponse for Error {
                 (StatusCode::SERVICE_UNAVAILABLE, "unavailable")
             }
         };
+        if status.is_server_error() {
+            // Fixed response codes only; never log request, provider error, token or identity.
+            auth_server_failure(code);
+        }
         let mut response = (status, Json(json!({"error":code}))).into_response();
         if self == Error::Busy {
             response
@@ -463,4 +467,15 @@ impl IntoResponse for Error {
         }
         response
     }
+}
+
+fn auth_server_failure(code: &'static str) {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    println!(
+        "{}",
+        json!({"_aws":{"Timestamp":timestamp,"CloudWatchMetrics":[{"Namespace":"LivroALivro/Auth","Dimensions":[[]],"Metrics":[{"Name":"ServerFailure","Unit":"Count"}]}]},"ServerFailure":1,"kind":"auth_error","code":code})
+    );
 }
