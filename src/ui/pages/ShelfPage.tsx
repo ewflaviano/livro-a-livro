@@ -12,15 +12,34 @@ const labels = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler', a
 const statusLabels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
 const searchText = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR');
 const number = new Intl.NumberFormat('pt-BR');
+const pageSize = 24;
 
 export function ShelfPage({ status }: { status?: ReadingStatus }) {
-  const { state, retry, updatePreferences, positions, shelfQuery, setShelfQuery } = useLibrary();
+  const { state, retry, updatePreferences, positions, shelfPages, setShelfPage, shelfQuery, setShelfQuery } = useLibrary();
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
+  const collection = useRef<HTMLOListElement>(null);
+  const pageNavigation = useRef(false);
   const title = status ? labels[status] : 'Minha estante';
+  const currentYear = new Date().getFullYear();
+  const year = state.status === 'ready' ? state.preferences.shelfYear ?? currentYear : currentYear;
+  const filter = status ?? (state.status === 'ready' ? state.preferences.filter : 'all');
+  const yearBooks = state.status === 'ready' ? booksForYear(state.snapshot.books, year) : [];
+  const filtered = filter === 'all' ? yearBooks : yearBooks.filter((book) => book.status === filter);
+  const query = searchText(shelfQuery.trim());
+  const visible = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+  const selection = JSON.stringify([year, filter, shelfQuery]);
+  const savedPage = shelfPages.get(location.pathname);
+  const page = savedPage?.selection === selection ? Math.min(savedPage.page, totalPages) : 1;
+  const pageBooks = visible.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => { document.title = `${title} · Livro a Livro`; }, [title]);
+  useEffect(() => {
+    if (state.status !== 'ready') return;
+    if (savedPage?.selection !== selection || savedPage.page !== page) setShelfPage(location.pathname, selection, page);
+  }, [state.status, savedPage, selection, page, setShelfPage, location.pathname]);
   useLayoutEffect(() => {
     if (state.status === 'ready' && !restored.current) {
       restored.current = true;
@@ -28,24 +47,27 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       if (position !== undefined) window.scrollTo(0, position);
     }
   }, [state.status, positions, location.pathname]);
+  useLayoutEffect(() => {
+    if (!pageNavigation.current) return;
+    pageNavigation.current = false;
+    collection.current?.querySelector<HTMLAnchorElement>('.book-entry')?.focus();
+    collection.current?.scrollIntoView?.({ block: 'start' });
+  }, [page]);
 
   if (state.status !== 'ready') return <section aria-label={title}>
     <h1>{title}</h1><LibraryState state={state.status} onRetry={retry} />
   </section>;
   const { snapshot, preferences } = state;
-  const currentYear = new Date().getFullYear();
-  const year = preferences.shelfYear ?? currentYear;
   const yearText = formatShelfYear(year);
   const years = [...new Set([currentYear, year, ...snapshot.books.map((book) => book.shelfYear)])].sort((a, b) => b - a);
-  const yearBooks = booksForYear(snapshot.books, year);
-  const filter = status ?? preferences.filter;
-  const filtered = filter === 'all' ? yearBooks : yearBooks.filter((book) => book.status === filter);
-  const query = searchText(shelfQuery.trim());
-  const visible = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
   const metrics = statisticsForYear(yearBooks, year);
   function selectFilter(next: typeof filter) {
     updatePreferences({ filter: next });
     if (status) navigate('/estante');
+  }
+  function changePage(next: number) {
+    pageNavigation.current = true;
+    setShelfPage(location.pathname, selection, next);
   }
 
   return <section className="shelf-page" aria-labelledby="shelf-title">
@@ -87,8 +109,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <div className="notice-panel" role="status"><h2>Nenhum livro encontrado.</h2><p>Tente outro título ou autor. A busca considera o ano e o filtro selecionados.</p></div> : visible.length === 0 ?
       <div className="notice-panel"><h2>Nenhum livro em {labels[filter]} nesta estante.</h2>
         <button className="button button-secondary" onClick={() => selectFilter('all')}>Limpar filtro</button></div> :
-      <ol className={`book-collection book-collection--${preferences.mode}`} aria-label={`Livros da estante de ${yearText}`}>
-        {visible.map((book) => <li key={book.id}>
+      <><ol ref={collection} className={`book-collection book-collection--${preferences.mode}`} aria-label={`Livros da estante de ${yearText}`} start={(page - 1) * pageSize + 1}>
+        {pageBooks.map((book) => <li key={book.id}>
           <Link className="book-entry" to={`/livro/${book.id}`} state={{ returnTo: location.pathname }}
             onClick={() => positions.set(location.pathname, window.scrollY)}>
             <BookCover cover={book.cover} title={book.title} />
@@ -98,7 +120,12 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
             </div>
           </Link>
         </li>)}
-      </ol>}
+      </ol>
+      {totalPages > 1 && <nav className="shelf-pagination" aria-label="Páginas da estante">
+        <button className="button button-secondary" disabled={page === 1} onClick={() => changePage(page - 1)}>Anterior</button>
+        <span aria-live="polite">Página {page} de {totalPages}</span>
+        <button className="button button-secondary" disabled={page === totalPages} onClick={() => changePage(page + 1)}>Próxima</button>
+      </nav>}</>}
     {yearBooks.length > 0 && <dl className="shelf-metrics" aria-label={`Livros lidos em ${yearText}`}>
       <div><dt>Lidos</dt><dd aria-label={`${number.format(metrics.books)} livros lidos em ${yearText}`}>{number.format(metrics.books)}</dd></div>
       <div><dt>Páginas</dt><dd aria-label={metrics.pages === null ? 'Páginas não informadas' : `${number.format(metrics.pages)} páginas informadas em livros lidos`}>{metrics.pages === null ? '—' : number.format(metrics.pages)}</dd></div>

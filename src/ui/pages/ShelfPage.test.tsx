@@ -13,6 +13,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const book = (title: string, patch: Partial<Book> = {}) => createBook({ title, ...patch }, {
   id: crypto.randomUUID(), now: '2026-09-26T12:00:00.000Z', shelfYear: 2026,
 });
+const numberedBooks = (count: number, patch: Partial<Book> = {}, year = 2026) => Array.from({ length: count }, (_, index) => createBook({
+  title: `Livro ${String(index + 1).padStart(2, '0')}`, status: 'read', pageCount: 10, authors: ['Autora'], ...patch,
+}, { id: crypto.randomUUID(), now: new Date(Date.UTC(2026, 8, 26, 12, 0, index)).toISOString(), shelfYear: year }));
 
 async function setup(books: Book[] = [], route = '/estante') {
   const name = crypto.randomUUID();
@@ -26,6 +29,83 @@ async function setup(books: Book[] = [], route = '/estante') {
 }
 
 describe('annual shelf with the real IndexedDB adapter', () => {
+  it('renders at most 24 cards per page while metrics and search cover the whole year', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    await setup(numberedBooks(50));
+    const collection = () => within(screen.getByRole('list', { name: /Livros da estante/ }));
+    expect(collection().getAllByRole('listitem')).toHaveLength(24);
+    expect(screen.getByText('Página 1 de 3')).toBeTruthy();
+    expect(screen.getByRole('definition', { name: '50 livros lidos em 2026' }).textContent).toBe('50');
+    expect(screen.getByRole('definition', { name: '500 páginas informadas em livros lidos' }).textContent).toBe('500');
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    expect(collection().getAllByRole('listitem')).toHaveLength(24);
+    expect(screen.getByText('Página 2 de 3')).toBeTruthy();
+    expect(document.activeElement).toBe(collection().getAllByRole('link')[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    expect(collection().getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('Página 3 de 3')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Próxima' }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro 01');
+    expect(collection().getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Livro 01' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Páginas da estante' })).toBeNull();
+    expect(screen.getByRole('definition', { name: '50 livros lidos em 2026' })).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('resets to page one when year, status filter or search changes', async () => {
+    await setup([...numberedBooks(50), ...numberedBooks(30, { status: 'reading' }), ...numberedBooks(30, { status: 'reading' }, 2025)]);
+    const next = () => screen.getByRole('button', { name: 'Próxima' });
+    await userEvent.click(next());
+    expect(screen.getByText('Página 2 de 4')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+    await userEvent.click(next());
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ano da estante' }), '2025');
+    expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+    await userEvent.click(next());
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro 01');
+    expect(screen.queryByRole('navigation', { name: 'Páginas da estante' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+    expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+  });
+
+  it('restores page and scroll after returning from a book', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    vi.stubGlobal('scrollY', 470);
+    await setup(numberedBooks(50));
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    const collection = within(screen.getByRole('list', { name: /Livros da estante/ }));
+    const title = collection.getAllByRole('heading')[0].textContent;
+    await userEvent.click(collection.getAllByRole('link')[0]);
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar para a estante' }));
+    expect(screen.getByText('Página 2 de 3')).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: /Livros da estante/ })).getByRole('heading', { name: title ?? '' })).toBeTruthy();
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 470);
+  });
+
+  it('clamps and stores the page after a removal reduces the total', async () => {
+    const { repository } = await setup(numberedBooks(25));
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    expect(screen.getByText('Página 2 de 2')).toBeTruthy();
+    const current = (await repository.readAll()).books;
+    await act(async () => { await repository.commit({ kind: 'replace', books: current.slice(1) }, await repository.readRevision()); });
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Páginas da estante' })).toBeNull());
+    expect(within(screen.getByRole('list', { name: /Livros da estante/ })).getAllByRole('listitem')).toHaveLength(24);
+    await act(async () => { await repository.commit({ kind: 'replace', books: current }, await repository.readRevision()); });
+    expect(await screen.findByText('Página 1 de 2')).toBeTruthy();
+  });
+
+  it('clamps the page when an edit moves one book out of the selected year', async () => {
+    const { repository } = await setup(numberedBooks(25));
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    const current = (await repository.readAll()).books;
+    await act(async () => { await repository.commit({ kind: 'replace', books: [{ ...current[0], shelfYear: 2025 }, ...current.slice(1)] }, await repository.readRevision()); });
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Páginas da estante' })).toBeNull());
+    expect(screen.getByRole('definition', { name: '24 livros lidos em 2026' })).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: /Livros da estante/ })).getAllByRole('listitem')).toHaveLength(24);
+  });
+
   it('persists automatic year, mode and filter while keeping current year distinct', async () => {
     const { repository, name } = await setup([book('Ano anterior', { shelfYear: 2025 })]);
     const before = await repository.readRevision();
