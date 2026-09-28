@@ -28,6 +28,10 @@ async function setup(books: Book[] = [], route = '/adicionar') {
   return { repository, service, name };
 }
 const titleField = () => screen.getByRole('textbox', { name: 'Título (obrigatório)' });
+async function openRemoveMenu() {
+  await userEvent.click(screen.getByText('Opções do livro'));
+  return screen.getByRole('button', { name: 'Remover livro' });
+}
 
 const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
   const bytes = Uint8Array.from(atob(encodedCover(mime).bytes), char => char.charCodeAt(0));
@@ -38,6 +42,41 @@ const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
 };
 
 describe('manual books and private detail', () => {
+  it('shows Editar beside the book state and omits empty optional details', async () => {
+    const original = synthetic();
+    await setup([original], `/livro/${original.id}`);
+    const edit = await screen.findByRole('button', { name: 'Editar livro' });
+    expect(edit.closest('.book-detail-heading')).toBeTruthy();
+    expect(screen.getByText('Quero ler')).toBeTruthy();
+    expect(screen.queryByText('Não informadas')).toBeNull();
+    expect(screen.queryByText('Sem avaliação')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Observações' })).toBeNull();
+    expect(screen.queryByRole('term', { name: 'Páginas' })).toBeNull();
+    expect(screen.getByText('Opções do livro').closest('details')?.open).toBe(false);
+  });
+
+  it('keeps every populated optional detail visible', async () => {
+    const original = synthetic({ authors: ['Autora sintética'], pageCount: 123, publicationYear: 2020, isbn: '9780306406157', rating: 5, note: 'Nota privada' });
+    await setup([original], `/livro/${original.id}`);
+    await screen.findByRole('button', { name: 'Editar livro' });
+    expect(screen.getByText('Autora sintética')).toBeTruthy();
+    expect(screen.getByText('123')).toBeTruthy();
+    expect(screen.getByText('2020')).toBeTruthy();
+    expect(screen.getByText('9780306406157')).toBeTruthy();
+    expect(screen.getByLabelText('Avaliação: 5 de 5 estrelas')).toBeTruthy();
+    expect(screen.getByText('Nota privada')).toBeTruthy();
+  });
+
+  it.each(['{Enter}', ' '])('opens book options with %s', async key => {
+    const original = synthetic();
+    await setup([original], `/livro/${original.id}`);
+    const summary = await screen.findByText('Opções do livro');
+    summary.focus();
+    await userEvent.keyboard(key);
+    expect(summary.closest('details')?.open).toBe(true);
+    expect(screen.getByRole('button', { name: 'Remover livro' })).toBeTruthy();
+  });
+
   it.each(['Estante', 'Mais'])('protects a draft when leaving through mobile %s', async destination => {
     const { repository } = await setup();
     await userEvent.type(titleField(), 'Rascunho local');
@@ -62,6 +101,7 @@ describe('manual books and private detail', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByRole('alertdialog')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Descartar alterações' }));
+    expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Editar livro' }));
     expect((await repository.readBackupSnapshot()).coverMedia).toEqual([]);
     expect((await repository.readBook(original.id)).book).toEqual(original);
     const db = await openDB(name); expect(await db.count('coverMedia')).toBe(0); db.close();
@@ -184,7 +224,8 @@ describe('manual books and private detail', () => {
     expect((titleField() as HTMLInputElement).value).toBe('Livro de teste editado');
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     await userEvent.click(screen.getByRole('button', { name: 'Descartar alterações' }));
-    const remove = await screen.findByRole('button', { name: 'Remover livro' });
+    await screen.findByRole('button', { name: 'Editar livro' });
+    const remove = await openRemoveMenu();
     await userEvent.click(remove);
     const dialog = screen.getByRole('alertdialog');
     await userEvent.tab({ shift: true });
@@ -201,7 +242,8 @@ describe('manual books and private detail', () => {
   it('rejects deletion when the library changes while confirmation is open', async () => {
     const original = synthetic();
     const { repository } = await setup([original], `/livro/${original.id}`);
-    await userEvent.click(await screen.findByRole('button', { name: 'Remover livro' }));
+    await screen.findByRole('button', { name: 'Editar livro' });
+    await userEvent.click(await openRemoveMenu());
     await act(async () => { await repository.commit({ kind: 'put', book: { ...original, note: 'Atualização privada' } }, await repository.readRevision()); });
     await userEvent.click(screen.getByRole('button', { name: 'Excluir livro' }));
     expect((await screen.findByRole('alert')).textContent).toContain('O registro não foi excluído');

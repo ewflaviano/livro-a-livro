@@ -1,5 +1,5 @@
 import { BookCover } from '../components/BookCover';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
@@ -61,6 +61,7 @@ function BookDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
+  const editButton = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (busy || removing) return blockPwaUpdate(); }, [busy, removing]);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
@@ -89,24 +90,32 @@ function BookDetail({ id }: { id: string }) {
       !book ? <><h1>Livro não encontrado</h1><p>Este registro não está mais nesta biblioteca. Volte à estante para continuar.</p></> : <>
         <div className="book-detail-heading"><BookCover cover={book.cover} title={book.title} />
           <div><p className="eyebrow">Estante {formatShelfYear(book.shelfYear)}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || 'Autoria não informada'}</p>
-            <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span></div>
+            <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span>
+            {!editing && <div className="book-detail-actions"><button ref={editButton} className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(''); }}>Editar livro</button>
+              <details className="book-options"><summary className="button button-secondary" onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                const menu = event.currentTarget.parentElement as HTMLDetailsElement;
+                menu.open = !menu.open;
+              }}>Opções do livro</summary>
+                <div className="book-options-menu"><button className="button button-danger" onClick={() => setRemoving(true)}>Remover livro</button></div>
+              </details></div>}
+          </div>
         </div>
         {editing && books ? <>
           {observed && !sameRevision(observed, loaded.version) && <p role="status" className="form-error">A biblioteca mudou. Seu rascunho foi preservado; ao salvar, será necessário revisar a versão atual.</p>}
           <BookForm book={book} year={book.shelfYear} version={loaded.version} service={books}
-            onSaved={(next, version) => { setLoaded({ book: next, version }); setEditing(false); setSaved(true); }} onCancel={() => setEditing(false)} onReload={reload} />
+            onSaved={(next, version) => { setLoaded({ book: next, version }); setEditing(false); setSaved(true); }} onCancel={() => { setEditing(false); queueMicrotask(() => editButton.current?.focus()); }} onReload={reload} />
         </> : <>
           {saved && <p role="status" className="local-note">Livro salvo neste dispositivo.</p>}
-          <dl className="book-facts">
-            <div><dt>Páginas</dt><dd>{book.pageCount?.toLocaleString('pt-BR') ?? 'Não informadas'}</dd></div>
+          {(book.pageCount != null || book.publicationYear || book.isbn || book.rating) && <dl className="book-facts">
+            {book.pageCount != null && <div><dt>Páginas</dt><dd>{book.pageCount.toLocaleString('pt-BR')}</dd></div>}
             {book.publicationYear && <div><dt>Ano de publicação</dt><dd>{formatShelfYear(book.publicationYear)}</dd></div>}
             {book.isbn && <div><dt>ISBN</dt><dd>{book.isbn}</dd></div>}
-            <div><dt>Minha avaliação</dt><dd>{book.rating ? <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span> : 'Sem avaliação'}</dd></div>
-          </dl>
-          <h2>Observações</h2><p className="private-note">{book.note || 'Nenhuma observação ainda.'}</p>
+            {book.rating && <div><dt>Minha avaliação</dt><dd><span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span></dd></div>}
+          </dl>}
+          {book.note?.trim() && <><h2>Observações</h2><p className="private-note">{book.note}</p></>}
           {error && <p role="alert" className="form-error">{error}</p>}
-          <div className="form-actions"><button className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(''); }}>Editar livro</button>
-            <button className="button button-secondary" onClick={() => setRemoving(true)}>Remover livro</button></div>
         </>}
         {removing && <ConfirmDialog title={`Excluir ${book.title} desta estante?`} confirmLabel="Excluir livro" busy={busy} onCancel={() => setRemoving(false)} onConfirm={() => void remove()}>
           <p>O registro, sua avaliação e sua nota serão removidos deste dispositivo. Esta ação não pode ser desfeita pelo aplicativo.</p>
