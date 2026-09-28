@@ -143,13 +143,11 @@ h2 { font-size: var(--text-h2); }
 .share-canvas--story { max-width: 22rem; }
 .support-layout { display: grid; gap: var(--space-6); }
 .support-layout .notice-panel { margin: 0; }
-.support-intro > svg { width: 2rem; height: 2rem; color: var(--color-action); margin-bottom: var(--space-4); }
-.support-intro h2, .pix-card h2, .support-feedback h2 { margin: 0; }
-.support-intro p { max-width: var(--reading-max); }
-.support-card-heading { display: flex; align-items: flex-start; gap: var(--space-3); }
-.support-card-heading > svg { margin-top: var(--space-1); color: var(--color-action); }
-.support-card-heading p { color: var(--color-text-secondary); margin: var(--space-1) 0 0; }
+.pix-card h2, .support-feedback h2 { margin: 0; }
 .pix-card { display: grid; gap: var(--space-4); }
+.pix-card .button { margin-top: 0; justify-self: start; }
+.pix-card > p { margin: 0; }
+.pix-qr-option summary { cursor: pointer; min-height: var(--target-min); padding-block: var(--space-2); color: var(--color-link); text-decoration: underline; }
 .pix-qr-frame { width: min(100%, 17rem); padding: var(--space-3); background: var(--color-surface); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); }
 .pix-qr-frame img { display: block; width: 100%; height: auto; }
 .pix-recipient { display: grid; gap: var(--space-1); }
