@@ -12,7 +12,7 @@ const messages = {
   'invalid-response': 'Não foi possível ler os resultados. Tente novamente ou adicione manualmente.',
   cooldown: 'A Open Library pediu uma pausa. Aguarde um pouco antes de tentar novamente; o cadastro manual continua disponível.',
 };
-export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) => void; onManual: () => void }) {
+export function BookSearch({ active, onSelect, onManual }: { active: boolean; onSelect: (draft: NewBook) => void; onManual: () => void }) {
   const [service] = useState(openBookSearch);
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -23,7 +23,17 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) 
   const [error, setError] = useState('');
   const sequence = useRef(0);
   const input = useRef<HTMLInputElement>(null);
+  const selectedButton = useRef<HTMLButtonElement>(null);
+  const wasActive = useRef(active);
   useEffect(() => { input.current?.focus(); return () => { sequence.current++; service.cancel(); }; }, [service]);
+  useEffect(() => {
+    if (!active) { sequence.current++; service.cancel(); setBusy(false); setChoosing(null); wasActive.current = false; return; }
+    if (!wasActive.current) queueMicrotask(() => {
+      const target = selectedButton.current?.isConnected ? selectedButton.current : input.current;
+      target?.focus();
+    });
+    wasActive.current = true;
+  }, [active, service]);
   async function search(text: string, page = 1) {
     const request = ++sequence.current;
     setBusy(true); setError(''); setResult(null); setDetailsError(null); setChoosing(null); setSubmitted(text);
@@ -46,7 +56,7 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) 
       <label className="form-field">Título, autor ou ISBN<input ref={input} value={query} maxLength={200} onChange={(event) => setQuery(event.target.value)} /></label>
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || Boolean(choosing)}>Buscar</button>
         {busy && <button className="button button-secondary" type="button" onClick={() => { sequence.current++; service.cancel(); setBusy(false); }}>Cancelar busca</button>}
-        <button className="button button-secondary" type="button" onClick={onManual}>Adicionar manualmente</button></div>
+        <button className="button button-quiet" type="button" onClick={(event) => { selectedButton.current = event.currentTarget; onManual(); }}>Adicionar manualmente</button></div>
     </form>
     {busy && <p role="status">Buscando na Open Library…</p>}
     {error && <div role="alert"><p>{error}</p><button className="button button-secondary" onClick={() => void search(submitted)}>Tentar novamente</button></div>}
@@ -59,10 +69,10 @@ export function BookSearch({ onSelect, onManual }: { onSelect: (draft: NewBook) 
         </div>
         <button className="button button-secondary search-result-select" type="button" disabled={Boolean(choosing)}
           aria-label={`${choosing === candidate.workId ? 'Carregando dados de' : 'Selecionar'} ${candidate.title}${candidate.firstPublishedYear ? ` (${candidate.firstPublishedYear})` : ''}`}
-          onClick={() => void choose(candidate)}>{choosing === candidate.workId ? 'Aguarde…' : 'Selecionar'}</button>
+          onClick={(event) => { selectedButton.current = event.currentTarget; void choose(candidate); }}>{choosing === candidate.workId ? 'Aguarde…' : 'Selecionar'}</button>
         {detailsError === candidate.workId && <div className="search-result-error" role="alert">Dados da edição indisponíveis.
           <button className="button button-quiet" type="button" onClick={() => void choose(candidate)}>Tentar novamente</button>
-          <button className="button button-quiet" type="button" onClick={() => onSelect(candidateDraft({ candidate, edition: null }))}>Usar assim</button>
+          <button className="button button-quiet" type="button" onClick={(event) => { selectedButton.current = event.currentTarget; onSelect(candidateDraft({ candidate, edition: null })); }}>Usar assim</button>
         </div>}
       </li>)}</ul>
       <div className="form-actions">{result.page > 1 && <button className="button button-secondary" onClick={() => void search(submitted, result.page - 1)}>Página anterior</button>}

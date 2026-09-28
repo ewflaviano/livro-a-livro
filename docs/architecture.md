@@ -324,7 +324,7 @@ Usar HashRouter com `#/estante`, `#/adicionar`, `#/livro/<uuid>` e `#/dados`. An
 
 ### Busca e enriquecimento
 
-Submeter consulta → cache/limite → fetch abortável → validar resposta → candidatos → escolher um → normalizar revisão editável → salvar pelo mesmo serviço de cadastro manual. Seleção não faz commit; atualização externa nunca modifica um registro já salvo automaticamente.
+Submeter consulta → cache/limite → fetch abortável → validar resposta → candidatos → escolher um → normalizar revisão editável → salvar pelo mesmo serviço de cadastro manual. Seleção não faz commit; atualização externa nunca modifica um registro já salvo automaticamente. A interface conserva consulta e resultados ao abrir a revisão de um candidato, para permitir voltar à lista sem nova consulta. Ao entrar no formulário, operações de busca ainda pendentes são canceladas; um rascunho alterado exige confirmação antes de descarte.
 
 ### Exportar e importar
 

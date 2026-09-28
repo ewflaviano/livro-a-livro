@@ -28,6 +28,7 @@ export function AddBookPage() {
   const [session, setSession] = useState<{ year: number; version: LocalRevision } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<NewBook | null>(null);
+  const [draftOrigin, setDraftOrigin] = useState<'search' | 'manual' | null>(null);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   useEffect(() => { document.title = 'Adicionar livro · Livro a Livro'; }, []);
@@ -37,12 +38,12 @@ export function AddBookPage() {
   }, [state, session]);
   return <section className="page-content"><BackLink returnTo={returnTo} />
     <h1>Adicionar livro</h1>
-    {session && books ? draft === null ? <BookSearch onManual={() => setDraft({ title: '' })}
-      onSelect={setDraft} /> : <>
+    {session && books ? <><div hidden={draft !== null}><BookSearch active={draft === null} onManual={() => { setDraftOrigin('manual'); setDraft({ title: '' }); }}
+      onSelect={(selected) => { setDraftOrigin('search'); setDraft(selected); }} /></div>{draft && <>
       {draft.cover && <BookCover cover={draft.cover} title={draft.title} className="selected-cover" />}
-      <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books}
+      <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books} cancelLabel={draftOrigin === 'search' ? 'Escolher outro livro' : 'Cancelar'}
       onSaved={(book) => { updatePreferences({ shelfYear: book.shelfYear, filter: 'all' }); setShelfQuery(''); positions.set('/estante', 0); navigate('/estante', { replace: true }); }}
-      onCancel={() => { setDraft(null); window.scrollTo(0, 0); }} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
+      onCancel={() => { setDraft(null); setDraftOrigin(null); window.scrollTo(0, 0); }} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></>}</> :
       <LibraryState state={state.status === 'error' ? 'error' : 'loading'} onRetry={retry} />}
   </section>;
 }

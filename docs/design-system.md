@@ -157,7 +157,7 @@ Ordem atual: marca, Apoiar e acesso ao Google quando disponível; título “Est
 
 ## 9. Busca e cadastro manual
 
-“Adicionar livro” abre uma região com busca por “Título, autor ou ISBN” e ação **Adicionar manualmente**. A consulta é explícita: não mandar texto a um serviço só por digitar. Resultados mostram título, autor, primeiro ano da obra quando disponível, capa pequena e botão compacto “Selecionar” à direita. A fonte enriquece o registro; não é a biblioteca pessoal nem garante completude.
+“Adicionar livro” abre uma região com busca por “Título, autor ou ISBN” como ação principal e **Adicionar manualmente** como ação discreta, sempre disponível inclusive offline. A consulta é explícita: não mandar texto a um serviço só por digitar. Resultados mostram título, autor, primeiro ano da obra quando disponível, capa pequena e botão compacto “Selecionar” à direita. A fonte enriquece o registro; não é a biblioteca pessoal nem garante completude. Após selecionar, **Escolher outro livro** volta à mesma lista sem refazer a consulta; se houver rascunho alterado, pedir confirmação antes de descartá-lo.
 
 “Selecionar” consulta a edição identificada e abre revisão editável antes de salvar, sem adicionar automaticamente. Ano da edição preenche o campo quando disponível; primeiro ano da obra serve de fallback; páginas e ISBN só vêm da edição. Se a edição não tiver páginas, o campo mostra “Não informado” sem gravar uma estimativa. Distinguir ano de publicação de ano da estante. ISBN e detalhes editoriais são opcionais; não obrigar a escolher uma edição inexistente. Consultar a [documentação de busca da Open Library](https://openlibrary.org/dev/docs/api/search) e da [Books API](https://openlibrary.org/dev/docs/api/books).
 
