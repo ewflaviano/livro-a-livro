@@ -13,7 +13,7 @@ const make = (fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(resp
 });
 afterEach(() => vi.useRealTimers());
 describe('explicit Open Library lookup', () => {
-  it('loads the selected edition and prefers its publication year, ISBN and pages', async () => {
+  it('loads edition metadata while keeping the selected result title and cover', async () => {
     const search = { ...response, docs: [{ ...response.docs[0], editions: { docs: [{ key: '/books/OL456M' }] } }] };
     const edition = { key: '/books/OL456M', works: [{ key: '/works/OL123W' }], title: 'Edição brasileira',
       publish_date: '15 Oct 2007', number_of_pages: 231, isbn_13: ['9780306406157'], covers: [321] };
@@ -22,8 +22,9 @@ describe('explicit Open Library lookup', () => {
     const candidate = (await client.search('livro', 1, new AbortController().signal)).candidates[0];
     const details = await client.details(candidate, new AbortController().signal);
     expect(fetch.mock.calls[1][0].pathname).toBe('/books/OL456M.json');
-    expect(candidateDraft(details)).toMatchObject({ title: 'Edição brasileira', publicationYear: 2007, pageCount: 231,
-      isbn: '9780306406157', source: { editionId: 'OL456M' }, cover: { coverId: 321 } });
+    expect(candidateDraft(details)).toMatchObject({ title: 'Teste', publicationYear: 2007, pageCount: 231,
+      isbn: '9780306406157', source: { editionId: 'OL456M' }, cover: { coverId: 123 } });
+    expect(candidateDraft({ ...details, candidate: { ...candidate, coverId: null } }).cover).toEqual({ provider: 'open_library', coverId: 321 });
     await client.details(candidate, new AbortController().signal);
     expect(fetch).toHaveBeenCalledTimes(2);
   });

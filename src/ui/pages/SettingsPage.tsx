@@ -26,7 +26,7 @@ export function SettingsPage() {
       {state.preferenceError && <div role="alert"><p>Não foi possível guardar estas preferências. Elas valem nesta sessão, mas podem se perder ao reabrir o aplicativo.</p><button className="button button-secondary" onClick={() => updatePreferences(state.preferences)}>Tentar salvar preferências</button></div>}
     </div>}
     <h2>Aplicativo</h2>
-    <p>Versão {__APP_VERSION__} · build {__BUILD_ID__}{import.meta.env.DEV ? ' · desenvolvimento' : ''}</p>
+    <p>Versão {__APP_VERSION__} · commit {__BUILD_ID__}{import.meta.env.DEV ? ' · desenvolvimento' : ''}</p>
     <PwaStatus detailed />
     <div className="form-actions"><Link className="button button-secondary" to="/instalar">Como instalar</Link><Link className="button button-secondary" to="/dados">Seus dados e backup</Link></div>
   </section>;

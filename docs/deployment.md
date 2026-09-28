@@ -30,7 +30,7 @@ O consentimento Google está em produção, com escopos `openid` e `drive.appdat
 
 `infra/frontend.yml` cria uma distribuição CloudFront com origem S3 privada/OAC, o alias `A`/`AAAA` da raiz e os cabeçalhos de segurança. O bucket recebe somente o build estático; não recebe bibliotecas, backups, capas enviadas ou arquivos de Drive.
 
-Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline.
+Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline. Configurações mostra os sete primeiros caracteres do commit da execução que construiu o frontend; fora do CI, usa o commit local.
 
 ## API
 
@@ -58,7 +58,7 @@ O operador provisiona/atualiza a infraestrutura com perfil AWS autorizado e revi
 
 Para a primeira instalação, baixe o artefato `api-release` do run validado e use `bash scripts/provision-api.sh`, na raiz do repositório. O script exige diretório do artefato, bucket, commit completo, ARN do segredo/certificado e zona DNS em variáveis `API_*` documentadas no próprio arquivo. A autenticação usa o perfil/role AWS do operador; não recebe chaves ou conteúdo do segredo. Depois execute `node scripts/check-auth-production.mjs`: o smoke verifica controles sem sessão, CORS/cookies/PKCE e recuperação de callback cancelado, sem seguir a URL Google nem registrar valores OAuth.
 
-O job da API produz os ZIPs com Cargo Lambda e publica exatamente o artefato daquele run, após fmt, clippy e testes. Os ZIPs ficam identificados pelo commit. Para reverter código, um operador republica os dois ZIPs do commit aprovado anterior e aguarda `function-updated` (usa a permissão limitada GetFunctionConfiguration). Confirmar compatibilidade do esquema antes: uma reversão nunca deve restaurar credenciais antigas ou remover tombstones. A rotina e a API podem executar versões diferentes durante a atualização; alterações no contrato exigem uma transição compatível.
+O job da API produz os ZIPs com Cargo Lambda após fmt, clippy e testes. Na `main`, a publicação usa o artefato daquele run somente quando arquivos em `api/` mudaram em relação ao commit anterior; uma execução manual também pode publicar. Assim, uma atualização exclusiva do frontend não troca o código das funções. Os ZIPs publicados ficam identificados pelo commit. Para reverter código, um operador republica os dois ZIPs do commit aprovado anterior e aguarda `function-updated` (usa a permissão limitada GetFunctionConfiguration). Confirmar compatibilidade do esquema antes: uma reversão nunca deve restaurar credenciais antigas ou remover tombstones. A rotina e a API podem executar versões diferentes durante a atualização; alterações no contrato exigem uma transição compatível.
 
 A publicação direta de código não atualiza os parâmetros de artefato guardados pelo CloudFormation. Em uma atualização posterior de infraestrutura, execute o script de provisionamento com os ZIPs e o commit da versão aprovada atual; não reaplique um template com chaves de artefatos antigos, pois isso pode reverter o código das funções.
 
@@ -91,6 +91,8 @@ LOGIN usa prazos móveis de 30 dias e absolutos de 180 dias, verificados a cada 
 
 Após publicar ambos, executar o smoke atualizado: consulta anônima de LOGIN/SESSION, preflight do novo header, início openid com UUID, consulta/cancelamento exato de tentativa e rejeição após cancelar. Cookies permanecem somente em memória. Complementar com navegador normal para persistência e consentimento separado; smoke sem conta não prova esses fluxos. Ao atualizar `privacidade.html`, invalidar também essa página no CDN.
 
-## Política CSP para Analytics (#63)
+## Política CSP para imagens e Analytics (#63, #69)
 
 `infra/frontend.yml` permite somente `www.googletagmanager.com`, `www.google-analytics.com` e `region1.google-analytics.com` nas diretivas necessárias ao Google Analytics consentido. A pipeline de frontend publica assets, mas **não atualiza a stack CloudFormation**. A alteração desta política foi aplicada manualmente à stack de produção antes da publicação do JavaScript da issue #63, com change set limitado a `SecurityHeaders` sem substituição. O cabeçalho público foi conferido. Ao alterar esta política novamente, revisar/aplicar a stack antes de publicar código que dependa do novo host. Invalidar `/privacidade.html` após a publicação da página atualizada.
+
+Algumas capas da Open Library redirecionam de `covers.openlibrary.org` para `archive.org` e `*.us.archive.org`. A issue #69 acrescenta esses dois destinos somente a `img-src`; `connect-src` não os inclui. Aplicar a mudança na stack e conferir o cabeçalho público antes de publicar o frontend corrigido. Testar uma capa redirecionada no domínio canônico após a propagação do CloudFront.

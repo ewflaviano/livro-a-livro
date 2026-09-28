@@ -34,7 +34,6 @@ export function normalizeResults(input: unknown, retrievedAt: string, page: numb
 
 const editionSchema = z.object({
   key: z.string().regex(/^\/books\/OL[1-9]\d*M$/u),
-  title: z.string().trim().min(1).max(BOOK_LIMITS.title).optional().catch(undefined),
   publish_date: z.string().max(100).optional().catch(undefined),
   number_of_pages: z.number().int().positive().max(BOOK_LIMITS.pageCount).optional().catch(undefined),
   isbn_13: z.array(z.string()).max(50).optional().catch(undefined),
@@ -52,7 +51,7 @@ export function normalizeEdition(input: unknown, candidate: BookCandidate): Book
     .map((value) => isbnSchema.safeParse(value)).find((value) => value.success);
   const year = /(?:^|\D)([1-9]\d{3})(?!\d)/u.exec(item.publish_date ?? '')?.[1];
   const coverId = item.covers?.find((value) => Number.isSafeInteger(value) && value > 0) ?? null;
-  return { candidate, edition: { id: candidate.editionId!, title: item.title ?? null,
+  return { candidate, edition: { id: candidate.editionId!,
     publicationYear: year ? Number(year) : null, pageCount: item.number_of_pages ?? null,
     isbn: firstValidIsbn?.success ? firstValidIsbn.data : null, coverId } };
 }
