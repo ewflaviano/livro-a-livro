@@ -11,7 +11,7 @@ export const candidateSchema = z.strictObject({
 });
 export type BookCandidate = z.infer<typeof candidateSchema>;
 export type BookDetails = { candidate: BookCandidate; edition: {
-  id: string; title: string | null; publicationYear: number | null; pageCount: number | null;
+  id: string; publicationYear: number | null; pageCount: number | null;
   isbn: string | null; coverId: number | null;
 } | null };
 export type SearchPage = { candidates: BookCandidate[]; page: number; hasMore: boolean; cached: boolean };
@@ -30,9 +30,9 @@ export class SearchError extends Error {
   constructor(readonly code: SearchErrorCode) { super(code); this.name = 'SearchError'; }
 }
 export function candidateDraft({ candidate, edition }: BookDetails): NewBook {
-  const coverId = edition?.coverId ?? candidate.coverId;
+  const coverId = candidate.coverId ?? edition?.coverId;
   const publicationYear = edition?.publicationYear ?? candidate.firstPublishedYear;
-  return { title: edition?.title ?? candidate.title, authors: [...candidate.authors],
+  return { title: candidate.title, authors: [...candidate.authors],
     cover: coverId ? { provider: 'open_library', coverId } : null,
     ...(publicationYear ? { publicationYear } : {}),
     ...(edition?.pageCount ? { pageCount: edition.pageCount } : {}),

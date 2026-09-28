@@ -91,6 +91,8 @@ LOGIN usa prazos móveis de 30 dias e absolutos de 180 dias, verificados a cada 
 
 Após publicar ambos, executar o smoke atualizado: consulta anônima de LOGIN/SESSION, preflight do novo header, início openid com UUID, consulta/cancelamento exato de tentativa e rejeição após cancelar. Cookies permanecem somente em memória. Complementar com navegador normal para persistência e consentimento separado; smoke sem conta não prova esses fluxos. Ao atualizar `privacidade.html`, invalidar também essa página no CDN.
 
-## Política CSP para Analytics (#63)
+## Política CSP para imagens e Analytics (#63, #69)
 
 `infra/frontend.yml` permite somente `www.googletagmanager.com`, `www.google-analytics.com` e `region1.google-analytics.com` nas diretivas necessárias ao Google Analytics consentido. A pipeline de frontend publica assets, mas **não atualiza a stack CloudFormation**. A alteração desta política foi aplicada manualmente à stack de produção antes da publicação do JavaScript da issue #63, com change set limitado a `SecurityHeaders` sem substituição. O cabeçalho público foi conferido. Ao alterar esta política novamente, revisar/aplicar a stack antes de publicar código que dependa do novo host. Invalidar `/privacidade.html` após a publicação da página atualizada.
+
+Algumas capas da Open Library redirecionam de `covers.openlibrary.org` para `archive.org` e `*.us.archive.org`. A issue #69 acrescenta esses dois destinos somente a `img-src`; `connect-src` não os inclui. Aplicar a mudança na stack e conferir o cabeçalho público antes de publicar o frontend corrigido. Testar uma capa redirecionada no domínio canônico após a propagação do CloudFront.
