@@ -383,8 +383,11 @@ describe('durable local first coordinator', () => {
     expect(await s.store.operation()).not.toBeNull();
     expect(await s.store.pending()).toEqual(await s.repository.readRevision());
     expect((await s.store.read()).base).toBeNull();
-    s.options.online = () => true; await other.runNow();
-    await vi.waitFor(() => expect(other.getSnapshot().status).toBe('synced'));
+    s.options.online = () => true;
+    await vi.waitFor(async () => {
+      await other.runNow();
+      expect(other.getSnapshot().status).toBe('synced');
+    });
     expect(s.snapshots).toHaveLength(1);
   });
   it.each(['descendant', 'conflict'] as const)('does not apply %s replacement after pause wins before its transaction', async path => {
