@@ -32,8 +32,8 @@ export function createSyncCoordinator(options: Options) {
   let confirmationId: string | null = null;
   const ready = (signal: AbortSignal, id?: string) => { if (closed || signal.aborted || options.hasDraft() || id !== undefined && confirmationId !== id) throw new SyncError('cancelled'); };
   let closed = false; let running = false; let controller: AbortController | null = null;
-  let timer: ReturnType<typeof setTimeout> | undefined; let polling: ReturnType<typeof setTimeout> | undefined;
-  let firstEdit = 0; let lastPoll = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let firstEdit = 0; let lastWake = 0;
   const publish = (next: SyncView) => { if (!closed) { view = { ...next, login: next.login ?? view.login, drivePromptDismissed: next.drivePromptDismissed ?? view.drivePromptDismissed, logoutUnconfirmed: next.logoutUnconfirmed ?? view.logoutUnconfirmed, revocationPending: next.revocationPending ?? view.revocationPending }; listeners.forEach(listener => listener()); } };
   const guard = async () => { const current = await store.read(); if (!current.enabled || current.authorization || closed || controller?.signal.aborted) throw new SyncError('cancelled'); await store.assertLease(owner); };
   async function library(): Promise<{ library: LibraryExportV2; version: LocalRevision }> {
@@ -292,13 +292,6 @@ export function createSyncCoordinator(options: Options) {
     if (closed || conflict) return;
     firstEdit ||= Date.now(); schedule(Math.min(1500, Math.max(0, 10_000 - (Date.now() - firstEdit))));
   });
-  function poll() {
-    if (closed) return;
-    polling = setTimeout(() => {
-      if (options.visible() && options.online() && Date.now() - lastPoll >= 60_000 && !conflict) { lastPoll = Date.now(); schedule(); }
-      poll();
-    }, 60_000 + Math.random() * 10_000);
-  }
   async function beginDrive() {
     const current = await store.read();
     if (current.authorization && !['drive', 'signin'].includes(current.authorization.stage)) throw new SyncError('cancelled');
@@ -329,14 +322,14 @@ export function createSyncCoordinator(options: Options) {
   const coordinator = {
     getSnapshot: () => view,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.authorization ? 'identifying' : record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); await refreshLogin(); schedule(); poll(); },
+    async start() { const record = await store.read(); if (record.attempts >= 5) await store.update({ attempts: 0 }); publish({ status: record.authorization ? 'identifying' : record.enabled ? 'pending' : record.revocationPending ? 'reconnect' : record.binding ? 'paused' : 'disabled', revocationPending: record.revocationPending }); await refreshLogin(); schedule(); },
     async wake() {
       if (closed || !options.visible()) return;
       await refreshLogin();
       const record = await store.read();
       // User/lifecycle retry starts a new bounded cycle, but respects Retry-After.
       if (record.attempts >= 5) await store.update({ attempts: 0 });
-      if (!conflict && Date.now() - lastPoll >= 60_000) { lastPoll = Date.now(); schedule(); }
+      if (options.online() && !conflict && Date.now() - lastWake >= 60_000) { lastWake = Date.now(); schedule(); }
     },
     refreshLogin,
     async dismissDrivePrompt() {
@@ -472,7 +465,7 @@ export function createSyncCoordinator(options: Options) {
       }, true);
     },
     async runNow() { await locked(cycle); },
-    close() { closed = true; preview = null; controller?.abort(); clearTimeout(timer); clearTimeout(polling); unsubscribe(); unsubscribeControl(); listeners.clear(); auth.invalidate(); },
+    close() { closed = true; preview = null; controller?.abort(); clearTimeout(timer); unsubscribe(); unsubscribeControl(); listeners.clear(); auth.invalidate(); },
   };
   return { ...coordinator,
     start: held(coordinator.start), wake: held(coordinator.wake), dismissDrivePrompt: held(coordinator.dismissDrivePrompt),

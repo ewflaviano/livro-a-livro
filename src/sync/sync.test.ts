@@ -60,6 +60,31 @@ describe('private snapshot protocol', () => {
   });
 });
 describe('durable local first coordinator', () => {
+  it('checks Drive on opening and a later wake without scheduling idle polling', async () => {
+    const s = await setup();
+    const timeout = vi.spyOn(globalThis, 'setTimeout');
+    await s.coordinator.start();
+    await vi.waitFor(() => expect(s.coordinator.getSnapshot().status).toBe('connected-empty'));
+    expect(timeout.mock.calls.some(([, delay]) => typeof delay === 'number' && delay >= 60_000)).toBe(false);
+
+    s.snapshots.push(await snap(data([book('Recebido após foco')])));
+    await s.coordinator.wake();
+    await vi.waitFor(async () => expect((await s.repository.readAll()).books.map(item => item.title)).toEqual(['Recebido após foco']));
+  });
+
+  it('does not postpone an online wake because an offline wake occurred recently', async () => {
+    const s = await setup(); s.coordinator.close();
+    let online = false;
+    const coordinator = createSyncCoordinator({ ...s.options, online: () => online }); close.push(() => coordinator.close());
+    await coordinator.start();
+    await vi.waitFor(() => expect(coordinator.getSnapshot().status).toBe('offline'));
+    s.snapshots.push(await snap(data([book('Recebido após reconexão')])));
+    await coordinator.wake();
+    online = true;
+    await coordinator.wake();
+    await vi.waitFor(async () => expect((await s.repository.readAll()).books.map(item => item.title)).toEqual(['Recebido após reconexão']));
+  });
+
   it('restores login without enabling Drive, preserves dismissal on reload and offers a new login again', async () => {
     const s = await setup(); await s.store.update({ enabled: false });
     await s.coordinator.refreshLogin();
