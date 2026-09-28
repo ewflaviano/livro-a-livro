@@ -103,6 +103,8 @@ Essa evidência não substitui os gates de Drive entre perfis independentes, uni
 
 ## Gate hermético da união — issue #13
 
+**Revalidação em 28/09/2026:** o harness passou a abrir a restauração antes de escolher o JSON, acompanhar o retorno à estante após o cadastro e abrir Gerenciar conexão para pausa/saída/revogação. O teste offline repõe o filtro alterado pelo cadastro antes de comparar a biblioteca. As comparações de cópias do Drive e de recuperação excluem Grade/Lista, que é preferência local no backup V2. `CHROMIUM_PATH=/usr/bin/chromium node scripts/drive-gate.mjs --smoke` concluiu com `SMOKE_PASS`, incluindo recebimento, conflito, união e resposta PUT perdida. Esse resultado permanece sintético e não aprova os gates Google reais entre sessões independentes.
+
 O fluxo sintético passou recebimento automático em B novo, edição offline em A/B, conflito sem alteração prematura, escolha de versão inteira, cancelamento da prévia, união explícita com preferências e capa, recuperação exata e convergência. O PUT aceito com resposta perdida foi reconciliado na reabertura com um único arquivo/operação e sem segundo PUT. O simulador local também passou seu teste de fronteira. A revisão visual da prévia em 320 px não apresentou rolagem horizontal; livros/capas/escolhas ficaram legíveis.
 
 Checks da fatia: 502 testes frontend em 39 arquivos com concorrência padrão, typecheck/build e teste do simulador aprovados. A suíte completa identificou e a entrega corrigiu a preservação de preferências não salvas durante refresh; regressões cobrem falha, retry, importação e conclusão fora de ordem. Revisão de arquitetura e revisão independente sem achados pendentes.
