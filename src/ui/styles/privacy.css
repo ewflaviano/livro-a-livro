@@ -5,7 +5,16 @@ header, main { max-width: 46rem; margin: auto; padding: 1.5rem; }
 header { border-bottom: 1px solid var(--color-border); font-weight: 700; }
 main { padding-bottom: 4rem; }
 h1, h2 { line-height: 1.25; }
-h2 { margin-top: 2rem; }
+h2 { margin: 2.5rem 0 .75rem; scroll-margin-top: 1rem; }
+.privacy-summary { margin-block: 1.5rem; padding: 1rem; border-inline-start: .25rem solid var(--color-action); background: var(--color-surface); }
+.privacy-nav { margin-block: 1.5rem 2rem; }
+.privacy-nav h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+.privacy-nav ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem .75rem; list-style: none; margin: 0; padding: 0; }
+.privacy-nav a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: .25rem; }
 a { color: var(--color-link); text-underline-offset: .2em; overflow-wrap: anywhere; }
 a:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 4px; }
 code { overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  header, main { padding-inline: 1rem; }
+  h2 { margin-top: 2rem; }
+}
