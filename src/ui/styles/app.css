@@ -262,6 +262,15 @@ h2 { font-size: var(--text-h2); }
 .settings-version { margin-bottom: var(--space-2); font-size: var(--text-small); color: var(--color-text-secondary); }
 .settings-options { margin-top: var(--space-4); }
 .settings-options summary { cursor: pointer; min-height: var(--target-min); padding-block: var(--space-2); color: var(--color-link); text-decoration: underline; }
+.install-page > .button { margin-top: var(--space-6); }
+.install-guides { margin-top: var(--space-2); }
+.install-guide { margin-block: var(--space-2); }
+.install-guide h2, .install-guide h3 { margin-bottom: var(--space-2); }
+.install-guide p { margin-block: var(--space-2); }
+.install-other { margin-top: var(--space-2); }
+.install-other summary { cursor: pointer; min-height: var(--target-min); padding-block: var(--space-2); color: var(--color-link); text-decoration: underline; }
+.install-page > .field-help { margin-block: var(--space-1); }
+.install-backup-link { display: inline-flex; align-items: center; min-height: var(--target-min); }
 
 /* Connection controls remain available in the shell on every route. */
 .header-tools { display: flex; align-items: center; gap: var(--space-2); }
