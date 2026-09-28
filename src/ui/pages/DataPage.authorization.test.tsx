@@ -8,7 +8,7 @@ import { GlobalSyncControls, GlobalSyncHeader } from '../components/GlobalSyncCo
 import { DataPage } from './DataPage';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false,
-  coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), cancelAuthorization: vi.fn(async () => {}), retryAuthorization: vi.fn(async () => {}) },
+  coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), cancelAuthorization: vi.fn(async () => {}), retryAuthorization: vi.fn(async () => {}), recoveryCopy: vi.fn(async () => null) },
 }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 vi.mock('../components/BackupPanel', () => ({ BackupPanel: () => <section><h2>Backup local</h2><button>Exportar JSON</button></section> }));
@@ -35,6 +35,7 @@ describe('optional two-step Google authorization', () => {
     expect(screen.getByText(/backup continuam disponíveis offline/)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Verificar autorização novamente' }));
     expect(sync.coordinator.retryAuthorization).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByText('Gerenciar conexão'));
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar autorização' }));
     expect(sync.coordinator.cancelAuthorization).toHaveBeenCalledOnce();
     expect(sync.coordinator.connect).not.toHaveBeenCalled();
@@ -46,6 +47,8 @@ it('shows unconfirmed logout honestly and offers no global Drive revocation for 
   sync.state = { status: 'paused', login: { status: 'signed-in', driveAuthorized: false }, logoutUnconfirmed: true };
   render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
   expect(screen.getByRole('alert').textContent).toContain('A saída não foi confirmada');
+  expect(screen.getByText('Gerenciar conexão')).toBeTruthy();
+  screen.getByText('Gerenciar conexão').click();
   expect(screen.getByRole('button', { name: 'Sair deste navegador' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Desconectar Google Drive' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Retomar sincronização' })).toBeNull();
@@ -58,4 +61,13 @@ it('describes an empty connected Drive without claiming a confirmed backup', () 
   expect(screen.getByText('Drive conectado')).toBeTruthy();
   expect(screen.queryByText(/Cópia confirmada no Google Drive/)).toBeNull();
   expect(screen.getByRole('button', { name: 'Exportar JSON' })).toBeTruthy();
+});
+
+it('keeps the recovery copy accessible while paused and login cannot be checked', async () => {
+  sync.state = { status: 'paused', login: { status: 'unavailable' } };
+  render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
+  await userEvent.click(screen.getByText('Gerenciar conexão'));
+  await userEvent.click(screen.getByRole('button', { name: 'Baixar cópia anterior preservada' }));
+  expect(sync.coordinator.recoveryCopy).toHaveBeenCalledOnce();
+  expect(screen.getByRole('alert').textContent).toContain('Ainda não há uma cópia anterior preservada');
 });

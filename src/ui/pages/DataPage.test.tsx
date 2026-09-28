@@ -52,10 +52,11 @@ async function setup(withBook = false) {
   const service = createShelfService(repo);
   opened.push({ name, close: () => { service.close(); db.close(); } });
   const view = render(<MemoryRouter initialEntries={['/dados']}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Exportar JSON' }) as HTMLButtonElement).disabled).toBe(false));
+  await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Fazer backup' }) as HTMLButtonElement).disabled).toBe(false));
   return { repo, db, service, view };
 }
 async function select(value = file()) {
+  await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
   await userEvent.upload(screen.getByLabelText('Importar JSON'), value);
   await screen.findByRole('heading', { name: 'Conferir restauração' });
 }
@@ -70,11 +71,21 @@ async function confirm(count = 1) {
 }
 
 describe('independent local backup interface', () => {
+  it('shows backup actions first and reveals the file picker on request', async () => {
+    await setup();
+    expect(screen.queryByLabelText('Importar JSON')).toBeNull();
+    expect(screen.getByText(/notas e capas privadas/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Importar JSON'));
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Importar JSON'));
+  });
+
   it('round-trips all fields and real cover bytes into a distinct profile, offline without Drive', async () => {
     const source = await setup(true);
     expect(screen.getAllByRole('heading', { level: 2 })[0].textContent).toBe('Backup local');
     expect(screen.getByText(/conector está em preparação/)).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Exportar JSON' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fazer backup' }));
     await screen.findByText(/Download iniciado; confira/);
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
     expect((await source.repo.readPreferences()).lastExport?.version).toEqual(await source.repo.readRevision());
@@ -109,6 +120,7 @@ describe('independent local backup interface', () => {
     ['invalid cover', JSON.stringify({ ...covers(), coverMedia: [{ ...encodedCover(), bytes: btoa('false PNG') }] }), /capas inválidas/],
   ])('rejects %s before a preview or any changes', async (_, text, message) => {
     const { repo, db } = await setup(true); const before = await repo.readBackupSnapshot();
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
     await userEvent.upload(screen.getByLabelText('Importar JSON'), file(text));
     expect((await screen.findByRole('alert')).textContent).toMatch(message);
     expect(screen.queryByRole('heading', { name: 'Conferir restauração' })).toBeNull();
@@ -117,6 +129,7 @@ describe('independent local backup interface', () => {
 
   it('checks the declared size before reading the file', async () => {
     await setup(); const value = file(); Object.defineProperty(value, 'size', { value: LIBRARY_LIMITS.jsonBytes + 1 });
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
     await userEvent.upload(screen.getByLabelText('Importar JSON'), value);
     expect((await screen.findByRole('alert')).textContent).toContain('excede os limites');
     expect(value.text).not.toHaveBeenCalled();
@@ -161,6 +174,7 @@ describe('independent local backup interface', () => {
   it('invalidates an older file selection and ignores unfinished validation after unmount', async () => {
     const { db, view } = await setup(); let release!: (text: string) => void;
     const first = file(); Object.defineProperty(first, 'text', { configurable: true, value: () => new Promise<string>(resolve => { release = resolve; }) });
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
     await userEvent.upload(screen.getByLabelText('Importar JSON'), first);
     await screen.findByText(/Validando o arquivo/);
     await select(file(JSON.stringify({ ...fixture, books: [] })));
@@ -174,7 +188,7 @@ describe('independent local backup interface', () => {
 
   it('does not record a completed backup when browser download initiation fails', async () => {
     const { repo } = await setup(); vi.mocked(HTMLAnchorElement.prototype.click).mockImplementationOnce(() => { throw new Error('synthetic'); });
-    await userEvent.click(screen.getByRole('button', { name: 'Exportar JSON' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fazer backup' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível iniciar a exportação');
     expect((await repo.readPreferences()).lastExport).toBeNull();
   });

@@ -75,14 +75,11 @@ export function DataPage() {
   }
   return <section ref={content} className="page-content"><h1 ref={pageHeading} tabIndex={-1}>Seus dados</h1>
     {local && <p className="notice-panel" role="status">Modo local de teste: Google e Drive são simulados neste computador. Use somente dados descartáveis.</p>}
-    <p>Seus livros ficam neste navegador. Faça um backup antes de limpar seus dados ou trocar de dispositivo.</p>
     <BackupPanel />
     <h2 ref={driveHeading} className="sync-resolution-heading" tabIndex={-1}>Google Drive opcional</h2>
-    {state.login?.status === 'signed-in' && state.login.driveAuthorized !== true && <p>Google conectado. O Drive ainda não foi autorizado.</p>}
     {state.login?.status === 'unavailable' && <p>Não foi possível verificar o login. Sua biblioteca continua disponível. <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>Verificar conexão</button></p>}
     {state.logoutUnconfirmed && <p role="alert">A saída não foi confirmada pelo serviço. Os envios estão pausados neste dispositivo. Tente sair novamente quando houver conexão.</p>}
-    <p>Ao conectar, livros, notas, avaliações e capas vão diretamente para seu Google Drive. O Livro a Livro não recebe sua biblioteca.</p>
-    <p>Alterações pendentes são enviadas quando você voltar ao aplicativo com conexão.</p>
+    {state.status === 'disabled' || state.status === 'authorize-drive' ? <p>Ao autorizar o Drive, livros, notas, avaliações e capas vão direto deste dispositivo ao seu Google Drive.</p> : null}
     {!available ? <p>O conector está em preparação e será liberado após a configuração do serviço de autorização.</p> : <>
       <p role="status">{state.received ? 'Biblioteca recebida do Drive.' : labels[state.status]} {state.lastSyncedAt && <time dateTime={state.lastSyncedAt}>{new Date(state.lastSyncedAt).toLocaleString('pt-BR')}</time>}</p>
       {state.revocationPending && <div className="notice-panel" role="status">
@@ -92,20 +89,25 @@ export function DataPage() {
       {initializing ? <p>Preparando conexão…</p> : !coordinator && <p>Não foi possível iniciar o conector. A biblioteca local continua disponível.</p>}
       {state.status === 'authorize-drive' && <p>Você escolhe se quer sincronizar sua biblioteca com o Drive.</p>}
       <div className="form-actions">
-        {(state.revocationPending || ['disabled', 'reconnect', 'identifying', 'authorization-expired', 'authorization-waiting', 'authorization-error'].includes(state.status)) && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('connect')}>Entrar com Google</button>}
-        {state.authorizationStage === 'drive' && ['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy || controls.busy || controls.blocked} onClick={() => controls.open('retry-authorize')}>Tentar autorizar Google Drive novamente</button>}
-        {['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.retryAuthorization())}>Verificar autorização novamente</button>}
+        {(state.revocationPending || ['disabled', 'reconnect', 'identifying', 'authorization-expired'].includes(state.status)) && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('connect')}>Entrar com Google</button>}
+        {['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.retryAuthorization())}>Verificar autorização novamente</button>}
         {state.status === 'authorize-drive' && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('authorize')}>Autorizar Google Drive</button>}
-        {authorizationStates.includes(state.status) && state.status !== 'authorize-drive' && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.cancelAuthorization())}>Cancelar autorização</button>}
         {!state.revocationPending && state.status === 'paused' && state.login?.driveAuthorized !== false && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Retomar sincronização</button>}
+        {!state.revocationPending && ['error', 'quota', 'pending', 'offline'].includes(state.status) && <button className="button button-primary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Tentar novamente</button>}
+      </div>
+      {(authorizationStates.includes(state.status) || state.login?.status === 'signed-in' || state.logoutUnconfirmed || state.status !== 'disabled') && <details className="data-management">
+        <summary>Gerenciar conexão</summary>
+        <div className="form-actions">
+        {state.authorizationStage === 'drive' && ['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy || controls.busy || controls.blocked} onClick={() => controls.open('retry-authorize')}>Tentar autorizar Google Drive novamente</button>}
+        {authorizationStates.includes(state.status) && state.status !== 'authorize-drive' && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.cancelAuthorization())}>Cancelar autorização</button>}
         {!authorizationStates.includes(state.status) && !['disabled', 'paused'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.pause())}>Pausar neste dispositivo</button>}
-        {!state.revocationPending && ['error', 'quota', 'pending', 'offline'].includes(state.status) && <button className="button button-secondary" disabled={busy} onClick={() => void act(() => coordinator!.resume())}>Tentar novamente</button>}
         {(state.login?.status === 'signed-in' || state.logoutUnconfirmed || !authorizationStates.includes(state.status) && state.status !== 'disabled') && <>
           <button className="button button-secondary" disabled={busy || !state.login?.signInAttemptId && state.login?.status === 'unavailable'} onClick={() => setConfirm('logout')}>Sair deste navegador</button>
           {state.login?.driveAuthorized === true && <button className="button button-secondary" disabled={busy} onClick={() => setConfirm('revoke')}>Desconectar Google Drive</button>}
           <button className="button button-secondary" disabled={busy} onClick={() => void act(async () => { const copy = await coordinator!.recoveryCopy(); if (copy) downloadLibrary(copy.library, 'recuperacao'); else setError('Ainda não há uma cópia anterior preservada neste dispositivo.'); })}>Baixar cópia anterior preservada</button>
         </>}
-      </div>
+        </div>
+      </details>}
       {state.status === 'conflict' && !merge && <div className="notice-panel"><h3 ref={conflictHeading} className="sync-resolution-heading" tabIndex={-1}>Escolher uma versão</h3>
         {state.accountChanged && <p>A conta ou autorização mudou. Os envios anteriores foram suspensos. Escolha explicitamente qual biblioteca usar nesta conexão.</p>}
         <p>Neste dispositivo: {state.localCount} livros. Nenhuma união automática será feita. A versão escolhida será copiada para o Drive e compartilhada com seus dispositivos conectados.</p>

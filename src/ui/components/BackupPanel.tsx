@@ -35,12 +35,14 @@ export function BackupPanel() {
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const operation = useRef(0);
   const active = useRef(true);
   const returnFocus = useRef(false);
   const inFlight = useRef<'prepare' | 'export' | 'restore' | null>(null);
   const protectedOperation = Boolean(busy || preview);
+  useEffect(() => { if (restoreOpen && !preview) input.current?.focus(); }, [restoreOpen, preview]);
   useEffect(() => {
     active.current = true;
     return () => { active.current = false; ++operation.current; backup?.cancelImport(); };
@@ -119,14 +121,16 @@ export function BackupPanel() {
   const unavailable = !backup || state.status !== 'ready';
   return <section aria-labelledby="local-backup-title" aria-busy={Boolean(busy)}>
     <h2 id="local-backup-title">Backup local</h2>
-    <p>Exporte ou restaure todos os anos, sem conexão. O JSON inclui notas e capas privadas; guarde-o em um lugar seguro.</p>
+    <p>Faça ou restaure uma cópia de todos os anos, mesmo sem conexão.</p>
     {unavailable && <p role="status">{state.status === 'error' ? 'Não foi possível abrir a biblioteca neste dispositivo.' : 'Abrindo a biblioteca para preparar seu backup…'}</p>}
     {state.status === 'error' && <button className="button button-secondary" onClick={retry}>Tentar abrir a biblioteca</button>}
     <div className="form-actions"><button className="button button-primary" disabled={unavailable || Boolean(busy)} onClick={() => void exportCurrent()}>
-      {busy === 'export' ? 'Preparando arquivo…' : 'Exportar JSON'}</button></div>
-    <label className="form-field">Importar JSON<input ref={input} type="file" accept=".json,application/json" disabled={unavailable || busy === 'restore' || busy === 'export'}
+      {busy === 'export' ? 'Preparando arquivo…' : 'Fazer backup'}</button>
+      <button className="button button-secondary" disabled={unavailable || busy === 'restore' || busy === 'export'} onClick={() => { setRestoreOpen(true); if (restoreOpen) input.current?.focus(); }}>Restaurar backup</button></div>
+    <p className="field-help">O arquivo JSON contém notas e capas privadas. Guarde-o em um lugar seguro.</p>
+    {restoreOpen && <><label className="form-field">Importar JSON<input ref={input} type="file" accept=".json,application/json" disabled={unavailable || busy === 'restore' || busy === 'export'}
       onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void select(file); }} /></label>
-    <p className="field-help">Arquivo de até 50 MiB. A importação substitui a biblioteca inteira após sua confirmação.</p>
+    <p className="field-help">Até 50 MiB. A restauração substitui toda a biblioteca após sua confirmação.</p></>}
     {busy === 'prepare' && <p role="status">Validando o arquivo e as capas neste dispositivo…</p>}
     {(preview || busy === 'prepare') && <div className="notice-panel">
       {preview && <>
