@@ -1,6 +1,6 @@
 import { isbnSchema } from '../../domain/book';
-import { SearchError, type BookSearch, type SearchCache } from '../../ports/book-search';
-import { normalizeResults } from './normalize';
+import { SearchError, type BookDetails, type BookSearch, type SearchCache } from '../../ports/book-search';
+import { normalizeEdition, normalizeResults } from './normalize';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -38,16 +38,9 @@ export function createOpenLibraryClient(cache: SearchCache, dependencies = {
   fetch: (url: URL, options: RequestInit) => fetch(url, options), now: () => Date.now(),
   online: () => typeof navigator === 'undefined' || navigator.onLine,
 }): BookSearch {
-  return { async search(rawQuery, page, signal) {
-    const query = rawQuery.trim().replace(/\s+/gu, ' ');
-    if (query.length < 2 || query.length > 200 || !Number.isInteger(page) || page < 1 || page > 1000) throw new SearchError('invalid-query');
-    if (signal.aborted) throw new SearchError('cancelled');
-    const key = JSON.stringify([query.toLocaleLowerCase('pt-BR'), page]);
-    const cached = await cache.read(key, dependencies.now()).catch(() => null);
-    if (signal.aborted) throw new SearchError('cancelled');
-    if (cached) return cached;
+  const editions = new Map<string, BookDetails>();
+  async function request(url: URL, signal: AbortSignal): Promise<unknown> {
     if (!dependencies.online()) throw new SearchError('offline');
-    // Fail closed if the cross-tab limiter cannot persist its reservation.
     let wait: number;
     do {
       if (signal.aborted) throw new SearchError('cancelled');
@@ -56,10 +49,6 @@ export function createOpenLibraryClient(cache: SearchCache, dependencies = {
       if (wait) await pause(wait, signal);
     } while (wait);
     if (signal.aborted) throw new SearchError('cancelled');
-    const url = new URL('https://openlibrary.org/search.json');
-    const isbn = isbnSchema.safeParse(query);
-    url.search = new URLSearchParams({ [isbn.success ? 'isbn' : 'q']: isbn.success ? isbn.data : query,
-      lang: 'pt', page: String(page), limit: '20', fields: 'key,title,author_name,cover_i,first_publish_year' }).toString();
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
@@ -74,14 +63,44 @@ export function createOpenLibraryClient(cache: SearchCache, dependencies = {
         throw new SearchError('cooldown');
       }
       if (!response.ok) throw new SearchError('unavailable');
-      const result = normalizeResults(await boundedJson(response, controller.signal), new Date(dependencies.now()).toISOString(), page);
+      const result = await boundedJson(response, controller.signal);
       if (controller.signal.aborted) throw new SearchError('cancelled');
-      await cache.write(key, result, dependencies.now()).catch(() => {});
       return result;
     } catch (error) {
       if (signal.aborted) throw new SearchError('cancelled');
       if (timedOut) throw new SearchError('timeout');
       throw error instanceof SearchError ? error : new SearchError('unavailable');
     } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
-  } };
+  }
+  return {
+    async search(rawQuery, page, signal) {
+      const query = rawQuery.trim().replace(/\s+/gu, ' ');
+      if (query.length < 2 || query.length > 200 || !Number.isInteger(page) || page < 1 || page > 1000) throw new SearchError('invalid-query');
+      if (signal.aborted) throw new SearchError('cancelled');
+      const key = JSON.stringify(['edition-preview-v1', query.toLocaleLowerCase('pt-BR'), page]);
+      const cached = await cache.read(key, dependencies.now()).catch(() => null);
+      if (signal.aborted) throw new SearchError('cancelled');
+      if (cached) return cached;
+      const url = new URL('https://openlibrary.org/search.json');
+      const isbn = isbnSchema.safeParse(query);
+      url.search = new URLSearchParams({ [isbn.success ? 'isbn' : 'q']: isbn.success ? isbn.data : query,
+        lang: 'pt', page: String(page), limit: '20', fields: 'key,title,author_name,cover_i,first_publish_year,editions,editions.key' }).toString();
+      const result = normalizeResults(await request(url, signal), new Date(dependencies.now()).toISOString(), page);
+      if (signal.aborted) throw new SearchError('cancelled');
+      await cache.write(key, result, dependencies.now()).catch(() => {});
+      return result;
+    },
+    async details(candidate, signal) {
+      if (signal.aborted) throw new SearchError('cancelled');
+      if (!candidate.editionId) return { candidate, edition: null };
+      const existing = editions.get(candidate.editionId);
+      if (existing) return { ...existing, candidate };
+      const url = new URL(`https://openlibrary.org/books/${candidate.editionId}.json`);
+      const result = normalizeEdition(await request(url, signal), candidate);
+      if (signal.aborted) throw new SearchError('cancelled');
+      editions.set(candidate.editionId, result);
+      if (editions.size > 20) editions.delete(editions.keys().next().value!);
+      return result;
+    },
+  };
 }

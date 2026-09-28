@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { openDB } from 'idb';
 import { encodedCover } from '../../../test/fixtures/covers/helpers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { openLibraryRepository } from '../../adapters/indexeddb/library-repository';
@@ -89,7 +89,7 @@ describe('manual books and private detail', () => {
     expect((await repository.readBackupSnapshot()).coverMedia).toEqual([]);
   });
 
-  it('adds quickly with only a title and shows the committed local detail', async () => {
+  it('adds quickly with only a title and returns to the shelf', async () => {
     const { repository } = await setup();
     await screen.findByRole('textbox', { name: 'Título (obrigatório)' });
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
@@ -98,35 +98,34 @@ describe('manual books and private detail', () => {
     await userEvent.type(titleField(), 'Leitura manual');
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByRole('heading', { name: 'Leitura manual' })).toBeTruthy();
-    expect(await screen.findByText('Livro salvo neste dispositivo.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Estante', level: 1 })).toBeTruthy();
     expect((await repository.readAll()).books[0]).toMatchObject({ title: 'Leitura manual', status: 'want-to-read', shelfYear: 2026, authors: [], finishedOn: null });
   });
-  it('keeps incompatible dates visible and lets the user correct status and shelf year explicitly', async () => {
-    const { repository } = await setup();
-    await screen.findByRole('textbox', { name: 'Título (obrigatório)' });
-    await userEvent.type(titleField(), 'Uma leitura');
-    await userEvent.click(screen.getByRole('radio', { name: 'Lido' }));
-    fireEvent.change(screen.getByLabelText('Terminei em (opcional)'), { target: { value: '2025-03-12' } });
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
-    expect(await screen.findByText(/Use um ano de 1 a 9999/)).toBeTruthy();
-    expect((await repository.readAll()).books).toEqual([]);
+  it('preserves existing dates and confirms before removing incompatible dates', async () => {
+    const original = synthetic({ status: 'read', startedOn: '2025-12-31', finishedOn: '2026-03-12' });
+    const { repository } = await setup([original], `/livro/${original.id}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
+    expect(screen.queryByLabelText(/Comecei em|Terminei em/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    await waitFor(async () => expect((await repository.readBook(original.id)).book)
+      .toMatchObject({ startedOn: '2025-12-31', finishedOn: '2026-03-12' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
     await userEvent.click(screen.getByRole('radio', { name: 'Lendo' }));
-    expect((screen.getByLabelText('Terminei em (opcional)') as HTMLInputElement).value).toBe('2025-03-12');
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
-    expect(await screen.findByText(/Confira a data de término/)).toBeTruthy();
-    await userEvent.click(screen.getByRole('radio', { name: 'Lido' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Ano anterior' }));
-    expect((screen.getByRole('spinbutton', { name: 'Ano da estante' }) as HTMLInputElement).value).toBe('2025');
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
-    expect(await screen.findByText('12/03/2025')).toBeTruthy();
-    expect((await repository.readAll()).books[0].shelfYear).toBe(2025);
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remover datas anteriores?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect((await repository.readBook(original.id)).book?.finishedOn).toBe('2026-03-12');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remover datas e salvar' }));
+    await waitFor(async () => expect((await repository.readBook(original.id)).book)
+      .toMatchObject({ status: 'reading', startedOn: '2025-12-31', finishedOn: null }));
   });
   it('edits private stars and literal notes, without exposing notes on the shelf', async () => {
     const original = synthetic({ status: 'read' });
     const { repository } = await setup([original], `/livro/${original.id}`);
     await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
     await userEvent.click(screen.getByRole('radio', { name: '5 de 5 estrelas' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Sua nota privada' }), { target: { value: '  <b>Texto privado</b>\n' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Observações' }), { target: { value: '  <b>Texto privado</b>\n' } });
     await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
     expect(await screen.findByLabelText('Avaliação: 5 de 5 estrelas')).toBeTruthy();
     const note = screen.getByText('<b>Texto privado</b>');
@@ -144,7 +143,7 @@ describe('manual books and private detail', () => {
     await screen.findByRole('button', { name: 'Salvar mesmo assim' });
     expect((await repository.readAll()).books).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'Salvar mesmo assim' }));
-    await screen.findByRole('button', { name: 'Editar livro' });
+    await screen.findByRole('heading', { name: 'Estante', level: 1 });
     expect((await repository.readAll()).books).toHaveLength(2);
   });
   it('preserves unsaved edits on a quota failure and allows retry', async () => {
@@ -157,7 +156,7 @@ describe('manual books and private detail', () => {
     expect((titleField() as HTMLInputElement).value).toBe('Rascunho preservado');
     expect((await repository.readAll()).books).toHaveLength(0);
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
-    expect(await screen.findByText('Livro salvo neste dispositivo.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Estante', level: 1 })).toBeTruthy();
   });
   it('preserves a stale editor until explicit reload confirmation and never overwrites the newer record', async () => {
     const original = synthetic();

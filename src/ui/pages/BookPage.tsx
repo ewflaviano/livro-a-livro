@@ -1,5 +1,5 @@
 import { BookCover } from '../components/BookCover';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
@@ -22,19 +22,16 @@ function BackLink({ returnTo }: { returnTo: string }) {
 }
 type LoadedBook = { book: Book | null; version: LocalRevision };
 const labels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
-const date = (value: string) => {
-  const [year, month, day] = value.split('-');
-  return `${day}/${month}/${year}`;
-};
 
 export function AddBookPage() {
-  const { state, books, retry } = useLibrary();
+  const { state, books, retry, updatePreferences, setShelfQuery, positions } = useLibrary();
   const [session, setSession] = useState<{ year: number; version: LocalRevision } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<NewBook | null>(null);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   useEffect(() => { document.title = 'Adicionar livro · Livro a Livro'; }, []);
+  useLayoutEffect(() => { if (draft) window.scrollTo(0, 0); }, [draft]);
   useEffect(() => {
     if (!session && state.status === 'ready') setSession({ year: state.preferences.shelfYear ?? new Date().getFullYear(), version: state.snapshot.version });
   }, [state, session]);
@@ -42,11 +39,10 @@ export function AddBookPage() {
     <h1>Adicionar livro</h1>
     {session && books ? draft === null ? <BookSearch onManual={() => setDraft({ title: '' })}
       onSelect={setDraft} /> : <>
-      {draft.source && <p className="field-help">Confira os dados da Open Library antes de salvar.</p>}
       {draft.cover && <BookCover cover={draft.cover} title={draft.title} className="selected-cover" />}
       <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books}
-      onSaved={(book) => navigate(`/livro/${book.id}`, { replace: true, state: { returnTo, saved: true } })}
-      onCancel={() => setDraft(null)} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
+      onSaved={(book) => { updatePreferences({ shelfYear: book.shelfYear, filter: 'all' }); setShelfQuery(''); positions.set('/estante', 0); navigate('/estante', { replace: true }); }}
+      onCancel={() => { setDraft(null); window.scrollTo(0, 0); }} onReload={() => { setSession(null); setAttempt((value) => value + 1); }} /></> :
       <LibraryState state={state.status === 'error' ? 'error' : 'loading'} onRetry={retry} />}
   </section>;
 }
@@ -95,7 +91,6 @@ function BookDetail({ id }: { id: string }) {
           <div><p className="eyebrow">Estante {formatShelfYear(book.shelfYear)}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || 'Autoria não informada'}</p>
             <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span></div>
         </div>
-        {book.cover?.provider === 'open_library' && <p className="field-help">A capa da Open Library usa conexão. Seus registros continuam disponíveis sem a imagem.</p>}
         {editing && books ? <>
           {observed && !sameRevision(observed, loaded.version) && <p role="status" className="form-error">A biblioteca mudou. Seu rascunho foi preservado; ao salvar, será necessário revisar a versão atual.</p>}
           <BookForm book={book} year={book.shelfYear} version={loaded.version} service={books}
@@ -103,15 +98,12 @@ function BookDetail({ id }: { id: string }) {
         </> : <>
           {saved && <p role="status" className="local-note">Livro salvo neste dispositivo.</p>}
           <dl className="book-facts">
-            <div><dt>Terminei em</dt><dd>{book.finishedOn ? <time dateTime={book.finishedOn}>{date(book.finishedOn)}</time> : 'Data não informada'}</dd></div>
-            {book.startedOn && <div><dt>Comecei em</dt><dd><time dateTime={book.startedOn}>{date(book.startedOn)}</time></dd></div>}
             <div><dt>Páginas</dt><dd>{book.pageCount?.toLocaleString('pt-BR') ?? 'Não informadas'}</dd></div>
             {book.publicationYear && <div><dt>Ano de publicação</dt><dd>{formatShelfYear(book.publicationYear)}</dd></div>}
             {book.isbn && <div><dt>ISBN</dt><dd>{book.isbn}</dd></div>}
             <div><dt>Minha avaliação</dt><dd>{book.rating ? <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span> : 'Sem avaliação'}</dd></div>
           </dl>
-          <h2>Sua nota privada</h2><p className="private-note">{book.note || 'Nenhuma anotação ainda.'}</p>
-          <p className="field-help">A nota acompanha o backup e o Drive, se conectado. Não entra na imagem compartilhada.</p>
+          <h2>Observações</h2><p className="private-note">{book.note || 'Nenhuma observação ainda.'}</p>
           {error && <p role="alert" className="form-error">{error}</p>}
           <div className="form-actions"><button className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(''); }}>Editar livro</button>
             <button className="button button-secondary" onClick={() => setRemoving(true)}>Remover livro</button></div>

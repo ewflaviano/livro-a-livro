@@ -1,15 +1,12 @@
 import { BookCover } from '../components/BookCover';
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Grid2X2, List, Search, X } from 'lucide-react';
+import { Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import type { ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
-import { projectYearShare, type YearShare } from '../../sharing/projection';
-
-const YearSharePreview = lazy(() => import('../components/YearSharePreview'));
 
 const labels = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler', all: 'Todos' };
 const statusLabels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
@@ -21,11 +18,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
-  const shareButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const [share, setShare] = useState<YearShare | null>(null);
-  const [searchOpen, setSearchOpen] = useState(Boolean(shelfQuery));
-  const searchWasOpen = useRef(searchOpen);
   const title = status ? labels[status] : 'Minha estante';
   useEffect(() => { document.title = `${title} · Livro a Livro`; }, [title]);
   useLayoutEffect(() => {
@@ -35,10 +28,6 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       if (position !== undefined) window.scrollTo(0, position);
     }
   }, [state.status, positions, location.pathname]);
-  useEffect(() => {
-    if (searchOpen && !searchWasOpen.current) searchInput.current?.focus({ preventScroll: true });
-    searchWasOpen.current = searchOpen;
-  }, [searchOpen]);
 
   if (state.status !== 'ready') return <section aria-label={title}>
     <h1>{title}</h1><LibraryState state={state.status} onRetry={retry} />
@@ -62,38 +51,34 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   return <section className="shelf-page" aria-labelledby="shelf-title">
     <div className="shelf-heading">
       <h1 id="shelf-title">{status ? labels[status] : 'Estante'}</h1>
-      <label className="year-field">Ano da estante
-        <select value={year} onChange={(event) => updatePreferences({ shelfYear: Number(event.target.value) })}>
-          {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
-        </select>
-      </label>
-    </div>
-    {share && <Suspense fallback={<p role="status">Preparando a prévia…</p>}>
-      <YearSharePreview key={share.year} projection={share} onClose={() => { setShare(null); shareButton.current?.focus(); }} />
-    </Suspense>}
-    {yearBooks.length > 0 && <>
-      <div className="shelf-tools">
-        <div className="segmented-control shelf-filters" role="group" aria-label="Filtrar por estado">
-          {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
-            <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{labels[value]}</button>)}
-        </div>
-        <div className="shelf-secondary-tools">
-          <button className="button button-secondary" aria-expanded={searchOpen} aria-controls={searchOpen ? 'shelf-search' : undefined} onClick={() => {
-            if (searchOpen && !shelfQuery) setSearchOpen(false);
-            else setSearchOpen(true);
-          }}><Search aria-hidden="true" />Buscar</button>
-          <div className="segmented-control" role="group" aria-label="Visualização da estante">
-            <button aria-pressed={preferences.mode === 'grid'} onClick={() => updatePreferences({ mode: 'grid' })}><Grid2X2 aria-hidden="true" />Grade</button>
-            <button aria-pressed={preferences.mode === 'list'} onClick={() => updatePreferences({ mode: 'list' })}><List aria-hidden="true" />Lista</button>
-          </div>
-        </div>
+      <div className="shelf-heading-actions">
+        <label className="year-field">Ano da estante
+          <select value={year} onChange={(event) => updatePreferences({ shelfYear: Number(event.target.value) })}>
+            {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
+          </select>
+        </label>
+        {yearBooks.length > 0 && <Link className="button button-primary shelf-add" to="/adicionar" state={{ returnTo: location.pathname }}
+          onClick={() => positions.set(location.pathname, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>}
       </div>
-      {searchOpen && <div className="shelf-search" id="shelf-search">
-        <label className="form-field">Buscar na estante<input ref={searchInput} type="search" value={shelfQuery} maxLength={200}
-          placeholder="Título ou autor" onChange={event => setShelfQuery(event.target.value)} /></label>
-        {shelfQuery ? <button className="button button-secondary" onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}>Limpar busca</button> :
-          <button className="button button-secondary" aria-label="Fechar busca" onClick={() => setSearchOpen(false)}><X aria-hidden="true" /></button>}
-      </div>}
+    </div>
+    {yearBooks.length > 0 && <>
+      <div className="shelf-toolbar">
+        <div className="shelf-search">
+          <label className="shelf-search-field"><Search aria-hidden="true" /><span className="visually-hidden">Buscar na estante</span>
+            <input ref={searchInput} type="search" value={shelfQuery} maxLength={200}
+              placeholder="Buscar livro ou autor" onChange={event => setShelfQuery(event.target.value)} /></label>
+          {shelfQuery && <button className="shelf-search-clear" aria-label="Limpar busca" onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
+        </div>
+        <button className="shelf-mode" aria-label={preferences.mode === 'grid' ? 'Ver em lista' : 'Ver em grade'}
+          title={preferences.mode === 'grid' ? 'Ver em lista' : 'Ver em grade'}
+          onClick={() => updatePreferences({ mode: preferences.mode === 'grid' ? 'list' : 'grid' })}>
+          {preferences.mode === 'grid' ? <List aria-hidden="true" /> : <Grid2X2 aria-hidden="true" />}
+        </button>
+      </div>
+      <div className="segmented-control shelf-filters" role="group" aria-label="Filtrar por estado">
+        {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
+          <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{labels[value]}</button>)}
+      </div>
     </>}
     {state.preferenceError && <p role="status">Não foi possível guardar sua preferência de visualização. Seus livros continuam salvos.</p>}
     {yearBooks.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
@@ -117,12 +102,5 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <div><dt>Páginas</dt><dd aria-label={metrics.pages === null ? 'Páginas não informadas' : `${number.format(metrics.pages)} páginas informadas em livros lidos`}>{metrics.pages === null ? '—' : number.format(metrics.pages)}</dd></div>
       <div><dt>Autores</dt><dd aria-label={metrics.authors === null ? 'Autoria não informada' : `${number.format(metrics.authors)} autores distintos em livros lidos`}>{metrics.authors === null ? '—' : number.format(metrics.authors)}</dd></div>
     </dl>}
-    {metrics.books > 0 && (metrics.booksWithPages < metrics.books || metrics.booksWithAuthors < metrics.books) &&
-      <p className="metric-note">Páginas e autores contam apenas dados informados.</p>}
-    {metrics.books > 0 && <div className="share-entry">
-      <button ref={shareButton} className="button button-quiet"
-        onClick={() => setShare(projectYearShare(snapshot.books, year, true))}>Compartilhar ano</button>
-    </div>}
-    {visible.some(book => book.cover?.provider === 'open_library') && <p className="field-help">Capas da Open Library usam conexão. Sem uma imagem disponível, o título e seus registros continuam aqui.</p>}
   </section>;
 }

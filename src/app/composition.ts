@@ -6,14 +6,16 @@ import { createSearchCache } from '../adapters/indexeddb/search-cache';
 import { createOpenLibraryClient } from '../adapters/open-library/client';
 import { createSearchService } from '../services/search-service';
 import { openLibraryCoverUrl } from '../adapters/open-library/covers';
+import type { BookCandidate } from '../ports/book-search';
 
-export function bookCoverUrl(coverId: number): string | null {
-  return import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' ? null : openLibraryCoverUrl(coverId);
+export function bookCoverUrl(coverId: number, size: 'S' | 'M' = 'M'): string | null {
+  return import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' ? null : openLibraryCoverUrl(coverId, size);
 }
 
 export function openBookSearch() {
   const local = import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true';
-  const source = local ? { async search() { return { candidates: [], page: 1, hasMore: false, cached: false }; } } : createOpenLibraryClient(createSearchCache());
+  const source = local ? { async search() { return { candidates: [], page: 1, hasMore: false, cached: false }; },
+    async details(candidate: BookCandidate) { return { candidate, edition: null }; } } : createOpenLibraryClient(createSearchCache());
   return createSearchService(source);
 }
 

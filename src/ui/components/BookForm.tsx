@@ -11,13 +11,11 @@ import { prepareCover, type CoverMedia } from '../../media/cover';
 const messages: Record<string, string> = {
   title: 'Informe um título com até 500 caracteres.',
   authors: 'Informe até 20 autores distintos, um por linha, com até 200 caracteres cada.',
-  shelfYear: 'Use um ano de 1 a 9999, igual ao ano da data de término quando informada.',
+  shelfYear: 'Use um ano de 1 a 9999.',
   pageCount: 'Informe um número inteiro de páginas entre 1 e 1.000.000.',
   isbn: 'Confira o ISBN de 10 ou 13 caracteres, ou deixe o campo vazio.',
   publicationYear: 'Informe um ano de publicação de 1 a 9999, ou deixe vazio.',
-  startedOn: 'Confira a data de início. Quero ler não pode ter datas.',
-  finishedOn: 'Confira a data de término: apenas Lido, após o início e no ano da estante.',
-  note: 'A nota pode ter até 20.000 caracteres.',
+  note: 'As observações podem ter até 20.000 caracteres.',
 };
 
 export function storageMessage(error: unknown): string {
@@ -48,7 +46,8 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   const [error, setError] = useState('');
   const [invalid, setInvalid] = useState<string[]>([]);
   const [duplicates, setDuplicates] = useState(0);
-  const [dialog, setDialog] = useState<'cancel' | 'reload' | null>(null);
+  const [dialog, setDialog] = useState<'cancel' | 'reload' | 'drop-dates' | null>(null);
+  const [duplicateAfterDates, setDuplicateAfterDates] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [localCover, setLocalCover] = useState<CoverMedia | null>(null);
   const [coverPreparing, setCoverPreparing] = useState(false);
@@ -58,7 +57,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   useEffect(occupyUi, []);
   const dirty = coverPreparing || localCover !== null || JSON.stringify(initial) !== JSON.stringify(draft);
   useEffect(() => { if (dirty || busy) return blockPwaUpdate(); }, [dirty, busy]);
-  useEffect(() => { form.current?.querySelector('input')?.focus(); }, []);
+  useEffect(() => { form.current?.querySelector('input')?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
     if (busy || invalid.length === 0) return;
     if (invalid.some((field) => ['pageCount', 'isbn', 'publicationYear', 'note', 'rating'].includes(field))) {
@@ -85,14 +84,18 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
     setDraft((previous) => ({ ...previous, [name]: value }));
     setDuplicates(0); setInvalid([]); setError('');
   };
-  async function save(allowDuplicate = false) {
+  async function save(allowDuplicate = false, dropDates = false) {
     if (saving.current || coverPreparing) return;
+    const datesConflict = Boolean((draft.startedOn && draft.status === 'want-to-read') ||
+      (draft.finishedOn && (draft.status !== 'read' || draft.finishedOn.slice(0, 4) !== draft.shelfYear)));
+    if (datesConflict && !dropDates) { setDuplicateAfterDates(allowDuplicate); setDialog('drop-dates'); return; }
     saving.current = true; setBusy(true); setError(''); setInvalid([]);
     const numberOrNull = (value: string) => value === '' ? null : Number(value);
     const input: NewBook = { title: draft.title, authors: draft.authors.split('\n').filter((author) => author.trim().length > 0),
       status: draft.status, shelfYear: Number(draft.shelfYear), pageCount: numberOrNull(draft.pageCount),
       isbn: draft.isbn || null, publicationYear: numberOrNull(draft.publicationYear),
-      startedOn: draft.startedOn || null, finishedOn: draft.finishedOn || null,
+      startedOn: dropDates && draft.status === 'want-to-read' ? null : draft.startedOn || null,
+      finishedOn: dropDates && (draft.status !== 'read' || draft.finishedOn.slice(0, 4) !== draft.shelfYear) ? null : draft.finishedOn || null,
       rating: numberOrNull(draft.rating) as Book['rating'], note: draft.note,
       ...(initialDraft ? { cover: initialDraft.cover, source: initialDraft.source } : book ? { cover: book.cover, source: book.source } : {}) };
     try {
@@ -115,7 +118,8 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
     'aria-describedby': invalid.includes(name) ? `${name}-error` : undefined });
   const numberField = (name: 'pageCount' | 'publicationYear', label: string) =>
     <label className="form-field">{label}<input {...attributes(name)} type="number" min="1" max={name === 'pageCount' ? BOOK_LIMITS.pageCount : 9999}
-      step="1" value={draft[name]} onChange={(event) => change(name, event.target.value)} />{fieldError(name)}</label>;
+      step="1" value={draft[name]} placeholder={name === 'pageCount' && (initialDraft?.source || book?.source) && !draft.pageCount ? 'Não informado' : undefined}
+      onChange={(event) => change(name, event.target.value)} />{fieldError(name)}</label>;
   return <>
     <form className="book-form" ref={form} noValidate onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }} aria-busy={busy || coverPreparing}>
       {(coverPreparing || busy || dirty) && <p className="local-note" role="status">{coverPreparing ? 'Preparando capa…' : busy ? 'Salvando…' : 'Alterações não salvas'}</p>}
@@ -140,13 +144,6 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
             </div>{fieldError('shelfYear')}
           </div>
         </div>
-        {(draft.status !== 'want-to-read' || draft.startedOn || draft.finishedOn) && <div className="form-columns">
-          <label className="form-field">Comecei em (opcional)<input {...attributes('startedOn')} type="date" value={draft.startedOn} onChange={(event) => change('startedOn', event.target.value)} />{fieldError('startedOn')}</label>
-          {(draft.status === 'read' || draft.finishedOn) && <label className="form-field">Terminei em (opcional)<input {...attributes('finishedOn')} type="date" value={draft.finishedOn} onChange={(event) => change('finishedOn', event.target.value)} />{fieldError('finishedOn')}</label>}
-        </div>}
-        {(draft.startedOn && draft.status === 'want-to-read' || draft.finishedOn && draft.status !== 'read') &&
-          <p className="field-error">O novo estado não permite essas datas. Revise os campos e apague as datas incompatíveis para continuar.</p>}
-        {draft.finishedOn && <p className="field-help">O término deve estar no ano da estante. Você pode ajustar o ano acima ou corrigir a data.</p>}
         <details open={Boolean(book)}><summary>Mais detalhes (opcional)</summary>
           <label className="form-field">Capa (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
             const element = event.currentTarget; const file = element.files?.[0]; if (!file) return;
@@ -162,12 +159,11 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
           <div className="form-columns">{numberField('pageCount', 'Páginas')}{numberField('publicationYear', 'Ano de publicação')}</div>
           <label className="form-field">ISBN<input {...attributes('isbn')} value={draft.isbn} onChange={(event) => change('isbn', event.target.value)} />{fieldError('isbn')}</label>
           <fieldset className="rating-field"><legend>Minha avaliação</legend><div className="rating-options">
-            <label><input type="radio" name="rating" value="" checked={draft.rating === ''} onChange={() => change('rating', '')} />Sem avaliação</label>
-            {[1, 2, 3, 4, 5].map((rating) => <label key={rating}><input type="radio" name="rating" value={rating} checked={draft.rating === String(rating)} onChange={() => change('rating', String(rating))} />
-              <span aria-hidden="true">{'★'.repeat(rating)}</span><span className="visually-hidden">{rating} de 5 estrelas</span></label>)}
+            {[1, 2, 3, 4, 5].map((rating) => <label key={rating} className="rating-option"><input type="radio" name="rating" value={rating} aria-label={`${rating} de 5 estrelas`} checked={draft.rating === String(rating)} onChange={() => change('rating', String(rating))} />
+              <span aria-hidden="true">{Number(draft.rating) >= rating ? '★' : '☆'}</span></label>)}
+            {draft.rating && <button className="button button-quiet rating-clear" type="button" onClick={() => change('rating', '')}>Limpar</button>}
           </div></fieldset>
-          <label className="form-field">Sua nota privada<textarea {...attributes('note')} aria-describedby={invalid.includes('note') ? 'note-help note-error' : 'note-help'} rows={6} maxLength={BOOK_LIMITS.note} value={draft.note} onChange={(event) => change('note', event.target.value)} />{fieldError('note')}</label>
-          <p className="field-help" id="note-help">Sua nota é privada e acompanha o backup. Não entra na imagem compartilhada.</p>
+          <label className="form-field">Observações<textarea {...attributes('note')} rows={6} maxLength={BOOK_LIMITS.note} value={draft.note} onChange={(event) => change('note', event.target.value)} />{fieldError('note')}</label>
         </details>
       </fieldset>
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -177,10 +173,15 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || coverPreparing}>{busy ? 'Salvando…' : book ? 'Salvar alterações' : 'Salvar livro'}</button>
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => dirty ? setDialog('cancel') : onCancel()}>Cancelar</button></div>
     </form>
-    {dialog && <ConfirmDialog title={dialog === 'reload' ? 'Recarregar a versão salva?' : 'Descartar as alterações?'}
-      confirmLabel={dialog === 'reload' ? 'Descartar rascunho e recarregar' : 'Descartar alterações'} onCancel={() => setDialog(null)}
-      onConfirm={() => { if (dialog === 'reload') onReload(); else onCancel(); }}>
-      <p>Seu rascunho não salvo será descartado. Os registros já salvos continuam no dispositivo.</p>
+    {dialog && <ConfirmDialog title={dialog === 'reload' ? 'Recarregar a versão salva?' : dialog === 'drop-dates' ? 'Remover datas anteriores?' : 'Descartar as alterações?'}
+      confirmLabel={dialog === 'reload' ? 'Descartar rascunho e recarregar' : dialog === 'drop-dates' ? 'Remover datas e salvar' : 'Descartar alterações'}
+      variant={dialog === 'drop-dates' ? 'primary' : 'danger'} onCancel={() => setDialog(null)}
+      onConfirm={() => { if (dialog === 'reload') onReload(); else if (dialog === 'drop-dates') {
+        setDraft(previous => ({ ...previous, startedOn: previous.status === 'want-to-read' ? '' : previous.startedOn,
+          finishedOn: previous.status !== 'read' || previous.finishedOn.slice(0, 4) !== previous.shelfYear ? '' : previous.finishedOn }));
+        setDialog(null); void save(duplicateAfterDates, true);
+      } else onCancel(); }}>
+      <p>{dialog === 'drop-dates' ? 'Este livro já tem datas registradas que não combinam com o novo estado ou ano da estante. Ao salvar, essas datas serão removidas.' : 'Seu rascunho não salvo será descartado. Os registros já salvos continuam no dispositivo.'}</p>
     </ConfirmDialog>}
   </>;
 }

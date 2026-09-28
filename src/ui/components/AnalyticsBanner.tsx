@@ -6,7 +6,7 @@ export function AnalyticsBanner() {
   useEffect(() => { if (state.reviewing) ref.current?.querySelector<HTMLButtonElement>('button')?.focus(); }, [state.reviewing]);
   if (state.loading || state.choice !== null && !state.reviewing && !state.error && !state.reloadSuggested) return null;
   return <section ref={ref} className="analytics-banner" aria-label="Escolha sobre visitas">
-    <div><p>Contar visitas com Google Analytics? Seus livros não são enviados.</p>
+    <div><p>Este site usa o Google Analytics pra contar visitas. Não mostra anúncios e não segue você por outros sites. Tudo bem?</p>
       {state.choice !== null && <p className="field-help">Escolha atual: {state.choice === 'accepted' ? 'Aceito' : 'Recusado'}.</p>}
       {state.error && <p role="alert">Não foi possível guardar ou verificar sua escolha. O Analytics está desligado. Tente novamente.</p>}
     </div>

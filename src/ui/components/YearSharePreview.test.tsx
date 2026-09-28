@@ -8,6 +8,8 @@ import { AppRoutes } from '../../app/router';
 import { openLibraryRepository } from '../../adapters/indexeddb/library-repository';
 import { createShelfService } from '../../services/shelf-service';
 import { createBook } from '../../domain/book';
+import { projectYearShare } from '../../sharing/projection';
+import YearSharePreview from './YearSharePreview';
 
 const context = { fillRect: vi.fn(), fillText: vi.fn(), measureText: (text: string) => ({ width: text.length * 10 }) };
 beforeEach(() => {
@@ -19,27 +21,30 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-async function setup(empty = false) {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
-  const book = createBook({ title: 'Título público permitido', status: 'read', note: 'CONTEÚDO SECRETO', rating: 5,
+function sampleBook() {
+  return createBook({ title: 'Título público permitido', status: 'read', note: 'CONTEÚDO SECRETO', rating: 5,
     cover: { provider: 'open_library', coverId: 12345 }, authors: ['Nome de autor privado'] },
   { id: crypto.randomUUID(), now: '2026-09-26T12:00:00.000Z', shelfYear: 2026 });
-  await repository.commit({ kind: 'replace', books: empty ? [] : [book] }, await repository.readRevision());
+}
+
+function renderPreview(onClose = vi.fn()) {
+  render(<YearSharePreview projection={projectYearShare([sampleBook()], 2026, true)} onClose={onClose} />);
+  return onClose;
+}
+
+async function setupShelf() {
+  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+  await repository.commit({ kind: 'replace', books: [sampleBook()] }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
   render(<MemoryRouter initialEntries={['/estante']}><AppRoutes openService={async () => service} /></MemoryRouter>);
   await screen.findByRole('combobox', { name: 'Ano da estante' });
-  return repository;
 }
 
 describe('annual image preview', () => {
-  it('requires an explicit preview, offers both dimensions, downloads locally and never updates backup state', async () => {
-    const repository = await setup();
-    const preferences = await repository.readPreferences();
-    const version = await repository.readRevision();
-    expect(screen.queryByRole('button', { name: 'Baixar PNG' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Compartilhar ano' }));
-    const region = await screen.findByRole('region', { name: 'Compartilhar 2026' });
+  it('offers both dimensions and downloads a privacy-safe image locally', async () => {
+    const onClose = renderPreview();
+    const region = screen.getByRole('region', { name: 'Compartilhar 2026' });
     expect(document.activeElement).toBe(within(region).getByRole('heading'));
     const canvas = within(region).getByRole('img') as HTMLCanvasElement;
     expect([canvas.width, canvas.height]).toEqual([1080, 1920]);
@@ -56,23 +61,19 @@ describe('annual image preview', () => {
     const anchor = vi.mocked(HTMLAnchorElement.prototype.click).mock.instances[0] as HTMLAnchorElement;
     expect(anchor.download).toBe('livro-a-livro-2026-quadrado.png');
     expect(anchor.href).toBe('blob:local');
-    expect(await repository.readPreferences()).toEqual(preferences);
-    expect(await repository.readRevision()).toEqual(version);
     expect(fetch).not.toHaveBeenCalled();
     await userEvent.click(within(region).getByRole('button', { name: 'Fechar prévia' }));
-    expect(screen.queryByRole('region', { name: 'Compartilhar 2026' })).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Compartilhar ano' }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('omits sharing when the year has no read books', async () => {
-    await setup(true);
+  it('omits sharing from the shelf while its placement is being redesigned', async () => {
+    await setupShelf();
     expect(screen.queryByRole('button', { name: 'Compartilhar ano' })).toBeNull();
   });
 
   it('handles unsupported Canvas without pretending a file exists', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-    await setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Compartilhar ano' }));
+    renderPreview();
     expect(await screen.findByRole('status')).toHaveProperty('textContent', expect.stringContaining('Não foi possível preparar'));
     expect(screen.getByRole('button', { name: 'Baixar PNG' })).toHaveProperty('disabled', true);
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
@@ -80,8 +81,7 @@ describe('annual image preview', () => {
 
   it('handles PNG conversion failure and allows retry', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementationOnce((callback) => callback(null));
-    await setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Compartilhar ano' }));
+    renderPreview();
     await userEvent.click(await screen.findByRole('button', { name: 'Baixar PNG' }));
     expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Não foi possível gerar o PNG. Tente novamente.');
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();

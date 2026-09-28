@@ -1,6 +1,6 @@
 import { AnalyticsBanner } from './AnalyticsBanner';
 import { useEffect, useRef } from 'react';
-import { BookOpen, Bookmark, Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
+import { Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
 import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
@@ -9,8 +9,6 @@ import { PwaUpdateBanner } from './PwaUpdateBanner';
 
 const navigation = [
   { to: '/estante', label: 'Estante', icon: Library },
-  { to: '/lendo', label: 'Lendo', icon: BookOpen },
-  { to: '/quero-ler', label: 'Quero ler', icon: Bookmark },
   { to: '/dados', label: 'Seus dados', icon: ShieldCheck },
   { to: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
@@ -43,8 +41,6 @@ function Shell() {
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span>Livro a Livro</span>
         </Link>
-        <Link className="button button-primary header-add" to="/adicionar" state={{ returnTo }}
-          onClick={() => positions.set(returnTo, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>
         <GlobalSyncHeader />
       </header>
       <PwaUpdateBanner />
@@ -75,7 +71,7 @@ function Shell() {
         </Link>
       </nav>
       {location.pathname !== '/configuracoes' && <PwaStatus />}
-      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><a href="/privacidade.html">Privacidade</a><Link to="/apoiar">Apoiar o projeto</Link></footer>
+      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><div className="footer-links"><a href="/privacidade.html">Privacidade</a><Link to="/apoiar">Apoiar o projeto</Link></div></footer>
     </>
   );
 }

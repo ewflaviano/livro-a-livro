@@ -9,7 +9,7 @@ describe('discardable search cache and cross-tab quota', () => {
     await cache.write('empty', empty, 1000);
     expect((await cache.read('empty', 299_999))?.cached).toBe(true);
     expect(await cache.read('empty', 301_000)).toBeNull();
-    await cache.write('book', { ...empty, candidates: [{ workId: 'OL1W', title: 'Teste', authors: [], coverId: null, firstPublishedYear: null, retrievedAt: '2026-09-26T12:00:00Z' }] }, 1000);
+    await cache.write('book', { ...empty, candidates: [{ workId: 'OL1W', title: 'Teste', authors: [], coverId: null, editionId: null, firstPublishedYear: null, retrievedAt: '2026-09-26T12:00:00Z' }] }, 1000);
     expect(await cache.read('book', 86_400_999)).not.toBeNull();
     expect(await cache.read('book', 86_401_000)).toBeNull();
   });
@@ -27,7 +27,7 @@ describe('discardable search cache and cross-tab quota', () => {
     const cache = createSearchCache(crypto.randomUUID());
     const large: SearchPage = { ...empty, candidates: Array.from({ length: 20 }, (_, index) => ({
       workId: `OL${index + 1}W`, title: 'T'.repeat(500), authors: Array.from({ length: 20 }, (_, author) => `${author}`.padEnd(200, 'a')),
-      coverId: null, firstPublishedYear: null, retrievedAt: '2026-09-26T12:00:00Z',
+      coverId: null, editionId: null, firstPublishedYear: null, retrievedAt: '2026-09-26T12:00:00Z',
     })) };
     for (let index = 0; index < 60; index++) await cache.write(String(index), large, 1000 + index);
     expect(await cache.read('0', 1061)).toBeNull();
