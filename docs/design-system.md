@@ -259,7 +259,7 @@ Consumo: importar `tokens.css`, aplicar tokens semânticos nos componentes e man
 }
 ```
 
-Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. O consentimento separado de Analytics da issue #63 usa aviso compacto após o cabeçalho, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Seus dados. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
+Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. O consentimento separado de Analytics da issue #63 usa aviso compacto após o cabeçalho, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Configurações. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
 
 Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semântica, comportamento de teclado, variante estreita e contraste revisados. Mudar uma cor primitiva requer conferir todos os papéis que a usam. A documentação é referência de projeto, não declaração de que armazenamento, busca, compartilhamento ou sincronização já existem.
 
@@ -292,7 +292,7 @@ Título e autoria são conteúdo adjacente, não dependem da imagem nem ficam de
 
 ### Configurações e instalação — issue #45
 
-Configurações oferece os controles existentes de ano (incluindo atual automático), Grade/Lista e filtro. Preferências são salvas pelo serviço; falha informa que a sessão conserva a escolha e oferece tentar salvar. A seção Aplicativo mostra versão/build públicos, disponibilidade offline, atualização e links para Instalar e backup.
+Ano (incluindo atual automático), Grade/Lista e filtro são ajustados na estante e salvos pelo serviço. Falha informa que a sessão conserva a escolha e oferece tentar salvar na própria estante. Configurações reúne a revisão do consentimento de visitas, versão/build públicos e disponibilidade offline; atualização manual e instalação ficam em uma área secundária. Backup continua acessível por link.
 
 Instalar oferece instruções Chrome/Android e Safari/iPhone/iPad. Botão só aparece com evento nativo disponível. Cancelamento e falha mantêm instruções; pedido aceito não vira instalado até observação do navegador. Estado instalado deixa backup acessível. Instalação não promete cópia ou conservação garantida dos registros.
 

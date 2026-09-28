@@ -53,7 +53,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <h1 id="shelf-title">{status ? labels[status] : 'Estante'}</h1>
       <div className="shelf-heading-actions">
         <label className="year-field">Ano da estante
-          <select value={year} onChange={(event) => updatePreferences({ shelfYear: Number(event.target.value) })}>
+          <select value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
+            <option value="current">Ano atual (automático)</option>
             {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
           </select>
         </label>
@@ -80,7 +81,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
           <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{labels[value]}</button>)}
       </div>
     </>}
-    {state.preferenceError && <p role="status">Não foi possível guardar sua preferência de visualização. Seus livros continuam salvos.</p>}
+    {state.preferenceError && <div role="alert"><p>Não foi possível guardar estas preferências. Elas valem nesta sessão, mas podem se perder ao reabrir o aplicativo. Seus livros continuam salvos.</p>
+      <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>Tentar salvar preferências</button></div>}
     {yearBooks.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
       <div className="notice-panel" role="status"><h2>Nenhum livro encontrado.</h2><p>Tente outro título ou autor. A busca considera o ano e o filtro selecionados.</p></div> : visible.length === 0 ?
       <div className="notice-panel"><h2>Nenhum livro em {labels[filter]} nesta estante.</h2>

@@ -1,49 +1,48 @@
 // @vitest-environment jsdom
-import 'fake-indexeddb/auto';
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { AppRoutes } from '../../app/router';
-import { createShelfService } from '../../services/shelf-service';
-import { openLibraryRepository } from '../../adapters/indexeddb/library-repository';
-import { createBook } from '../../domain/book';
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-async function setup() {
-  const name = crypto.randomUUID();
-  const repository = await openLibraryRepository({ name, channelFactory: null });
-  await repository.commit({ kind: 'put', book: createBook({ title: 'Ano anterior' }, { id: crypto.randomUUID(), now: '2026-09-27T12:00:00Z', shelfYear: 2025 }) }, await repository.readRevision());
-  const service = createShelfService(repository);
-  render(<MemoryRouter initialEntries={['/configuracoes']}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await screen.findByRole('combobox', { name: 'Ano da estante' }); return { name, repository };
-}
-it('persists preferences across reopening and advances revision without changing books', async () => {
-  const { name, repository } = await setup(); const revision = await repository.readRevision(); const books = (await repository.readAll()).books;
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ano da estante' }), '2025');
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Visualização inicial' }), 'list');
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filtro inicial' }), 'read');
-  await waitFor(async () => expect(await repository.readPreferences()).toMatchObject({ shelfYear: 2025, mode: 'list', filter: 'read' }));
-  expect(await repository.readRevision()).toEqual({ ...revision, revision: revision.revision + 3 });
-  expect((await repository.readAll()).books).toEqual(books);
-  expect(screen.getByText(`Versão ${__APP_VERSION__} · commit ${__BUILD_ID__} · desenvolvimento`)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Como instalar' }).getAttribute('href')).toBe('/instalar');
-  cleanup();
-  const reopened = await openLibraryRepository({ name, channelFactory: null });
-  expect(await reopened.readPreferences()).toMatchObject({ shelfYear: 2025, mode: 'list', filter: 'read' }); reopened.close();
+const analytics = vi.hoisted(() => ({ view: { choice: null as 'accepted' | 'rejected' | null, loading: false, error: false, review: vi.fn() } }));
+vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => analytics.view }));
+import { SettingsPage } from './SettingsPage';
+
+beforeEach(() => { analytics.view.choice = null; analytics.view.loading = false; analytics.view.error = false; analytics.view.review.mockClear(); });
+afterEach(cleanup);
+const mount = () => render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+
+it('replaces duplicate shelf controls with a separate visits choice', async () => {
+  mount();
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.getByText('Google Analytics: Ainda não escolhida.')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Revisar escolha de Analytics' }));
+  expect(analytics.view.review).toHaveBeenCalledOnce();
 });
-it('reports failed persistence, keeps session choice and allows retry', async () => {
-  const { repository } = await setup();
-  vi.spyOn(repository, 'updatePreferences').mockRejectedValueOnce(new Error('unavailable'));
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Visualização inicial' }), 'list');
-  expect(await screen.findByRole('alert')).toBeTruthy();
-  expect((screen.getByRole('combobox', { name: 'Visualização inicial' }) as HTMLSelectElement).value).toBe('list');
-  expect((await repository.readPreferences()).mode).toBe('grid');
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filtro inicial' }), 'reading');
-  await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('reading'));
-  expect(screen.getByRole('alert')).toBeTruthy();
-  expect((await repository.readPreferences()).mode).toBe('grid');
-  expect((screen.getByRole('combobox', { name: 'Visualização inicial' }) as HTMLSelectElement).value).toBe('list');
-  await userEvent.click(screen.getByRole('button', { name: 'Tentar salvar preferências' }));
-  await waitFor(async () => expect((await repository.readPreferences()).mode).toBe('list'));
-  expect(screen.queryByRole('alert')).toBeNull();
+
+it.each([
+  ['accepted', 'Aceito'], ['rejected', 'Recusado'],
+] as const)('shows the saved %s choice', (choice, label) => {
+  analytics.view.choice = choice; mount();
+  expect(screen.getByText(`Google Analytics: ${label}.`)).toBeTruthy();
+});
+
+it('keeps an uncertain consent state honest', () => {
+  analytics.view.error = true; mount();
+  expect(screen.getByText('Google Analytics: Não foi possível verificar.')).toBeTruthy();
+});
+
+it('shows build and offline state while keeping install and update controls secondary', async () => {
+  mount();
+  expect(screen.getByText(`Versão ${__APP_VERSION__} · commit ${__BUILD_ID__} · desenvolvimento`)).toBeTruthy();
+  expect(screen.getByRole('status')).toBeTruthy();
+  const options = screen.getByText('Instalação e atualização').closest('details')!;
+  expect(options.open).toBe(false);
+  await userEvent.click(screen.getByText('Instalação e atualização'));
+  expect(options.open).toBe(true);
+  expect(screen.getAllByRole('status')).toHaveLength(1);
+  expect(screen.getByRole('region', { name: 'Disponibilidade do aplicativo' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Atualização do aplicativo' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Verificar atualização' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Como instalar' }).getAttribute('href')).toBe('/instalar');
+  expect(screen.getByRole('link', { name: 'Seus dados e backup' }).getAttribute('href')).toBe('/dados');
 });

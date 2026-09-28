@@ -15,16 +15,57 @@ const book = (title: string, patch: Partial<Book> = {}) => createBook({ title, .
 });
 
 async function setup(books: Book[] = [], route = '/estante') {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+  const name = crypto.randomUUID();
+  const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
   render(<MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter>);
   await screen.findByRole('combobox', { name: 'Ano da estante' });
-  return { repository, service };
+  return { repository, service, name };
 }
 
 describe('annual shelf with the real IndexedDB adapter', () => {
+  it('persists automatic year, mode and filter while keeping current year distinct', async () => {
+    const { repository, name } = await setup([book('Ano anterior', { shelfYear: 2025 })]);
+    const before = await repository.readRevision();
+    const books = (await repository.readAll()).books;
+    const year = screen.getByRole('combobox', { name: 'Ano da estante' }) as HTMLSelectElement;
+    expect(year.value).toBe('2026');
+    await userEvent.selectOptions(year, 'current');
+    await waitFor(async () => expect((await repository.readPreferences()).shelfYear).toBeNull());
+    expect(year.value).toBe('current');
+    await userEvent.selectOptions(year, '2026');
+    await waitFor(async () => expect((await repository.readPreferences()).shelfYear).toBe(2026));
+    await userEvent.selectOptions(year, '2025');
+    await userEvent.click(screen.getByRole('button', { name: 'Ver em lista' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Lidos' }));
+    await userEvent.selectOptions(year, 'current');
+    await waitFor(async () => expect(await repository.readPreferences()).toMatchObject({ shelfYear: null, mode: 'list', filter: 'read' }));
+    expect((await repository.readAll()).books).toEqual(books);
+    expect((await repository.readRevision()).revision).toBeGreaterThan(before.revision);
+    cleanup();
+    const reopened = await openLibraryRepository({ name, channelFactory: null });
+    expect(await reopened.readPreferences()).toMatchObject({ shelfYear: null, mode: 'list', filter: 'read' });
+    reopened.close();
+  });
+
+  it('keeps failed preferences in this session and retries without changing books', async () => {
+    const original = book('Registro sintético');
+    const { repository } = await setup([original]);
+    vi.spyOn(repository, 'updatePreferences').mockRejectedValueOnce(new Error('unavailable'));
+    await userEvent.click(screen.getByRole('button', { name: 'Ver em lista' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Ver em grade' })).toBeTruthy();
+    expect((await repository.readPreferences()).mode).toBe('grid');
+    await userEvent.click(screen.getByRole('button', { name: 'Lidos' }));
+    await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('read'));
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar salvar preferências' }));
+    await waitFor(async () => expect((await repository.readPreferences()).mode).toBe('list'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect((await repository.readAll()).books).toEqual([original]);
+  });
+
   it('keeps read-only annual metrics across filters, modes and years without network', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     await setup([
