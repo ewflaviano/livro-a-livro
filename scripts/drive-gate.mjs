@@ -116,7 +116,8 @@ function syntheticLibrary(library) {
     check(isDeepStrictEqual(rest, expected) && typeof updatedAt === 'string');
     check(note === originalNote || /^Gate sintético (A|B|PUT) [0-9]+$/.test(note));
   }
-  check(isDeepStrictEqual(library.coverMedia, fixture.coverMedia) && [fixture.preferences, ...Object.values(mergePreferences)].some(preferences => isDeepStrictEqual(library.preferences, preferences)));
+  const portablePreferences = [fixture.preferences, ...Object.values(mergePreferences)].map(({ mode: _, ...preferences }) => preferences);
+  check(isDeepStrictEqual(library.coverMedia, fixture.coverMedia) && portablePreferences.some(preferences => isDeepStrictEqual(library.preferences, preferences)));
 }
 async function driveRequest(route) {
   const request = route.request(); const url = new URL(request.url());
@@ -206,7 +207,8 @@ async function prepare() {
     await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
   }
   const page = pages.A;
-  stage = 'IMPORT'; await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-gate.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
+  stage = 'IMPORT'; await page.getByRole('button', { name: 'Restaurar backup', exact: true }).click();
+  await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-gate.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
   stage = 'IMPORT_PREVIEW'; await page.getByRole('button', { name: /^Substituir por/ }).click();
   stage = 'IMPORT_CONFIRM'; await page.getByRole('alertdialog').getByRole('button', { name: /^Substituir por/ }).click();
   stage = 'IMPORT_PERSISTED'; await expect.poll(async () => (await snapshot(page)).books.length).toBe(fixture.books.length);
@@ -232,6 +234,7 @@ async function pauseOrDisconnect(id, kind) {
   stage = 'LOCAL_DISCONNECT';
   const page = pages[id]; const before = await snapshot(page); await dataPage(page);
   const label = { pause: 'Pausar neste dispositivo', logout: 'Sair deste navegador', revoke: 'Desconectar Google Drive' }[kind];
+  await page.getByText('Gerenciar conexão', { exact: true }).click();
   stage = 'DISCONNECT_CLICK'; await page.getByRole('button', { name: label, exact: true }).click();
   stage = 'DISCONNECT_CONFIRM'; if (kind !== 'pause') await confirm(page);
   // Completion of a local command is distinct from Google's revocation acknowledgement.
@@ -267,8 +270,10 @@ async function offlineCrud(id) {
     await page.getByRole('button', { name: 'Adicionar manualmente', exact: true }).click();
     stage = 'OFFLINE_SAVE';
     await page.getByLabel('Título (obrigatório)', { exact: true }).fill('Gate sintético offline');
-    await page.getByLabel('Ano da estante', { exact: false }).fill('2026');
+    await page.getByRole('radio', { name: 'Lido', exact: true }).check();
+    await page.getByLabel('Ano da estante', { exact: false }).fill(String(before.preferences.shelfYear));
     await page.getByRole('button', { name: 'Salvar livro', exact: true }).click();
+    await page.getByRole('link', { name: /Gate sintético offline/ }).click();
     await expect(page.getByRole('button', { name: 'Editar livro', exact: true })).toBeVisible();
     stage = 'OFFLINE_EDIT';
     await page.getByRole('button', { name: 'Editar livro', exact: true }).click();
@@ -276,9 +281,14 @@ async function offlineCrud(id) {
     await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Gate sintético offline editado', exact: true })).toBeVisible();
     stage = 'OFFLINE_DELETE';
+    await page.getByText('Opções do livro', { exact: true }).click();
     await page.getByRole('button', { name: 'Remover livro', exact: true }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Excluir livro', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).books.length).toBe(before.books.length);
+    if (before.preferences.filter !== 'all') {
+      const filter = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler' }[before.preferences.filter];
+      await page.getByRole('button', { name: filter, exact: true }).click();
+    }
     stage = 'OFFLINE_EQUAL';
     check(isDeepStrictEqual(before, await snapshot(page)));
     emit('OFFLINE_CRUD_PRESERVED');
@@ -377,6 +387,10 @@ async function recovery(page) {
   return { books: library.books.sort((a, b) => a.id.localeCompare(b.id)), preferences: library.preferences,
     coverMedia: library.coverMedia.map(item => ({ ...item, bytes: Array.from(Buffer.from(item.bytes, 'base64')) })).sort((a, b) => a.id.localeCompare(b.id)) };
 }
+function portableSnapshot({ preferences, ...library }) {
+  const { mode: _, ...portablePreferences } = preferences;
+  return { ...library, preferences: portablePreferences };
+}
 async function conflictGate() {
   stage = 'DIVERGENT_CONFLICT';
   stage = 'CONFLICT_BASE_SYNC'; await pages.A.reload(); await synced('A'); await pages.B.reload(); await synced('B');
@@ -410,7 +424,7 @@ async function conflictGate() {
     check(isDeepStrictEqual(b, await snapshot(pages.B)));
     const choice = pages.B.getByRole('button', { name: 'Usar esta versão do Drive', exact: true }); check(await choice.count() === 1);
     stage = 'CONFLICT_CHOICE'; await choice.click(); await confirm(pages.B); await synced('B');
-    stage = 'CONFLICT_RECOVERY'; check(isDeepStrictEqual(a, await snapshot(pages.B)) && isDeepStrictEqual(b, await recovery(pages.B)));
+    stage = 'CONFLICT_RECOVERY'; check(isDeepStrictEqual(a, await snapshot(pages.B)) && isDeepStrictEqual(portableSnapshot(b), await recovery(pages.B)));
     await pages.A.reload(); await synced('A'); check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
     emit('DIVERGENT_CONFLICT_RECOVERY_PASS');
   } finally { await setOffline('A', false); await setOffline('B', false); }
@@ -420,6 +434,7 @@ async function importMergeFixture(id, sequence) {
   library.books[0].note = `Gate sintético ${id} ${sequence}`;
   library.books.push(structuredClone(extraBooks[id])); library.preferences = mergePreferences[id];
   await dataPage(page);
+  await page.getByRole('button', { name: 'Restaurar backup', exact: true }).click();
   await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(library)) });
   await page.getByRole('button', { name: /^Substituir por/ }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: /^Substituir por/ }).click();
@@ -456,7 +471,7 @@ async function mergeGate() {
     check(await pages.B.getByRole('alertdialog').getByRole('radio').count() === 0);
     stage = 'MERGE_COMMIT'; await pages.B.getByRole('alertdialog').getByRole('button', { name: 'Juntar bibliotecas', exact: true }).click(); await synced('B');
     const expected = { ...b, books: [...b.books, a.books.find(book => book.id === extraBooks.A.id)].sort((x, y) => x.id.localeCompare(y.id)) };
-    stage = 'MERGE_RECOVERY'; check(isDeepStrictEqual(expected, await snapshot(pages.B))); check(isDeepStrictEqual(b, await recovery(pages.B)));
+    stage = 'MERGE_RECOVERY'; check(isDeepStrictEqual(expected, await snapshot(pages.B))); check(isDeepStrictEqual(portableSnapshot(b), await recovery(pages.B)));
     stage = 'MERGE_CONVERGENCE'; await pages.A.reload(); await synced('A'); check(isDeepStrictEqual(expected, await snapshot(pages.A)));
     emit('EXPLICIT_MERGE_BOOKS_PREFERENCES_COVER_RECOVERY_PASS');
   } finally { await setOffline('A', false); await setOffline('B', false); }
