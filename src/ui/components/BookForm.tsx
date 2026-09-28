@@ -35,9 +35,9 @@ function makeDraft(book: NewBook | undefined, year: number) {
     finishedOn: book?.finishedOn ?? '', rating: book?.rating?.toString() ?? '', note: book?.note ?? '' };
 }
 
-export function BookForm({ book, initialDraft, year, version, service, onSaved, onCancel, onReload }: {
+export function BookForm({ book, initialDraft, year, version, service, onSaved, onCancel, onReload, cancelLabel = 'Cancelar' }: {
   book?: Book; initialDraft?: NewBook; year: number; version: LocalRevision; service: LibraryService;
-  onSaved: (book: Book, version: LocalRevision) => void; onCancel: () => void; onReload: () => void;
+  onSaved: (book: Book, version: LocalRevision) => void; onCancel: () => void; onReload: () => void; cancelLabel?: string;
 }) {
   const [initial] = useState(() => makeDraft(book ?? initialDraft, year));
   const [draft, setDraft] = useState(initial);
@@ -171,7 +171,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       {duplicates > 0 && <div className="notice-panel" role="status"><p>Já existe um registro parecido nesta estante. Pode ser uma releitura; você pode revisar ou salvar mesmo assim.</p>
         <button type="button" className="button button-secondary" disabled={busy || coverPreparing} onClick={() => void save(true)}>Salvar mesmo assim</button></div>}
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || coverPreparing}>{busy ? 'Salvando…' : book ? 'Salvar alterações' : 'Salvar livro'}</button>
-        <button className="button button-secondary" type="button" disabled={busy} onClick={() => dirty ? setDialog('cancel') : onCancel()}>Cancelar</button></div>
+        <button className="button button-secondary" type="button" disabled={busy} onClick={() => dirty ? setDialog('cancel') : onCancel()}>{cancelLabel}</button></div>
     </form>
     {dialog && <ConfirmDialog title={dialog === 'reload' ? 'Recarregar a versão salva?' : dialog === 'drop-dates' ? 'Remover datas anteriores?' : 'Descartar as alterações?'}
       confirmLabel={dialog === 'reload' ? 'Descartar rascunho e recarregar' : dialog === 'drop-dates' ? 'Remover datas e salvar' : 'Descartar alterações'}

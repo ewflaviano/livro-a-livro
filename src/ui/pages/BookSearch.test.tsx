@@ -38,14 +38,15 @@ describe('optional book search UI', () => {
     expect(screen.getByText('Ano da obra: 1953')).toBeTruthy();
     await userEvent.click(choose);
     const title = await screen.findByRole('textbox', { name: 'Título (obrigatório)' }, { timeout: 3000 });
+    expect(screen.getByRole('button', { name: 'Escolher outro livro' })).toBeTruthy();
     expect((title as HTMLInputElement).value).toBe('Livro encontrado');
     await userEvent.click(screen.getByText('Mais detalhes (opcional)'));
     expect((screen.getByRole('spinbutton', { name: 'Ano de publicação' }) as HTMLInputElement).value).toBe('2002');
     expect((screen.getByRole('spinbutton', { name: 'Páginas' }) as HTMLInputElement).value).toBe('240');
     expect((screen.getByRole('textbox', { name: 'ISBN' }) as HTMLInputElement).value).toBe('9780306406157');
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
-    expect(document.querySelector('img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
-    fireEvent.error(document.querySelector('img')!);
+    expect(document.querySelector('.selected-cover img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    expect(document.querySelector('.selected-cover img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
+    fireEvent.error(document.querySelector('.selected-cover img')!);
     expect(screen.getByText('Sem capa · Livro encontrado')).toBeTruthy();
     await userEvent.clear(title); await userEvent.type(title, 'Título revisado');
     fireEvent.change(screen.getByRole('textbox', { name: 'Observações' }), { target: { value: 'Nota que fica local' } });
@@ -64,6 +65,26 @@ describe('optional book search UI', () => {
     await screen.findByRole('heading', { name: 'Título revisado' });
     expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
   });
+  it('returns to the same results without another request and preserves a dirty draft until confirmed', async () => {
+    const repository = await setup();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }), 'Livro');
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    const choose = await screen.findByRole('button', { name: 'Selecionar Livro encontrado (1953)' });
+    await userEvent.click(choose);
+    const title = await screen.findByRole('textbox', { name: 'Título (obrigatório)' }, { timeout: 3000 });
+    await userEvent.type(title, ' revisado');
+    await userEvent.click(screen.getByRole('button', { name: 'Escolher outro livro' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect((title as HTMLInputElement).value).toBe('Livro encontrado revisado');
+    await userEvent.click(screen.getByRole('button', { name: 'Escolher outro livro' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Descartar alterações' }));
+    const returned = await screen.findByRole('button', { name: 'Selecionar Livro encontrado (1953)' });
+    await waitFor(() => expect(document.activeElement).toBe(returned));
+    expect((screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }) as HTMLInputElement).value).toBe('Livro');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await repository.readAll()).books).toHaveLength(0);
+  });
   it('keeps manual entry available on malformed data, empty results and offline', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response('not json'));
     await setup();
@@ -72,7 +93,9 @@ describe('optional book search UI', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível ler');
     await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }));
     expect(screen.getByRole('textbox', { name: 'Título (obrigatório)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Adicionar manualmente' })));
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     await userEvent.type(screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }), 'Outro livro');
     await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
