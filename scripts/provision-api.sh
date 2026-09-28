@@ -40,9 +40,11 @@ for api_function in "${api_functions[@]}"; do
   aws --region sa-east-1 s3 cp "$API_ARTIFACT_DIR/$api_function/bootstrap.zip" \
     "s3://$API_ARTIFACT_BUCKET/releases/$API_RELEASE_ID/$api_function.zip" --only-show-errors
 done
+deploy_options=()
+if [[ "${API_PREVIEW_ONLY:-false}" == true ]]; then deploy_options+=(--no-execute-changeset); fi
 aws --region sa-east-1 cloudformation deploy \
   --stack-name livro-a-livro-api --template-file infra/api.yml \
-  --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
+  --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset "${deploy_options[@]}" \
   --parameter-overrides \
     "CertificateArn=$API_CERTIFICATE_ARN" "HostedZoneId=$API_HOSTED_ZONE_ID" \
     "SecretArn=$API_SECRET_ARN" "ArtifactBucket=$API_ARTIFACT_BUCKET" \
