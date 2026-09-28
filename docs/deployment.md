@@ -30,7 +30,7 @@ O consentimento Google está em produção, com escopos `openid` e `drive.appdat
 
 `infra/frontend.yml` cria uma distribuição CloudFront com origem S3 privada/OAC, o alias `A`/`AAAA` da raiz e os cabeçalhos de segurança. O bucket recebe somente o build estático; não recebe bibliotecas, backups, capas enviadas ou arquivos de Drive.
 
-Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline.
+Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline. Configurações mostra os sete primeiros caracteres do commit da execução que construiu o frontend; fora do CI, usa o commit local.
 
 ## API
 

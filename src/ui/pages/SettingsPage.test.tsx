@@ -25,7 +25,7 @@ it('persists preferences across reopening and advances revision without changing
   await waitFor(async () => expect(await repository.readPreferences()).toMatchObject({ shelfYear: 2025, mode: 'list', filter: 'read' }));
   expect(await repository.readRevision()).toEqual({ ...revision, revision: revision.revision + 3 });
   expect((await repository.readAll()).books).toEqual(books);
-  expect(screen.getByText(/Versão .*build/)).toBeTruthy();
+  expect(screen.getByText(`Versão ${__APP_VERSION__} · commit ${__BUILD_ID__} · desenvolvimento`)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Como instalar' }).getAttribute('href')).toBe('/instalar');
   cleanup();
   const reopened = await openLibraryRepository({ name, channelFactory: null });
