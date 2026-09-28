@@ -39,11 +39,10 @@ export function AddBookPage() {
     if (!session && state.status === 'ready') setSession({ year: state.preferences.shelfYear ?? new Date().getFullYear(), version: state.snapshot.version });
   }, [state, session]);
   return <section className="page-content"><BackLink returnTo={returnTo} />
-    <p className="eyebrow">Uma leitura de cada vez</p><h1>Adicionar livro</h1>
-    <p className="page-description">Guarde sua leitura. Você pode completar os detalhes depois.</p>
+    <h1>Adicionar livro</h1>
     {session && books ? draft === null ? <BookSearch onManual={() => setDraft({ title: '' })}
       onSelect={setDraft} /> : <>
-      {draft.source && <p className="field-help">Confira os dados da Open Library antes de salvar. Páginas, ISBN e ano da sua edição podem ser preenchidos abaixo.</p>}
+      {draft.source && <p className="field-help">Confira os dados da Open Library antes de salvar.</p>}
       {draft.cover && <BookCover cover={draft.cover} title={draft.title} className="selected-cover" />}
       <BookForm key={attempt} initialDraft={draft} year={session.year} version={session.version} service={books}
       onSaved={(book) => navigate(`/livro/${book.id}`, { replace: true, state: { returnTo, saved: true } })}
@@ -112,7 +111,7 @@ function BookDetail({ id }: { id: string }) {
             <div><dt>Minha avaliação</dt><dd>{book.rating ? <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span> : 'Sem avaliação'}</dd></div>
           </dl>
           <h2>Sua nota privada</h2><p className="private-note">{book.note || 'Nenhuma anotação ainda.'}</p>
-          <p className="field-help">Sua nota é privada. Se você conectar o Drive, ela acompanha sua biblioteca. Não entra na imagem compartilhada.</p>
+          <p className="field-help">A nota acompanha o backup e o Drive, se conectado. Não entra na imagem compartilhada.</p>
           {error && <p role="alert" className="form-error">{error}</p>}
           <div className="form-actions"><button className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(''); }}>Editar livro</button>
             <button className="button button-secondary" onClick={() => setRemoving(true)}>Remover livro</button></div>

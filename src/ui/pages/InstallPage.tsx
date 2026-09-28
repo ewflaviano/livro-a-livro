@@ -7,7 +7,7 @@ export function InstallPage() {
   const state = useSyncExternalStore(subscribeInstall, getInstallState);
   return <section className="page-content" aria-labelledby="install-title">
     <h1 id="install-title">Instalar</h1>
-    <p>Tenha um atalho para o Livro a Livro na sua tela inicial. Você também pode continuar usando este navegador.</p>
+    <p>Adicione o Livro a Livro à tela inicial.</p>
     {state.installed ? <p role="status">Aplicativo instalado neste dispositivo, conforme informado pelo navegador.</p> : <>
       {state.available && <button className="button button-primary" onClick={() => void requestInstall()}>Instalar aplicativo</button>}
       {state.busy && <p role="status">Aguardando sua escolha no navegador…</p>}
@@ -15,12 +15,11 @@ export function InstallPage() {
       {state.outcome === 'dismissed' && <p role="status">Instalação cancelada. Você pode continuar por aqui.</p>}
       {state.outcome === 'failed' && <p role="status">Não foi possível abrir a instalação. Use as instruções abaixo ou tente novamente pelo navegador.</p>}
       <h2>Android e Chrome</h2>
-      <p>No menu do Chrome (três pontos), procure “Instalar e criar atalho”, depois “Instalar”. Em outras versões, procure “Instalar aplicativo” ou “Adicionar à tela inicial” e confirme. A opção pode variar conforme o navegador. O botão acima aparece somente quando o navegador oferece a instalação.</p>
+      <p>Abra o menu do Chrome (três pontos) e escolha “Instalar aplicativo” ou “Adicionar à tela inicial”.</p>
       <h2>iPhone e iPad com Safari</h2>
-      <p>Abra este endereço no Safari. Toque em Compartilhar, depois em “Adicionar à Tela de Início” e confirme em Adicionar. Se aparecer “Abrir como App da Web”, mantenha essa opção ativada.</p>
+      <p>No Safari, toque em Compartilhar → Adicionar à Tela de Início → Adicionar.</p>
     </>}
-    <p>Instalar não cria backup nem garante que o navegador conservará seus registros. Seus livros ficam neste navegador e neste endereço; outro endereço ou navegador pode mostrar outra estante.</p>
-    <p>Depois da preparação offline, as tarefas locais funcionam sem conexão. Busca e capas externas precisam de internet.</p>
+    <p>Instalar não cria backup. A estante funciona offline após a preparação inicial; busca e capas externas precisam de conexão.</p>
     <Link className="button button-secondary" to="/dados">Abrir backup local</Link>
   </section>;
 }

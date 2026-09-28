@@ -48,7 +48,7 @@ describe('manual books and private detail', () => {
     expect((titleField() as HTMLInputElement).value).toBe('Rascunho local');
     confirm.mockReturnValue(true);
     await userEvent.click(link);
-    expect(await screen.findByRole('heading', { name: destination === 'Mais' ? 'Mais' : 'Estante 2026', level: 1 })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: destination === 'Mais' ? 'Mais' : 'Estante', level: 1 })).toBeTruthy();
     expect((await repository.readAll()).books).toEqual([]);
   });
 
@@ -105,17 +105,18 @@ describe('manual books and private detail', () => {
     const { repository } = await setup();
     await screen.findByRole('textbox', { name: 'Título (obrigatório)' });
     await userEvent.type(titleField(), 'Uma leitura');
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Estado' }), 'read');
+    await userEvent.click(screen.getByRole('radio', { name: 'Lido' }));
     fireEvent.change(screen.getByLabelText('Terminei em (opcional)'), { target: { value: '2025-03-12' } });
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByText(/Use um ano de 1 a 9999/)).toBeTruthy();
     expect((await repository.readAll()).books).toEqual([]);
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Estado' }), 'reading');
+    await userEvent.click(screen.getByRole('radio', { name: 'Lendo' }));
     expect((screen.getByLabelText('Terminei em (opcional)') as HTMLInputElement).value).toBe('2025-03-12');
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByText(/Confira a data de término/)).toBeTruthy();
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Estado' }), 'read');
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Ano da estante' }), { target: { value: '2025' } });
+    await userEvent.click(screen.getByRole('radio', { name: 'Lido' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ano anterior' }));
+    expect((screen.getByRole('spinbutton', { name: 'Ano da estante' }) as HTMLInputElement).value).toBe('2025');
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByText('12/03/2025')).toBeTruthy();
     expect((await repository.readAll()).books[0].shelfYear).toBe(2025);
@@ -195,7 +196,7 @@ describe('manual books and private detail', () => {
     expect((await repository.readAll()).books).toHaveLength(1);
     await userEvent.click(remove);
     await userEvent.click(screen.getByRole('button', { name: 'Excluir livro' }));
-    await screen.findByRole('heading', { name: 'Estante 2026' });
+    await screen.findByRole('heading', { name: 'Estante' });
     expect((await repository.readAll()).books).toHaveLength(0);
   });
   it('rejects deletion when the library changes while confirmation is open', async () => {

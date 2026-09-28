@@ -119,8 +119,7 @@ export function BackupPanel() {
   const unavailable = !backup || state.status !== 'ready';
   return <section aria-labelledby="local-backup-title" aria-busy={Boolean(busy)}>
     <h2 id="local-backup-title">Backup local</h2>
-    <p>Exporte ou restaure todos os anos, incluindo livros, notas, avaliações e capas enviadas. Funciona sem conexão e sem Google Drive.</p>
-    <p>O arquivo JSON contém suas informações privadas. Guarde-o em um lugar de confiança.</p>
+    <p>Exporte ou restaure todos os anos, sem conexão. O JSON inclui notas e capas privadas; guarde-o em um lugar seguro.</p>
     {unavailable && <p role="status">{state.status === 'error' ? 'Não foi possível abrir a biblioteca neste dispositivo.' : 'Abrindo a biblioteca para preparar seu backup…'}</p>}
     {state.status === 'error' && <button className="button button-secondary" onClick={retry}>Tentar abrir a biblioteca</button>}
     <div className="form-actions"><button className="button button-primary" disabled={unavailable || Boolean(busy)} onClick={() => void exportCurrent()}>

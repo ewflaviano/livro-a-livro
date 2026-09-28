@@ -73,17 +73,16 @@ export function DataPage() {
     } catch { if (epoch === mergeEpoch.current) setMergeError('Não foi possível concluir esta prévia. Confira os limites de livros e capas; se a biblioteca ou conexão mudou, cancele e prepare uma nova prévia. Consulte o estado da sincronização antes de tentar novamente.'); }
     finally { if (epoch === mergeEpoch.current) setBusy(false); }
   }
-  return <section ref={content} className="page-content"><p className="eyebrow">Sua história em livros</p><h1 ref={pageHeading} tabIndex={-1}>Seus dados</h1>
+  return <section ref={content} className="page-content"><h1 ref={pageHeading} tabIndex={-1}>Seus dados</h1>
     {local && <p className="notice-panel" role="status">Modo local de teste: Google e Drive são simulados neste computador. Use somente dados descartáveis.</p>}
-    <p className="page-description">Sua biblioteca pertence a você.</p>
-    <p>Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador pode remover sua estante. Instalar o aplicativo não cria backup.</p>
+    <p>Seus livros ficam neste navegador. Faça um backup antes de limpar seus dados ou trocar de dispositivo.</p>
     <BackupPanel />
     <h2 ref={driveHeading} className="sync-resolution-heading" tabIndex={-1}>Google Drive opcional</h2>
-    {state.login?.status === 'signed-in' && <p>Você entrou com Google. O login, sozinho, não envia sua biblioteca.</p>}
+    {state.login?.status === 'signed-in' && state.login.driveAuthorized !== true && <p>Google conectado. O Drive ainda não foi autorizado.</p>}
     {state.login?.status === 'unavailable' && <p>Não foi possível verificar o login. Sua biblioteca continua disponível. <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>Verificar conexão</button></p>}
     {state.logoutUnconfirmed && <p role="alert">A saída não foi confirmada pelo serviço. Os envios estão pausados neste dispositivo. Tente sair novamente quando houver conexão.</p>}
-    <p>Ao conectar, seus livros, notas e avaliações vão diretamente para uma pasta privada do aplicativo no seu Google Drive. O serviço do Livro a Livro gerencia a autorização, mas não recebe sua biblioteca.</p>
-    <p>O envio acontece enquanto o aplicativo está aberto e retoma quando você voltar com conexão. Com o navegador fechado, alterações podem continuar aguardando envio.</p>
+    <p>Ao conectar, livros, notas, avaliações e capas vão diretamente para seu Google Drive. O Livro a Livro não recebe sua biblioteca.</p>
+    <p>Alterações pendentes são enviadas quando você voltar ao aplicativo com conexão.</p>
     {!available ? <p>O conector está em preparação e será liberado após a configuração do serviço de autorização.</p> : <>
       <p role="status">{state.received ? 'Biblioteca recebida do Drive.' : labels[state.status]} {state.lastSyncedAt && <time dateTime={state.lastSyncedAt}>{new Date(state.lastSyncedAt).toLocaleString('pt-BR')}</time>}</p>
       {state.revocationPending && <div className="notice-panel" role="status">
@@ -91,7 +90,7 @@ export function DataPage() {
         <p>Os envios estão pausados neste dispositivo. Remova o Livro a Livro nas <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">conexões da sua Conta Google</a>. Se a reconexão continuar bloqueada, <a href="mailto:ewanderson.flaviano@gmail.com">fale com o suporte</a> para verificar a autorização. Seus livros locais continuam aqui.</p>
       </div>}
       {initializing ? <p>Preparando conexão…</p> : !coordinator && <p>Não foi possível iniciar o conector. A biblioteca local continua disponível.</p>}
-      {state.status === 'authorize-drive' && <p>Sua sessão Google é opcional e permanece neste navegador. Autorizar o Drive é opcional: seus livros, notas, avaliações e capas serão enviados diretamente ao seu Google Drive. O Google pode apresentar sua própria seleção de permissões.</p>}
+      {state.status === 'authorize-drive' && <p>Você escolhe se quer sincronizar sua biblioteca com o Drive.</p>}
       <div className="form-actions">
         {(state.revocationPending || ['disabled', 'reconnect', 'identifying', 'authorization-expired', 'authorization-waiting', 'authorization-error'].includes(state.status)) && <button className="button button-primary" disabled={!coordinator || busy || controls.busy || controls.blocked} onClick={() => controls.open('connect')}>Entrar com Google</button>}
         {state.authorizationStage === 'drive' && ['authorization-waiting', 'authorization-error'].includes(state.status) && <button className="button button-secondary" disabled={busy || controls.busy || controls.blocked} onClick={() => controls.open('retry-authorize')}>Tentar autorizar Google Drive novamente</button>}
@@ -122,7 +121,7 @@ export function DataPage() {
     {merge && <MergePreview key={merge.id} preview={merge} busy={busy} error={mergeError} accountChanged={state.accountChanged} onCancel={closeMerge} onConfirm={() => void confirmMerge()} />}
     {mergeNotice && <p role="status">{mergeNotice}</p>}
     <h2>Visitas ao site</h2>
-    <p>O Google Analytics conta visitas somente se você aceitar. Essa escolha não depende do Google Drive e não envia seus livros.</p>
+    <p>O Google Analytics conta visitas somente com sua permissão. Seus livros não são enviados.</p>
     <p>Escolha atual: {analytics.loading ? 'Verificando…' : analytics.error ? 'Não foi possível verificar' : analytics.choice === 'accepted' ? 'Aceito' : analytics.choice === 'rejected' ? 'Recusado' : 'Ainda não escolhida'}.</p>
     <button className="button button-secondary" onClick={analytics.review}>Revisar escolha de Analytics</button>
     {error && <p role="alert">{error}</p>}

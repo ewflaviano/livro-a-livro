@@ -81,8 +81,8 @@ describe('library presentation states', () => {
   });
 
   it('offers an add route only for a confirmed empty shelf', () => {
-    render(<MemoryRouter><LibraryState state="empty" year={2026} /></MemoryRouter>);
-    expect(screen.getByRole('heading').textContent).toBe('Sua estante de 2026 começa aqui.');
+    render(<MemoryRouter><LibraryState state="empty" /></MemoryRouter>);
+    expect(screen.getByRole('heading').textContent).toBe('Comece sua estante');
     expect(screen.getByRole('link', { name: 'Adicionar livro' }).getAttribute('href')).toBe('/adicionar');
   });
 });

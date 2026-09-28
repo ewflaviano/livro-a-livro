@@ -3,10 +3,10 @@ import { useAnalytics } from '../../analytics/AnalyticsProvider';
 
 export function AnalyticsBanner() {
   const state = useAnalytics(); const ref = useRef<HTMLElement>(null);
-  useEffect(() => { if (state.reviewing) { ref.current?.scrollIntoView?.({ block: 'start' }); ref.current?.querySelector<HTMLButtonElement>('button')?.focus(); } }, [state.reviewing]);
+  useEffect(() => { if (state.reviewing) ref.current?.querySelector<HTMLButtonElement>('button')?.focus(); }, [state.reviewing]);
   if (state.loading || state.choice !== null && !state.reviewing && !state.error && !state.reloadSuggested) return null;
   return <section ref={ref} className="analytics-banner" aria-label="Escolha sobre visitas">
-    <div><p>Este site usa o Google Analytics para contar visitas. Não mostramos anúncios nem enviamos seus livros. Tudo bem?</p>
+    <div><p>Contar visitas com Google Analytics? Seus livros não são enviados.</p>
       {state.choice !== null && <p className="field-help">Escolha atual: {state.choice === 'accepted' ? 'Aceito' : 'Recusado'}.</p>}
       {state.error && <p role="alert">Não foi possível guardar ou verificar sua escolha. O Analytics está desligado. Tente novamente.</p>}
     </div>

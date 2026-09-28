@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 type Props =
   | { state: 'loading' }
   | { state: 'error'; onRetry: () => void }
-  | { state: 'empty'; year: number; returnTo?: string };
+  | { state: 'empty'; returnTo?: string };
 
 /** Used only after composition determines the actual local storage state. */
 export function LibraryState(props: Props) {
@@ -23,9 +23,8 @@ export function LibraryState(props: Props) {
   return (
     <div className="notice-panel empty-state">
       <BookOpen aria-hidden="true" />
-      <h2>Sua estante de {String(props.year).padStart(4, '0')} começa aqui.</h2>
-      <p>Guarde o primeiro livro da sua história.</p>
-      <Link className="button button-primary" to="/adicionar" state={{ returnTo: props.returnTo ?? '/estante' }}>Adicionar livro</Link>
+      <div><h2>Comece sua estante</h2>
+        <Link className="button button-primary" to="/adicionar" state={{ returnTo: props.returnTo ?? '/estante' }}>Adicionar livro</Link></div>
     </div>
   );
 }

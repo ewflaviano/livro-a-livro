@@ -63,8 +63,7 @@ export function GlobalSyncControls({ children }: { children: ReactNode }) {
     {prompt && <ConfirmDialog title={prompt === 'connect' ? 'Entrar com Google?' : 'Guardar sua biblioteca no Drive?'}
       confirmLabel={prompt === 'connect' ? 'Entrar com Google' : 'Autorizar Drive'} cancelLabel={prompt === 'connect' ? 'Cancelar' : 'Agora não'}
       variant="primary" returnFocus={trigger} busy={busy} onCancel={dismiss} onConfirm={() => void confirm()}>
-      <p>{prompt === 'connect' ? 'Esta etapa entra com sua Conta Google e mantém sua sessão neste navegador. Ela ainda não autoriza o Drive nem envia sua biblioteca. Você voltará ao aplicativo para decidir se deseja autorizar o Drive.' : 'Você entrou com Google. O Drive ainda não foi autorizado. Se você permitir, seus livros, notas, avaliações e capas serão enviados diretamente para a área privada do aplicativo no seu Google Drive.'}</p>
-      {prompt !== 'connect' && <p>Essa permissão é opcional. Sem ela, sua biblioteca e o backup JSON continuam disponíveis neste navegador. O Google pode apresentar sua própria seleção de permissões.</p>}
+      <p>{prompt === 'connect' ? 'Entre com Google agora. Depois você decide se quer conectar o Drive; sua biblioteca não será enviada nesta etapa.' : 'Autorizar o Drive sincroniza livros, notas, avaliações e capas diretamente com sua conta Google. Você pode continuar usando a estante sem autorizar.'}</p>
       {state.revocationPending && <p>A revogação anterior ainda não foi confirmada. Entrar novamente não remove esse bloqueio; consulte os detalhes em Seus dados.</p>}
       {error && <p role="alert">{error}</p>}
     </ConfirmDialog>}
@@ -77,13 +76,14 @@ export function GlobalSyncHeader() {
   const signIn = ['disabled', 'reconnect', 'authorization-expired'].includes(state.status);
   const label = !available ? 'Google indisponível' : initializing || state.login?.status === 'checking' ? 'Preparando conexão…' : !coordinator ? 'Drive indisponível' : state.login?.status === 'unavailable' ? 'Verificar conexão' : state.revocationPending ? 'Revogação pendente' : shortLabels[state.status];
   const interactive = available && !initializing && coordinator && !state.revocationPending && (signIn || state.status === 'authorize-drive');
-  return <><nav className="header-tools" aria-label="Conta e opções">
-    <Link className="header-option" to="/apoiar"><Heart aria-hidden="true" /><span>Apoiar</span></Link>
-    {interactive ? <button ref={controls.trigger} className="header-option global-sync" disabled={controls.busy || controls.blocked}
+  const mobileLabel = signIn || !available ? 'Google' : 'Drive';
+  return <><nav className={`header-tools${!available ? ' header-tools-unavailable' : ''}`} aria-label="Conta e opções">
+    <Link className="header-option header-support" to="/apoiar"><Heart aria-hidden="true" /><span>Apoiar</span></Link>
+    {interactive ? <button ref={controls.trigger} className="header-option global-sync" aria-label={label} disabled={controls.busy || controls.blocked}
       title={controls.blocked ? 'Conclua ou saia do formulário ou operação em andamento antes de conectar.' : undefined}
-      onClick={() => controls.open(signIn ? 'connect' : 'authorize')}><Cloud aria-hidden="true" /><span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></button> :
+      onClick={() => controls.open(signIn ? 'connect' : 'authorize')}><Cloud aria-hidden="true" /><span className="sync-label-full" aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span><span className="sync-label-mobile" aria-hidden="true">{mobileLabel}</span></button> :
       <Link className="header-option global-sync" to="/dados" state={state.status === 'conflict' ? { focus: 'sync-conflict' } : undefined} aria-label={`${label} — ver detalhes`}>
-        {state.status === 'offline' ? <CloudOff aria-hidden="true" /> : <Cloud aria-hidden="true" />}<span aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span></Link>}
+        {state.status === 'offline' ? <CloudOff aria-hidden="true" /> : <Cloud aria-hidden="true" />}<span className="sync-label-full" aria-live="polite">{state.login?.status === 'signed-in' && <small className="header-login-state">Google conectado</small>}{label}</span><span className="sync-label-mobile" aria-hidden="true">{mobileLabel}</span></Link>}
     <Link className="header-option header-settings" to="/configuracoes" aria-label="Abrir configurações" title="Configurações"><Settings aria-hidden="true" /></Link>
   </nav>{controls.error && <p className="global-action-error" role="alert">{controls.error} Abra os detalhes da conexão para tentar novamente ou cancelar.</p>}</>;
 }

@@ -29,7 +29,7 @@ O BioRotina é a referência funcional para conexão global, sincronização, re
 
 | Situação | Usar | Evitar |
 | --- | --- | --- |
-| Estante vazia | “Sua estante de 2026 começa aqui.” | “Você ainda não leu nada!” |
+| Estante vazia | “Comece sua estante” | “Você ainda não leu nada!” |
 | Salvamento confirmado | “Livro salvo neste dispositivo.” | “Tudo seguro para sempre.” |
 | Sem rede | “A busca precisa de conexão. Você pode cadastrar manualmente.” | “Você está offline. Tente mais tarde.” |
 | Erro de campo | “Informe o título do livro.” | “Campo inválido.” |
@@ -147,13 +147,13 @@ Exclusão de um livro pede “Excluir [título] desta estante?” e explica que 
 
 ## 8. Estante anual: Grade e Lista
 
-Ordem: marca e “Seus dados”; título “Estante 2026”; explicação curta; seletor de ano e “Adicionar livro”; estatísticas; filtro de estado e Grade/Lista; coleção; estado local discreto. “Compartilhar ano” tem ênfase secundária. Em mobile, título/ano e CTA se reorganizam, filtros quebram linha e Grade/Lista mantém rótulos.
+Ordem: marca e acesso ao Google quando disponível; título “Estante” e seletor de ano; filtros, busca e Grade/Lista quando houver livros; coleção ou estado vazio; estatísticas; “Compartilhar ano” como ação secundária. Em mobile, Apoiar e Configurações ficam em Mais, os filtros usam uma linha rolável sem quebra dos rótulos, e o estado vazio mostra Adicionar livro logo abaixo do ano.
 
 **Convenção proposta para V1:** cada registro pertence a um ano de estante escolhido pela pessoa, com padrão no ano selecionado. O mesmo título pode existir em outro ano como registro independente, sem automatizar releitura. Todos os estados usam esse mesmo ano. “Lidos em 2026” conta registros Lido na estante de 2026, não a data em que foram cadastrados. Se uma data de término for de outro ano, oferecer corrigir o ano antes de salvar; não mover silenciosamente. O ano é explícito no cadastro/página e permanece editável. Essa convenção deve ser confirmada na implementação, sem inferir retrospectivamente datas que a pessoa não informou.
 
 **Grade:** capa, título, autor, estado. Avaliação pode ficar na página do livro, evitando ruído. Livro inteiro pode ser um único link; não aninhar botões dentro dele. **Lista:** capa de 48–64 px, título/autor, estado e avaliação; em mobile, metadados descem abaixo do título. Mesmos registros, ordem e filtros nos dois modos. Ordenação inicial: adição mais recente, sem novo controle de ordenação obrigatório. Voltar de um livro preserva ano, filtro, modo e posição.
 
-**Estados:** primeiro uso (“Sua estante de 2026 começa aqui.” + Adicionar livro); ano vazio (oferecer mudar ano ou adicionar); filtro vazio (“Nenhum livro em Lendo nesta estante.” + Limpar filtro); carregando registros (placeholder estático + “Abrindo sua estante…”); falha local (explicar e oferecer tentar novamente/importar, sem sobrescrever dados); capa indisponível (fallback tipográfico, sem bloquear livro). Não exibir uma prateleira vazia como falha de rede: dados locais funcionam sem busca.
+**Estados:** primeiro uso (“Comece sua estante” + Adicionar livro, sem filtros e métricas vazias); ano vazio (oferecer mudar ano ou adicionar); filtro vazio (“Nenhum livro em Lendo nesta estante.” + Limpar filtro); carregando registros (placeholder estático + “Abrindo sua estante…”); falha local (explicar e oferecer tentar novamente/importar, sem sobrescrever dados); capa indisponível (fallback tipográfico, sem bloquear livro). Não exibir uma prateleira vazia como falha de rede: dados locais funcionam sem busca.
 
 ## 9. Busca e cadastro manual
 
@@ -180,7 +180,7 @@ Datas, quando informadas, usam “26 set 2026”; datas exatas ficam disponívei
 
 ## 11. Estatísticas mínimas
 
-Três estatísticas do ano: **Livros**, **Páginas** e **Autores**. Elas descrevem somente os registros com estado Lido na estante selecionada: Livros é a quantidade de registros lidos; Páginas é a soma das páginas informadas nesses livros; Autores é a quantidade de autores distintos desses mesmos livros. Os filtros Lidos, Lendo e Quero ler ficam logo abaixo e não alteram as estatísticas — são apenas uma forma de visualizar a estante. Exemplo: **20 livros · 5.842 páginas · 14 autores**. Mostrar 0 quando não houver livros lidos; não estimar páginas ou autoria ausentes. Usar números pt-BR e rótulos completos para leitores de tela, como “20 livros lidos em 2026”. Sem metas, taxas, comparação entre anos ou percentuais de sucesso. Preferir texto e números a gráficos sem necessidade.
+Três estatísticas do ano: **Lidos**, **Páginas** e **Autores**. Elas descrevem somente os registros com estado Lido na estante selecionada: Lidos é a quantidade de registros lidos; Páginas é a soma das páginas informadas nesses livros; Autores é a quantidade de autores distintos desses mesmos livros. Os filtros Lidos, Lendo e Quero ler não alteram as estatísticas — são apenas uma forma de visualizar a estante. Exemplo: **20 lidos · 5.842 páginas · 14 autores**. Mostrar 0 lidos quando houver livros no ano, mas nenhum Lido; esconder as métricas no ano vazio. Não estimar páginas ou autoria ausentes. Usar números pt-BR e rótulos completos para leitores de tela, como “20 livros lidos em 2026”. Sem metas, taxas, comparação entre anos ou percentuais de sucesso. Preferir texto e números a gráficos sem necessidade.
 
 ## 12. Compartilhamento anual
 
@@ -265,6 +265,8 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 
 
 ## 17. Direção de navegação mobile — revisão de 27 set 2026
+
+**Revisão de UX da issue #65:** a estante dá prioridade à coleção antes das estatísticas, e a busca local abre por um botão identificado. O ano vazio omite filtros e métricas e apresenta Adicionar livro logo após o seletor. O consentimento de visitas fica suspenso no rodapé, acima da navegação mobile, sem empurrar os livros. O foco programático no conteúdo permanece para navegação de rotas, mas o contêiner `main` não desenha anel; links, campos e botões continuam com foco visível. No cadastro, Estado usa rádios nativos com alvos visíveis e Ano da estante oferece passos anterior/próximo junto à entrada numérica para anos distantes. A capa opcional fica em Mais detalhes. Textos de orientação são curtos; confirmação de envio, substituição e erros conservam as consequências da ação. A marca possui favicon SVG/ICO e ícones PNG para instalação. A [revisão completa](ux-review-2026-09-27.md) registra achados e verificação local.
 
 A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações, Instalar e Apoiar. Lendo e Quero ler continuam como filtros e rotas diretas.
 
