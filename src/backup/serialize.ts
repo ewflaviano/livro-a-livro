@@ -1,7 +1,6 @@
 import { DomainError } from '../domain/errors';
 import { LIBRARY_LIMITS, utf8ByteLength } from '../domain/library';
 import { migrateExport } from './migrations';
-import { parseExportV1 } from './schema';
 import type { LibraryExport } from './schema';
 
 export function parseBackupText(text: string): LibraryExport {
@@ -12,7 +11,7 @@ export function parseBackupText(text: string): LibraryExport {
 }
 
 export function serializeBackup(input: LibraryExport): string {
-  const data = parseExportV1(input);
+  const data = migrateExport(input);
   // Schema parsing constructs fields in their declared order, including nested records.
   data.books.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   data.coverMedia.sort((a, b) => a.id.toLowerCase().localeCompare(b.id.toLowerCase()));

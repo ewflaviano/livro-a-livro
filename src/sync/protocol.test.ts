@@ -2,17 +2,19 @@ import { createDriveClient } from './drive-client';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { encodedCover, stubImageDecoder } from '../../test/fixtures/covers/helpers';
 import { createBook } from '../domain/book';
-import type { LibraryExport } from '../backup/schema';
-import { libraryHash, libraryHashV1, libraryHashV2, parseSnapshot, remoteHeads } from './snapshot';
+import type { LibraryExportV1 } from '../backup/schema';
+import { portableExport } from '../backup/schema';
+import { libraryHash, libraryHashV1, libraryHashV2, libraryHashV3, parseSnapshot, remoteHeads } from './snapshot';
 const now = '2026-09-26T12:00:00.000Z';
 const id = 'ABCDEF00-0000-4000-8000-000000000001';
-const library = (): LibraryExport => ({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: now,
+const library = (): LibraryExportV1 => ({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: now,
   books: [createBook({ title: 'Fixture V1', authors: ['Autoria sintética'], status: 'read', cover: { provider: 'local', mediaId: encodedCover().id } }, { id, now, shelfYear: 2026 })],
   preferences: { shelfYear: 2026, mode: 'list', filter: 'read' }, coverMedia: [encodedCover()] });
 beforeEach(() => stubImageDecoder());
 it('freezes the historical V1 digest and serialization including uppercase UUID and media', async () => {
   const data = library();
   expect(await libraryHash(data)).toBe('dc9dab7e904ad529031e0ffae6af0917bc7c2f64ad0972ead30f8adda6d3bf72');
+  expect(await libraryHashV2(data)).toBe('c4d232cd763982e83ee2a668746e434b19d9290b7939856b5e555972d6f65aa9');
   const snapshot = { format: 'livro-a-livro-sync' as const, protocolVersion: 1 as const, snapshotId: id, operationId: 'ABCDEF00-0000-4000-8000-000000000002', parentSnapshotId: null, resolvedSnapshotIds: [], hash: await libraryHash(data), createdAt: now, library: data };
   expect([...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(await parseSnapshot(snapshot)))))].map(n => n.toString(16).padStart(2,'0')).join('')).toBe('f871ba8218f19782c79afd643af09702ff3bb869600e29e5aae6617fef7981a6');
   expect(JSON.stringify(await parseSnapshot(snapshot))).toBe(JSON.stringify(snapshot));
@@ -48,7 +50,7 @@ it('rejects future versions, V2 orphans and casefold duplicates while accepting 
   const orphan = { ...data, books: [] };
   await expect(parseSnapshot({ ...base, protocolVersion: 1, library: orphan, hash: await libraryHashV1(orphan) })).resolves.toBeDefined();
   await expect(parseSnapshot({ ...base, protocolVersion: 2, library: orphan, hash: await libraryHashV2(orphan) })).rejects.toMatchObject({ code: 'invalid' });
-  await expect(parseSnapshot({ ...base, protocolVersion: 3, library: data, hash: await libraryHashV2(data) })).rejects.toMatchObject({ code: 'invalid' });
+  await expect(parseSnapshot({ ...base, protocolVersion: 4, library: data, hash: await libraryHashV2(data) })).rejects.toMatchObject({ code: 'invalid' });
   await expect(libraryHashV2({ ...data, coverMedia: [data.coverMedia[0], { ...data.coverMedia[0], id: data.coverMedia[0].id.toUpperCase() }] })).rejects.toBeDefined();
   await expect(libraryHashV2({ ...data, books: [data.books[0], { ...data.books[0], id: data.books[0].id.toLowerCase() }] })).rejects.toBeDefined();
 });
@@ -63,7 +65,7 @@ it('rejects case aliases and hidden cycles without rewriting V1 wire IDs', async
 
 const auth = { token: async () => 'synthetic', invalidate() {} } as unknown as import('./contracts').AuthClient;
 const binding = { connectionId: 'synthetic', generation: 1 };
-const wire = async (data = library(), version: 1 | 2 = 1): Promise<import('./contracts').SyncSnapshot> => ({ format: 'livro-a-livro-sync' as const, protocolVersion: version, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: null, resolvedSnapshotIds: [] as string[], hash: await (version === 1 ? libraryHashV1 : libraryHashV2)(data), createdAt: now, library: data });
+const wire = async (data = library(), version: 1 | 2 = 1): Promise<import('./protocol').SyncSnapshotV1 | import('./protocol').SyncSnapshotV2> => ({ format: 'livro-a-livro-sync' as const, protocolVersion: version, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: null, resolvedSnapshotIds: [] as string[], hash: await (version === 1 ? libraryHashV1 : libraryHashV2)(data), createdAt: now, library: data } as import('./protocol').SyncSnapshotV1 | import('./protocol').SyncSnapshotV2);
 const metadata = (snapshot: import('./contracts').SyncSnapshot, id = 'synthetic-file') => ({ id, size: String(JSON.stringify(snapshot).length), appProperties: { protocolVersion: String(snapshot.protocolVersion), snapshotId: snapshot.snapshotId, operationId: snapshot.operationId, parentSnapshotId: snapshot.parentSnapshotId ?? 'root', hash: snapshot.hash, createdAt: snapshot.createdAt, resolution: snapshot.resolvedSnapshotIds.length ? '1' : '0' } });
 const response = (data: unknown) => new Response(JSON.stringify(data));
 it('HTTP duplicate V1 operations must have equal complete preferences, not merely the historical hash', async () => {
@@ -95,4 +97,25 @@ it.each([1,2] as const)('HTTP uploads V%i with unchanged historical discovery na
   expect(meta).toMatchObject({ name:'livro-a-livro-snapshot-v1.json',appProperties:{protocolVersion:String(version)} });
   expect(fetcher.mock.calls[1][1]?.body).toBe(JSON.stringify(await parseSnapshot(data)));
   expect(new TextEncoder().encode(String(fetcher.mock.calls[1][1]?.body))).toEqual(new TextEncoder().encode(JSON.stringify(data)));
+});
+it('lists mixed V1/V2/V3, downloads and uploads V3 under the historical discovery name', async () => {
+  const first = await wire(library(), 1); const second = await wire(library(), 2);
+  const portable = portableExport(library());
+  const third: import('./protocol').SyncSnapshotV3 = { format: 'livro-a-livro-sync', protocolVersion: 3, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: null,
+    resolvedSnapshotIds: [], hash: await libraryHashV3(portable), createdAt: now, library: portable };
+  const payloads = new Map<string, import('./contracts').SyncSnapshot>([['first', first], ['second', second], ['third', third]]);
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (init?.method === 'POST') return new Response(null, { headers: { location: 'https://www.googleapis.com/upload/drive/v3/files/synthetic' } });
+    if (String(url).includes('alt=media')) return response(payloads.get(String(url).match(/files\/(first|second|third)/u)?.[1] ?? ''));
+    if (String(url).includes('/drive/v3/files')) return response({ files: [metadata(first, 'first'), metadata(second, 'second'), metadata(third, 'third')] });
+    return new Response(null);
+  });
+  const client = createDriveClient(auth, binding, fetcher); const signal = new AbortController().signal;
+  expect((await client.list(signal)).map(file => file.header.protocolVersion).sort()).toEqual([1, 2, 3]);
+  await expect(client.download({ id: 'third', size: JSON.stringify(third).length, header: (({ library: _, ...header }) => header)(third) }, signal)).resolves.toEqual(third);
+  await client.upload(third, signal);
+  const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ name: 'livro-a-livro-snapshot-v1.json', appProperties: { protocolVersion: '3' } });
+  expect(fetcher.mock.calls.at(-1)?.[1]?.body).toBe(JSON.stringify(third));
+  await expect(createDriveClient(auth, binding, async () => response({ files: [metadata({ ...third, protocolVersion: 4 } as never)] })).list(signal)).rejects.toMatchObject({ code: 'invalid' });
 });

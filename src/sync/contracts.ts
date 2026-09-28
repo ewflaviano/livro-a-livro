@@ -39,7 +39,7 @@ export const authorizationSchema = z.discriminatedUnion('stage', [
 export type AuthorizationIntent = z.infer<typeof authorizationSchema>;
 export const syncStateSchema = z.strictObject({
   enabled: z.boolean(), binding: bindingSchema.nullable(),
-  base: z.strictObject({ snapshotId: z.uuid(), hash: hashSchema, protocolVersion: z.union([z.literal(1), z.literal(2)]).default(1), comparisonHashV2: hashSchema.optional() }).nullable(),
+  base: z.strictObject({ snapshotId: z.uuid(), hash: hashSchema, protocolVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1), comparisonHashV2: hashSchema.optional(), comparisonHashV3: hashSchema.optional() }).nullable(),
   nextAttempt: z.number().nonnegative(), attempts: z.number().int().nonnegative(),
   lastSyncedAt: instantSchema.nullable(),
   revocationPending: z.boolean().default(false),

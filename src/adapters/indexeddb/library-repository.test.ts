@@ -38,7 +38,7 @@ describe('IndexedDB library repository', () => {
   it.each(['QuotaExceededError', 'AbortError'] as const)('rolls back all five stores after partial replace writes: %s', async failure => {
     const name = newName(); const repo = await open(name); const db = await openDB<LibraryDatabase>(name);
     const media = syntheticCover(); const originalBook = { ...book(), cover: { provider: 'local' as const, mediaId: media.id } };
-    await repo.commit({ kind: 'replace', books: [originalBook], coverMedia: [media], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } }, await repo.readRevision());
+    await repo.commit({ kind: 'replace', books: [originalBook], coverMedia: [media], preferences: { shelfYear: 2025, filter: 'read' } }, await repo.readRevision());
     const before = await repo.readBackupSnapshot(); const preferences = await repo.readPreferences();
     const pending = await db.get('syncOutbox', 'pending'); const meta = await db.get('meta', 'library');
     const put = IDBObjectStore.prototype.put;
@@ -51,7 +51,7 @@ describe('IndexedDB library repository', () => {
       }
       return request;
     });
-    await expect(repo.commit({ kind: 'replace', books: [], coverMedia: [], preferences: { shelfYear: 2026, mode: 'grid', filter: 'all' } }, before.version))
+    await expect(repo.commit({ kind: 'replace', books: [], coverMedia: [], preferences: { shelfYear: 2026, filter: 'all' } }, before.version))
       .rejects.toMatchObject({ code: failure === 'QuotaExceededError' ? 'QuotaExceeded' : 'StorageUnavailable' });
     injection.mockRestore();
     expect(await repo.readBackupSnapshot()).toEqual(before); expect(await repo.readPreferences()).toEqual(preferences);
@@ -64,9 +64,9 @@ describe('IndexedDB library repository', () => {
     const name = newName(); const a = await open(name); const b = await open(name);
     const media = syntheticCover(); const next = { ...book(), cover: { provider: 'local' as const, mediaId: media.id } };
     const old = await a.readBackupSnapshot();
-    const writing = a.commit({ kind: 'replace', books: [next], coverMedia: [media], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } }, old.version);
+    const writing = a.commit({ kind: 'replace', books: [next], coverMedia: [media], preferences: { shelfYear: 2025, filter: 'read' } }, old.version);
     const snapshot = await b.readBackupSnapshot(); const version = await writing;
-    expect(snapshot).toMatchObject({ version, books: [next], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } });
+    expect(snapshot).toMatchObject({ version, books: [next], preferences: { shelfYear: 2025, filter: 'read' } });
     expect(await snapshot.coverMedia[0].bytes.arrayBuffer()).toEqual(await media.bytes.arrayBuffer());
   });
 
@@ -194,7 +194,7 @@ describe('IndexedDB library repository', () => {
     const version = await a.readRevision();
     await Promise.all([a.updatePreferences({ shelfYear: 2025 }), b.updatePreferences({ mode: 'list' })]);
     expect(await a.readPreferences()).toEqual({ ...DEFAULT_PREFERENCES, shelfYear: 2025, mode: 'list' });
-    expect(await b.readRevision()).toEqual({ ...version, revision: version.revision + 2 });
+    expect(await b.readRevision()).toEqual({ ...version, revision: version.revision + 1 });
     await expect(a.updatePreferences({ shelfYear: 0 })).rejects.toMatchObject({ code: 'InvalidLibrary' });
   });
 
@@ -325,6 +325,33 @@ describe('IndexedDB library repository', () => {
     b.close();
     focusTarget.dispatchEvent(new Event('focus'));
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+  it('shares a mode-only change between tabs without content revision, outbox or content listeners', async () => {
+    const channels: Pick<BroadcastChannel, 'onmessage' | 'postMessage' | 'close'>[] = [];
+    const messages: unknown[] = [];
+    const factory = () => {
+      const channel: typeof channels[number] = { onmessage: null, close() {}, postMessage(message) {
+        messages.push(message);
+        for (const other of channels) if (other !== channel) other.onmessage?.call({} as BroadcastChannel, new MessageEvent('message', { data: message }));
+      } };
+      channels.push(channel); return channel;
+    };
+    const name = newName(); const a = await open(name, { channelFactory: factory }); const b = await open(name, { channelFactory: factory });
+    const content = vi.fn(); const local = vi.fn(); b.subscribe(content); b.subscribeLocalPreferences(local);
+    const revision = await a.readRevision(); const db = await openDB<LibraryDatabase>(name);
+    const pending = await db.get('syncOutbox', 'pending');
+    await a.updatePreferences({ mode: 'list' });
+    await vi.waitFor(() => expect(local).toHaveBeenCalledOnce());
+    expect((await b.readPreferences()).mode).toBe('list'); expect(await b.readRevision()).toEqual(revision);
+    expect(await db.get('syncOutbox', 'pending')).toEqual(pending); expect(content).not.toHaveBeenCalled();
+    expect(messages).toEqual([{ type: 'local-preferences-changed' }]); db.close();
+  });
+  it('notices a mode-only change on focus when BroadcastChannel is unavailable', async () => {
+    const name = newName(); const focusTarget = new EventTarget();
+    const a = await open(name); const b = await open(name, { focusTarget, channelFactory: null });
+    const content = vi.fn(); const local = vi.fn(); b.subscribe(content); b.subscribeLocalPreferences(local);
+    await a.updatePreferences({ mode: 'list' }); focusTarget.dispatchEvent(new Event('focus'));
+    await vi.waitFor(() => expect(local).toHaveBeenCalledOnce()); expect(content).not.toHaveBeenCalled();
   });
 });
 

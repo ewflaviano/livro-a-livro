@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSync } from '../../app/SyncProvider';
 import { serializeBackup } from '../../backup/serialize';
+import { referencedExport } from '../../sync/snapshot';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useGlobalSyncControls } from '../components/GlobalSyncControls';
 import { authorizationStates, syncLabels as labels } from '../components/sync-presentation';
 import type { LibraryExport } from '../../backup/schema';
 
 export function downloadLibrary(data: LibraryExport, suffix: string) {
-  const url = URL.createObjectURL(new Blob([serializeBackup(data)], { type: 'application/json;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([serializeBackup(referencedExport(data))], { type: 'application/json;charset=utf-8' }));
   const link = document.createElement('a'); link.href = url; link.download = `livro-a-livro-${suffix}.json`; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

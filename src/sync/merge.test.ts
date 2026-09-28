@@ -46,7 +46,7 @@ describe('explicit library union', () => {
     const remote = library(); remote.preferences = { shelfYear: 2024, mode: 'list', filter: 'reading' };
     const plan = prepareMerge({ id: 'p', sources: [{ id: 'local', library: library() }, { id: 'remote', library: remote }] });
     expect(plan.preview.preferencesDiffer).toBe(true);
-    expect(materializeMerge(plan, { ...choices(plan), preferencesSourceId: 'remote' }).preferences).toEqual(remote.preferences);
+    expect(materializeMerge(plan, { ...choices(plan), preferencesSourceId: 'remote' }).preferences).toEqual({ shelfYear: 2024, filter: 'reading' });
     expect(() => materializeMerge(plan, { ...choices(plan), preferencesSourceId: '' })).toThrow();
   });
   it('rejects casefold aliases inside a source before grouping', () => {
@@ -110,7 +110,7 @@ describe('fixed union policy', () => {
     for (const ordered of [sources, [...sources].reverse(), [sources[2], sources[0], sources[3], sources[1]]]) {
       const plan = prepareMerge({ id: 'p', sources: ordered }); const result = materializeUnion(plan);
       expect(result.books).toHaveLength(5); expect(result.books[0]).toEqual(local.books[0]);
-      expect(result.books[1]).toEqual(book(2, 'Primeira')); expect(result.preferences).toEqual(local.preferences);
+      expect(result.books[1]).toEqual(book(2, 'Primeira')); expect(result.preferences).toEqual({ shelfYear: local.preferences.shelfYear, filter: local.preferences.filter });
       expect(unionPolicy(plan).preview).toEqual({ id: 'p', totalCount: 5, addedCount: 4, divergentCount: 2, remoteOnlyDivergentCount: 1, remoteSourceCount: 3 });
       if (previous) expect(result).toEqual(previous); previous = result;
     }

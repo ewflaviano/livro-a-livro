@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { parseExportV1, type LibraryExport } from '../backup/schema';
+import { portableExport, type LibraryExport, type LibraryExportV2 } from '../backup/schema';
 import { serializeBackup } from '../backup/serialize';
 import { utf8ByteLength } from '../domain/library';
 import { COVER_LIMITS } from '../media/cover';
@@ -10,14 +10,14 @@ export type MergeSource = { id: string; label?: string; library: LibraryExport }
 export type ResolutionSource = MergeSource;
 export type ResolutionVariant = { sourceId: string; book: LibraryExport['books'][number]; media?: EncodedCover };
 export type ResolutionBook = { id: string; variants: ResolutionVariant[]; requiresChoice: boolean; defaultSourceId?: string; removed: boolean; unbasedAbsence: boolean };
-export type PreparedMergePreview = { id: string; sources: { id: string; label: string; count: number; preferences: LibraryExport['preferences'] }[]; books: ResolutionBook[]; preferencesDiffer: boolean; defaultPreferencesSourceId: string; sourceBytes: number };
+export type PreparedMergePreview = { id: string; sources: { id: string; label: string; count: number; preferences: LibraryExportV2['preferences'] }[]; books: ResolutionBook[]; preferencesDiffer: boolean; defaultPreferencesSourceId: string; sourceBytes: number };
 export type ResolutionChoices = { books: { bookId: string; sourceId: string | null }[]; preferencesSourceId: string; includeUnbased: boolean };
-export type PreparedMerge = { preview: PreparedMergePreview; sources: MergeSource[]; mediaIds: Map<string, string> };
+export type PreparedMerge = { preview: PreparedMergePreview; sources: (MergeSource & { library: LibraryExportV2 })[]; mediaIds: Map<string, string> };
 const key = (value: string) => value.toLowerCase();
 const provenance = (source: string, id: string) => `${source}:${key(id)}`;
 const mediaValue = ({ id: _, ...media }: EncodedCover) => canonicalJson(media);
-function validate(source: LibraryExport) {
-  const library = parseExportV1(source); const ids = new Set<string>(); let bytes = 0;
+function validate(source: LibraryExport): LibraryExportV2 {
+  const library = portableExport(source); const ids = new Set<string>(); let bytes = 0;
   for (const media of library.coverMedia) {
     if (ids.has(key(media.id))) throw new Error('Mídias duplicadas na fonte.');
     ids.add(key(media.id));
@@ -74,7 +74,7 @@ export function prepareMerge(input: { id: string; sources: MergeSource[]; base?:
   const defaultPreferencesSourceId = sources.find(source => source.id === 'local')?.id ?? sources[0].id;
   return { sources, mediaIds, preview: { id: input.id, sources: sources.map(source => ({ id: source.id, label: source.label ?? (source.id === 'local' ? 'Este dispositivo' : `Versão do Drive ${sources.indexOf(source) + 1}`), count: source.library.books.length, preferences: source.library.preferences })), books, preferencesDiffer: new Set(sources.map(source => canonicalJson(source.library.preferences))).size > 1, defaultPreferencesSourceId, sourceBytes } };
 }
-export function materializeMerge(plan: PreparedMerge, choices: ResolutionChoices): LibraryExport {
+export function materializeMerge(plan: PreparedMerge, choices: ResolutionChoices): LibraryExportV2 {
   const schema = z.strictObject({ books: z.array(z.strictObject({ bookId: z.string(), sourceId: z.string().nullable() })), preferencesSourceId: z.string(), includeUnbased: z.boolean() });
   const decision = schema.parse(choices);
   if (decision.books.length !== plan.preview.books.length || new Set(decision.books.map(row => row.bookId)).size !== decision.books.length) throw new Error('Escolhas incompletas ou duplicadas.');
@@ -96,7 +96,7 @@ export function materializeMerge(plan: PreparedMerge, choices: ResolutionChoices
     }
     books.push(book);
   }
-  return validate({ format: 'livro-a-livro', schemaVersion: 1, exportedAt: prefs.library.exportedAt, books, preferences: { ...prefs.library.preferences }, coverMedia: [...media.values()] });
+  return validate({ format: 'livro-a-livro', schemaVersion: 2, exportedAt: prefs.library.exportedAt, books, preferences: { ...prefs.library.preferences }, coverMedia: [...media.values()] });
 }
 
 /** Public summary contains no library content; the service retains all choices. */
@@ -116,6 +116,6 @@ export function unionPolicy(plan: PreparedMerge): { preview: ResolutionPreview; 
   });
   return { preview: { id: plan.preview.id, totalCount: books.length, addedCount, divergentCount, remoteOnlyDivergentCount, remoteSourceCount: plan.sources.length - 1 }, choices: { books, preferencesSourceId: 'local', includeUnbased: true } };
 }
-export function materializeUnion(plan: PreparedMerge): LibraryExport {
+export function materializeUnion(plan: PreparedMerge): LibraryExportV2 {
   return materializeMerge(plan, unionPolicy(plan).choices);
 }

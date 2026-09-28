@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { instantSchema } from '../domain/book';
-import type { LibraryExport } from '../backup/schema';
+import type { LibraryExportV1, LibraryExportV2 } from '../backup/schema';
 
 export const bindingSchema = z.strictObject({ connectionId: z.string().min(1).max(200), generation: z.number().int().nonnegative() });
 export type Binding = z.infer<typeof bindingSchema>;
@@ -12,11 +12,13 @@ const fields = { format: z.literal('livro-a-livro-sync'), snapshotId: z.uuid(), 
 export const headerV1Schema = z.strictObject({ format: fields.format, protocolVersion: z.literal(1), snapshotId: fields.snapshotId,
   operationId: fields.operationId, parentSnapshotId: fields.parentSnapshotId, resolvedSnapshotIds: fields.resolvedSnapshotIds, hash: fields.hash, createdAt: fields.createdAt });
 export const headerV2Schema = headerV1Schema.extend({ protocolVersion: z.literal(2) });
-export const headerSchema = z.discriminatedUnion('protocolVersion', [headerV1Schema, headerV2Schema]);
+export const headerV3Schema = headerV1Schema.extend({ protocolVersion: z.literal(3) });
+export const headerSchema = z.discriminatedUnion('protocolVersion', [headerV1Schema, headerV2Schema, headerV3Schema]);
 export type SnapshotHeader = z.infer<typeof headerSchema>;
-export type SyncSnapshotV1 = z.infer<typeof headerV1Schema> & { library: LibraryExport };
-export type SyncSnapshotV2 = z.infer<typeof headerV2Schema> & { library: LibraryExport };
-export type SyncSnapshot = SyncSnapshotV1 | SyncSnapshotV2;
+export type SyncSnapshotV1 = z.infer<typeof headerV1Schema> & { library: LibraryExportV1 };
+export type SyncSnapshotV2 = z.infer<typeof headerV2Schema> & { library: LibraryExportV1 };
+export type SyncSnapshotV3 = z.infer<typeof headerV3Schema> & { library: LibraryExportV2 };
+export type SyncSnapshot = SyncSnapshotV1 | SyncSnapshotV2 | SyncSnapshotV3;
 export const binaryCompare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;

@@ -5,7 +5,7 @@ import { parseDomain } from '../domain/errors';
 import { LIBRARY_LIMITS, utf8ByteLength } from '../domain/library';
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import type { LibraryExport } from '../backup/schema';
-import { parseExportV1 } from '../backup/schema';
+import { portableExport } from '../backup/schema';
 import { parseBackupText, serializeBackup } from '../backup/serialize';
 import { encodeCover } from '../adapters/indexeddb/cover-media';
 import type { CoverMedia } from '../media/cover';
@@ -32,7 +32,7 @@ export function createBackupService(repository: LibraryRepository,
       validateMediaCollection(snapshot.books, snapshot.coverMedia);
       assertPortableBudget(utf8ByteLength(JSON.stringify(snapshot.books)), snapshot.coverMedia);
       const coverMedia = await Promise.all(snapshot.coverMedia.map(encodeCover));
-      const text = serializeBackup({ format: 'livro-a-livro', schemaVersion: 1, exportedAt,
+      const text = serializeBackup({ format: 'livro-a-livro', schemaVersion: 2, exportedAt,
         books: snapshot.books, preferences: snapshot.preferences, coverMedia });
       return { text, filename: `livro-a-livro-${exportedAt.slice(0, 10)}.json`,
         blob: new Blob([text], { type: 'application/json;charset=utf-8' }), version: snapshot.version };
@@ -53,7 +53,7 @@ export function createBackupService(repository: LibraryRepository,
       if (selected !== selection) throw new DomainError('InvalidBackup');
       if (utf8ByteLength(text) > LIBRARY_LIMITS.jsonBytes) throw new DomainError('ImportTooLarge');
       // Validate injected/worker result again and clone; callers never receive mutable data.
-      const data = parseExportV1(await parse(text));
+      const data = portableExport(await parse(text));
       const coverMedia = await prepareBackupMedia(data);
       const current = await repository.readAll();
       if (selected !== selection) throw new DomainError('InvalidBackup');

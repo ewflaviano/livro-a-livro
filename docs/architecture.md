@@ -18,7 +18,7 @@ A orientação vigente inclui Drive opcional e experimentos desde a arquitetura 
 | Identidade | Sem conta para uso local; contrato de LOGIN persistente opcional e consentimento Drive em ações separadas | Vínculo técnico sem perfil; implantação/gates registrados no plano de paridade |
 | Fonte de verdade | IndexedDB; React mantém apenas projeções e rascunhos | Sucesso de escrita somente depois do commit local |
 | Fronteiras | Domínio puro → serviços → portas; adaptadores no ponto de composição | UI não conhece IndexedDB, JSON bruto nem respostas da Open Library |
-| Dados portáveis | `LibraryExport`, `schemaVersion: 1`, validado com Zod | Exportar e restaurar todos os anos sem rede é critério de release |
+| Dados portáveis | `LibraryExport` V2 para novos arquivos; leitura V1/V2, validada com Zod | Exportar e restaurar todos os anos sem rede é critério de release |
 | Atualização concorrente | Revisão local e geração verificadas na transação | Uma aba antiga não sobrescreve outra nem desfaz importação |
 | Estatísticas | Livros, páginas informadas e autores distintos, apenas de Lidos no ano | Filtros visuais não alteram os números |
 | Busca | Botão/Enter explícito; cancelamento, deduplicação e cache limitado | Digitar não transmite consulta |
@@ -210,10 +210,10 @@ type Book = {
 
 type LibraryExport = {
   format: 'livro-a-livro';
-  schemaVersion: 1;
+  schemaVersion: 2;
   exportedAt: string;
   books: Book[];
-  preferences: { shelfYear: number | null; mode: 'grid' | 'list'; filter: ReadingStatus | 'all' };
+  preferences: { shelfYear: number | null; filter: ReadingStatus | 'all' };
 };
 ```
 
@@ -249,7 +249,7 @@ Ano vazio mostra 0 livros; se há lidos e nenhuma página/autoria informada, usa
 
 Os metadados V1 contêm `generation`, `revision`, `recordVersion`, `bookCount` e `serializedBytes` (array JSON em UTF-8, incluindo colchetes/vírgulas e excluindo o envelope reservado). Escritas individuais calculam deltas na transação; substituições validam e calculam o total antes dela. A chave externa de `books` é o UUID em minúsculas; o valor preserva a grafia original do ID. Isso mantém a identidade sem distinguir caixa e permite restaurar os valores originais. Ao abrir, livros, chaves e metadados são validados; corrupção impede expor um repositório gravável, sem reparo ou limpeza automática.
 
-Preferências usam `shelfYear: null` até haver escolha/contexto, `mode: 'grid'`, `filter: 'all'` e `lastExport: null`. `lastExport` agrupa instante do download iniciado e revisão exportada. `updatePreferences` mescla somente os campos recebidos numa transação própria, preservando alterações concorrentes em outros campos; o último commit vence quando duas abas alteram o mesmo campo. Preferências não incrementam revisão da biblioteca; `replace` preserva-as quando omitidas e substitui as portáveis, limpando `lastExport`, quando fornecidas.
+Preferências usam `shelfYear: null` até haver escolha/contexto, `mode: 'grid'`, `filter: 'all'` e `lastExport: null`. `lastExport` agrupa instante do download iniciado e revisão exportada. `updatePreferences` mescla somente os campos recebidos numa transação própria, preservando alterações concorrentes em outros campos; o último commit vence quando duas abas alteram o mesmo campo. Ano e filtro incrementam a revisão e o outbox quando mudam; modo Grade/Lista fica no IndexedDB local sem revisão, outbox ou aviso de conteúdo ao sync. O modo avisa outras abas por um evento local sem valor no payload e é relido no foco. `replace` preserva o modo atual dentro da própria transação, inclusive se ele mudar após uma prévia; substitui apenas ano/filtro portáteis e limpa `lastExport` quando fornecidos.
 
 A criação V1 é a única migração de produção existente. Upgrades futuros devem acrescentar passos explícitos em `migrations.ts`; falhas abortam integralmente. Uma abertura bloqueada falha com `StorageUnavailable` e evento `blocked`; sua requisição pendente será abortada quando puder prosseguir, impedindo migração tardia depois de o chamador receber erro. Nunca há downgrade nem exclusão automática. `syncState`, `syncOutbox`, `experimentState` e `searchCache` usam estruturas isoladas. A etapa de experimentos usa `experimentState` apenas para consentimentos, seed local e atribuições; não entra no backup, no Drive ou na API. O índice de cache é `byAccess` sobre `lastAccessedAt`.
 
@@ -311,7 +311,7 @@ Não usar salvamento otimista para afirmar persistência. Não manter um efeito 
 
 ### Abrir estante e livro
 
-**Implementado na issue #5:** a composição abre o adaptador IndexedDB e oferece um serviço de projeção local à interface. A estante reutiliza as funções puras de ano/ordenação/estatísticas; as rotas Lendo e Quero ler mantêm o mesmo ano e as métricas dos Lidos. Inicialização e falha não exibem uma estante vazia antecipadamente. Revisões publicadas pelo repositório (incluindo observação por foco) recarregam um snapshot consistente com preferências; respostas antigas são descartadas. Modo, ano e filtro são gravados por patches serializados, sem alterar revisão ou sobrescrever livros/histórico de exportação. Preferências são compartilhadas no dispositivo: uma reconsulta pode incorporar as gravadas por outra aba; interações locais em curso têm prioridade sobre a leitura iniciada antes delas. Falhas dessas preferências recebem aviso, sem sucesso fictício de persistência. Retorno do livro preserva contexto e posição em memória nesta sessão. Nesta etapa todas as capas são fallbacks tipográficos locais; carregamento externo/cache pertence à integração Open Library (#7).
+**Implementado na issue #5:** a composição abre o adaptador IndexedDB e oferece um serviço de projeção local à interface. A estante reutiliza as funções puras de ano/ordenação/estatísticas; as rotas Lendo e Quero ler mantêm o mesmo ano e as métricas dos Lidos. Inicialização e falha não exibem uma estante vazia antecipadamente. Revisões publicadas pelo repositório (incluindo observação por foco) recarregam um snapshot consistente com preferências; respostas antigas são descartadas. Modo, ano e filtro são gravados por patches serializados sem sobrescrever livros/histórico de exportação; desde a issue #92, ano/filtro avançam revisão e modo permanece local sem revisão. Preferências são compartilhadas no dispositivo: uma reconsulta pode incorporar as gravadas por outra aba; interações locais em curso têm prioridade sobre a leitura iniciada antes delas. Falhas dessas preferências recebem aviso, sem sucesso fictício de persistência. Retorno do livro preserva contexto e posição em memória nesta sessão. Nesta etapa todas as capas são fallbacks tipográficos locais; carregamento externo/cache pertence à integração Open Library (#7).
 
 1. Abrir banco e checar versão compatível; estado de carregamento não mostra biblioteca vazia prematuramente.
 2. Ler ano + versão numa transação consistente, calcular métricas a partir de todo o ano e aplicar filtro apenas à coleção visível.
@@ -332,21 +332,21 @@ Exportar: snapshot consistente → validação → serialização determinístic
 
 ## 7. Backup JSON, migrações e recuperação
 
-### Contrato portátil V1
+### Contrato portátil V2 (leitura V1 preservada)
 
-`LibraryExport` contém todos os anos, inclusive notas, avaliações, datas, UUIDs e referências de capa. **Ajuste na issue #3 para restauração integral:** inclui preferências portáveis (`shelfYear`, `mode`, `filter`). Não inclui cache, diagnósticos, geração/revisão local, credenciais ou campos derivados. O histórico `lastExport` é local: referencia uma geração/revisão do dispositivo e é zerado na restauração, evitando afirmar um download que não ocorreu ali. Ordem de `books` é por `id`, campos têm ordem definida pelo serializer, UTF-8 com JSON válido e newline final. Preservar ordem de autores e todos os valores semânticos; `exportedAt` naturalmente muda a cada exportação. O teste compara os livros por ID/campo, não os bytes dos dois envelopes.
+`LibraryExport` contém todos os anos, inclusive notas, avaliações, datas, UUIDs e referências de capa. **Contrato atual da issue #92:** novos arquivos V2 incluem apenas preferências portáteis (`shelfYear`, `filter`). Arquivos V1 com `mode` continuam aceitos, mas a restauração preserva o modo atual do dispositivo. Não inclui cache, diagnósticos, geração/revisão local, credenciais ou campos derivados. O histórico `lastExport` é local: referencia uma geração/revisão do dispositivo e é zerado na restauração, evitando afirmar um download que não ocorreu ali. Ordem de `books` é por `id`, campos têm ordem definida pelo serializer, UTF-8 com JSON válido e newline final. Preservar ordem de autores e todos os valores semânticos; `exportedAt` naturalmente muda a cada exportação. O teste compara os livros por ID/campo, não os bytes dos dois envelopes.
 
-**Implementado na issue #3:** `src/backup/` valida o envelope estrito V1, recusa outras versões explicitamente e serializa de forma determinística. `createBackupService` prepara um arquivo local, fornece prévia imutável com contagens/anos atuais e recebidos, e confirma uma única substituição condicionada à revisão. Selecionar outro arquivo ou cancelar invalida a prévia anterior. Livros e preferências são lidos/exportados consistentemente e restaurados na mesma transação. O serviço gera Blob/nome de arquivo. A issue #40 conecta a UI em Seus dados, que inicia download e registra esse início separadamente. A composição real injeta um Worker descartável para parse/migração/validação; o parser padrão síncrono continua disponível para testes de serviço. Não há upload.
+**Implementado nas issues #3 e #92:** `src/backup/` valida envelopes estritos V1/V2, recusa versões futuras e serializa de forma determinística. `createBackupService` prepara um arquivo local, fornece prévia imutável com contagens/anos atuais e recebidos, e confirma uma única substituição condicionada à revisão. Selecionar outro arquivo ou cancelar invalida a prévia anterior. Livros e preferências são lidos/exportados consistentemente e restaurados na mesma transação. O serviço gera Blob/nome de arquivo. A issue #40 conecta a UI em Seus dados, que inicia download e registra esse início separadamente. A composição real injeta um Worker descartável para parse/migração/validação; o parser padrão síncrono continua disponível para testes de serviço. Não há upload.
 
 Exemplo mínimo válido:
 
 ```json
 {
   "format": "livro-a-livro",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-09-26T15:00:00.000Z",
   "books": [],
-  "preferences": { "shelfYear": null, "mode": "grid", "filter": "all" }
+  "preferences": { "shelfYear": null, "filter": "all" }
 }
 ```
 
@@ -443,7 +443,7 @@ PWA é instalada na **mesma origem canônica** da biblioteca. Subdomínio, porta
 - Coordenar atualização entre abas: adiar ativação se alguma sessão conhecida tem rascunho ou operação ativa; se não for possível confirmar, orientar fechar as outras abas. Manter assets antigos e compatibilidade de leitura/escrita durante a transição; `controllerchange` sozinho não prova ativação do worker selecionado; somente uma tentativa desta aba, ainda segura, pode recarregá-la.
 - Falha de cache não apaga biblioteca e não impede uso online. Mensagens diferenciam “Salvo neste dispositivo” de “Disponível offline”. Não depender de push, Background Sync ou Periodic Background Sync para garantir sincronização: a API não recebe biblioteca e a sincronização retoma com a PWA viva. Ver seção 14.
 
-**Configurações/instalação — issues #45 e #76:** ano (inclusive automático), modo e filtro usam `updatePreferences` do serviço existente na estante; mudanças portáveis efetivas avançam a revisão da biblioteca desde a união V2. Ano automático usa `shelfYear: null`, distinto da seleção fixa do ano corrente. Falha mantém escolha da sessão, explica ausência de persistência e permite retry na estante. Configurações reúne a revisão do consentimento separado de Analytics, versão/build públicos e estado offline; atualização manual e instalação são ações secundárias. Versão do package e commit público de 12 caracteres são incorporados no build (fallback `local` sem Git); não são identificadores de instalação nem dados da pessoa.
+**Configurações/instalação — issues #45 e #76:** ano (inclusive automático), modo e filtro usam `updatePreferences` do serviço existente na estante; mudanças de ano/filtro avançam a revisão da biblioteca, enquanto modo é local ao dispositivo. Ano automático usa `shelfYear: null`, distinto da seleção fixa do ano corrente. Falha mantém escolha da sessão, explica ausência de persistência e permite retry na estante. Configurações reúne a revisão do consentimento separado de Analytics, versão/build públicos e estado offline; atualização manual e instalação são ações secundárias. Versão do package e commit público de 12 caracteres são incorporados no build (fallback `local` sem Git); não são identificadores de instalação nem dados da pessoa.
 
 O observador de instalação captura `beforeinstallprompt` desde o boot, consome cada evento uma vez, espera gesto explícito e distingue aceite/cancelamento/falha de instalação observada (`appinstalled`, display standalone ou marcador Safari). Nenhuma instalação é solicitada automaticamente. A identificação do navegador apenas seleciona a instrução em destaque: não promete o prompt. Detecção incerta mostra todas as instruções; o estado instalado dispensa instruções. Instruções seguem [Chrome Android](https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=pt-BR) e [Safari no iPhone](https://support.apple.com/pt-br/guide/iphone/iphea86e5236/ios); os rótulos variam por versão. O contrato do evento está em [MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/How_to/Trigger_install_prompt).
 

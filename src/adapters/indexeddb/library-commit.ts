@@ -1,4 +1,5 @@
 import { assertPortableBudget, referencedMedia, validateMediaCollection } from '../../backup/media';
+import { portablePreferencesSchema } from '../../backup/schema';
 import { coverMediaSchema } from '../../media/cover';
 import type { IDBPTransaction } from 'idb';
 import { z } from 'zod';
@@ -24,7 +25,7 @@ export function prepareLibraryChange(change: LibraryChange): LibraryChange {
     case 'replace': return { kind: 'replace', books: parseLibrary(change.books),
       coverMedia: validateMediaCollection(change.books, change.coverMedia ?? []),
       ...(change.preferences === undefined ? {} : { preferences: parseDomain(
-        preferencesSchema.omit({ lastExport: true }), change.preferences, 'InvalidBackup') }) };
+        portablePreferencesSchema, change.preferences, 'InvalidBackup') }) };
     default: throw new DomainError('InvalidLibrary');
   }
 }
@@ -47,7 +48,9 @@ export async function applyLibraryChange(tx: LibraryWriteTransaction, prepared: 
     await Promise.all((prepared.coverMedia ?? []).map(value => tx.objectStore('coverMedia').add(value, value.id.toLowerCase())));
     await Promise.all(prepared.books.map(async (book) => books.add(book, book.id.toLowerCase())));
     if (prepared.preferences) {
-      await tx.objectStore('preferences').put({ ...prepared.preferences, lastExport: null }, 'ui');
+      const preferences = tx.objectStore('preferences');
+      const current = parseDomain(preferencesSchema, await preferences.get('ui'), 'InvalidLibrary');
+      await preferences.put({ ...current, ...prepared.preferences, lastExport: null }, 'ui');
     }
   } else {
     const key = prepared.kind === 'put' ? prepared.book.id.toLowerCase() : prepared.id;
