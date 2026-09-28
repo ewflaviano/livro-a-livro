@@ -90,9 +90,27 @@ jobs:
           aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache'
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest'
 
+  api_changes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - id: detect
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]] || ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
   publish_api:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [api]
+    if: github.event_name == 'workflow_dispatch' || needs.api_changes.outputs.changed == 'true'
+    needs: [api, api_changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
