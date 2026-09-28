@@ -48,7 +48,7 @@ describe('manual books and private detail', () => {
     expect((titleField() as HTMLInputElement).value).toBe('Rascunho local');
     confirm.mockReturnValue(true);
     await userEvent.click(link);
-    expect(await screen.findByRole('heading', { name: destination === 'Mais' ? 'Mais' : 'Estante 2026', level: 1 })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: destination === 'Mais' ? 'Mais' : 'Estante', level: 1 })).toBeTruthy();
     expect((await repository.readAll()).books).toEqual([]);
   });
 
@@ -196,7 +196,7 @@ describe('manual books and private detail', () => {
     expect((await repository.readAll()).books).toHaveLength(1);
     await userEvent.click(remove);
     await userEvent.click(screen.getByRole('button', { name: 'Excluir livro' }));
-    await screen.findByRole('heading', { name: 'Estante 2026' });
+    await screen.findByRole('heading', { name: 'Estante' });
     expect((await repository.readAll()).books).toHaveLength(0);
   });
   it('rejects deletion when the library changes while confirmation is open', async () => {

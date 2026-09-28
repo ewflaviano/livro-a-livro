@@ -50,7 +50,7 @@ function Shell() {
       <PwaUpdateBanner />
       <AnalyticsBanner />
       <GlobalSyncAttention />
-      {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="notice-panel">Modo local de teste · Google e Drive simulados · somente dados descartáveis. A busca externa está desativada.</p>}
+      {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="local-test-notice">Teste local · Google e Drive simulados · use dados descartáveis</p>}
       <div className="app-layout">
         <aside className="sidebar">
           <nav aria-label="Navegação principal">
