@@ -17,7 +17,7 @@ O Livro a Livro é privado, local-first, sem conta obrigatória e sem componente
 5. **Local não significa cópia de segurança.** Comunicar onde os registros estão, o que foi salvo e o que uma exportação realmente confirma.
 6. **O básico independe de catálogo externo.** A entrada manual continua disponível quando não há rede, capa ou resultado de busca.
 
-Diagnóstico de erros usa escolha própria em Configurações, desligada por padrão e independente do Analytics. A interface mostra estado curto, ações Aceitar/Recusar/Rever e erro de armazenamento honesto. Mensagens de falha conservam a ação de tentar novamente; nenhum detalhe livre do erro vai ao diagnóstico.
+Visitas com Google Analytics e diagnóstico de erros compartilham uma escolha no aviso compacto. Aceitar liga os dois; recusar desliga os dois. Configurações mostra um estado curto e um acesso para rever a escolha no mesmo aviso. Falha de armazenamento mantém ambos desligados; nenhum detalhe livre do erro vai ao diagnóstico.
 
 O BioRotina é a referência funcional para conexão global, sincronização, resolução de divergências e escolhas iniciais de privacidade. A [correção de direção de 27 set 2026](paridade-biorotina.md) define a entrega sequencial dessas equivalências. Esta identidade usa linguagem editorial, serifas, tinta ameixa e marcador amarelo próprios. Os estados históricos abaixo não substituem essa decisão nem afirmam que toda a correção já foi entregue.
 
@@ -196,7 +196,7 @@ Margem segura de 8% nas laterais, 12% no topo/rodapé do Story e 8% no Quadrado.
 
 “Seus dados” tem acesso estável em Mais no mobile e na lateral do desktop. Mensagem base: **“Seus livros ficam neste dispositivo, neste navegador. Limpar os dados do navegador ou trocar de dispositivo pode remover sua estante. Exporte uma cópia JSON para guardar seus registros.”** Instalar a PWA não cria backup. A V1 não pede login e não envia notas/avaliações à Open Library. Consultas e carregamento de capas externas usam rede; explicar esse limite sem chamar o app inteiro de “100% offline” ou “sem qualquer envio de dados”.
 
-A página pública de Privacidade abre com resumo curto e índice de âncoras para Biblioteca, Drive, Prazos, Analytics, Busca/Capas, Infraestrutura e Contato. O HTML permanece legível sem JavaScript, com alvos de toque de 44 px no índice. O resumo não substitui prazos, consentimentos separados, condições de revogação nem informações sobre terceiros no texto completo.
+A página pública de Privacidade abre com resumo curto e índice de âncoras para Biblioteca, Drive, Prazos, Busca/Capas, Analytics, Diagnóstico de erros, Infraestrutura e Contato. O HTML permanece legível sem JavaScript, com alvos de toque de 44 px no índice. O resumo não substitui prazos, a escolha conjunta de visitas e erros, o consentimento separado do Drive, condições de revogação nem informações sobre terceiros no texto completo.
 
 | Situação | Mensagem | Próxima ação |
 | --- | --- | --- |
@@ -263,7 +263,7 @@ Consumo: importar `tokens.css`, aplicar tokens semânticos nos componentes e man
 }
 ```
 
-Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. O consentimento separado de Analytics da issue #63 usa aviso compacto após o cabeçalho, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Configurações. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
+Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. A escolha conjunta de visitas e erros da issue #97 usa aviso compacto suspenso na parte inferior, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Configurações. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
 
 Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semântica, comportamento de teclado, variante estreita e contraste revisados. Mudar uma cor primitiva requer conferir todos os papéis que a usam. A documentação é referência de projeto, não declaração de que armazenamento, busca, compartilhamento ou sincronização já existem.
 
@@ -296,7 +296,7 @@ Título e autoria são conteúdo adjacente, não dependem da imagem nem ficam de
 
 ### Configurações e instalação — issue #45
 
-Ano (incluindo atual automático), Grade/Lista e filtro são ajustados na estante e salvos pelo serviço. Falha informa que a sessão conserva a escolha e oferece tentar salvar na própria estante. Configurações reúne a revisão do consentimento de visitas, versão/build públicos e disponibilidade offline; atualização manual e instalação ficam em uma área secundária. Backup continua acessível por link.
+Ano (incluindo atual automático), Grade/Lista e filtro são ajustados na estante e salvos pelo serviço. Falha informa que a sessão conserva a escolha e oferece tentar salvar na própria estante. Configurações reúne a revisão da escolha conjunta de visitas e diagnóstico, versão/build públicos e disponibilidade offline; atualização manual e instalação ficam em uma área secundária. Backup continua acessível por link.
 
 Instalar prioriza o botão nativo apenas quando o evento está disponível. Sem ele, mostra primeiro a instrução pertinente ao navegador/dispositivo e guarda as demais em **Outro dispositivo**; se a identificação for incerta, mostra todas. Aceite do pedido não vira instalado até observação do navegador. Cancelamento e falha mantêm instruções; instalado dispensa instruções. A nota de backup é curta e o link para a cópia local permanece acessível em todos os estados.
 
