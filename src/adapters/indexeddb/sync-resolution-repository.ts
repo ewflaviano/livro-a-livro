@@ -4,7 +4,8 @@ import type { LibraryRepository } from '../../ports/library-repository';
 import type { PreparedSyncCommit, SyncResolutionRepository } from '../../ports/sync-resolution-repository';
 import { canonicalJson, headerSchema, sameBinding } from '../../sync/protocol';
 import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncError } from '../../sync/contracts';
-import { libraryHashV1, libraryHashV2, parseSnapshot } from '../../sync/snapshot';
+import { libraryHashV1, libraryHashV2, libraryHashV3, parseSnapshot, referencedExport } from '../../sync/snapshot';
+import type { LibraryExportV1 } from '../../backup/schema';
 import { openDatabase, type DatabaseOptions } from './database';
 import { encodeCover } from './cover-media';
 import { applyLibraryChange, prepareLibraryChange } from './library-commit';
@@ -26,7 +27,7 @@ export async function openSyncResolutionRepository(repository: LibraryRepository
       // Parsing, hashing and decoding precede the write transaction. No network or image work inside it.
       if (input.fence.expectedPending && !sameRevision(input.fence.expectedPending, input.fence.expectedRevision)) throw new SyncError('conflict');
       const recovery = await parseSnapshot(input.recovery);
-      if (recovery.protocolVersion !== 2) throw new SyncError('invalid');
+      if (recovery.protocolVersion !== 3) throw new SyncError('invalid');
       const decoded = await prepareBackupMedia(input.library);
       const encoded = await Promise.all(input.media.map(encodeCover));
       const sort = <T extends { id: string }>(values: T[]) => [...values].sort((a,b) => a.id.toLowerCase() < b.id.toLowerCase() ? -1 : a.id.toLowerCase() > b.id.toLowerCase() ? 1 : 0);
@@ -37,13 +38,19 @@ export async function openSyncResolutionRepository(repository: LibraryRepository
       const localMedia = await Promise.all(local.coverMedia.map(encodeCover));
       const content = (books: typeof local.books, preferences: typeof local.preferences, coverMedia: typeof localMedia) => canonicalJson({ books: sort(books), preferences, coverMedia: sort(coverMedia) });
       if (content(local.books, local.preferences, localMedia) !== content(recovery.library.books, recovery.library.preferences, recovery.library.coverMedia)) throw new SyncError('invalid');
-      const hash = await libraryHashV2(input.library);
+      const hash = await libraryHashV3(input.library);
       if (input.effect.kind === 'resolution') {
         const outgoing = await parseSnapshot(input.effect.snapshot);
-        if (outgoing.protocolVersion !== 2 || outgoing.hash !== hash || canonicalJson(outgoing.library) !== canonicalJson(input.library)) throw new SyncError('invalid');
+        if (outgoing.protocolVersion !== 3 || outgoing.hash !== hash || canonicalJson(outgoing.library) !== canonicalJson(input.library)) throw new SyncError('invalid');
       } else {
         const head = headerSchema.parse(input.effect.head);
-        if (input.effect.comparisonHashV2 !== hash || head.hash !== await (head.protocolVersion === 1 ? libraryHashV1 : libraryHashV2)(input.library)) throw new SyncError('invalid');
+        const verifiedWire = await parseSnapshot({ ...head, library: input.effect.wireLibrary });
+        const wire = verifiedWire.library;
+        if (input.effect.comparisonHashV3 !== hash || canonicalJson(referencedExport(wire)) !== canonicalJson(input.library) ||
+          (head.protocolVersion === 3 ? wire.schemaVersion !== 2 || head.hash !== await libraryHashV3(wire) :
+            wire.schemaVersion !== 1 || head.hash !== await (head.protocolVersion === 1 ? libraryHashV1(wire as LibraryExportV1) : libraryHashV2(wire as LibraryExportV1)))) throw new SyncError('invalid');
+        if (wire.schemaVersion === 1 && input.effect.comparisonHashV2 !== await libraryHashV2(wire)) throw new SyncError('invalid');
+        if (wire.schemaVersion === 2 && input.effect.comparisonHashV2) throw new SyncError('invalid');
       }
       const generation = crypto.randomUUID();
       assertReady();
@@ -67,7 +74,7 @@ export async function openSyncResolutionRepository(repository: LibraryRepository
           await state.put(syncStateSchema.parse({ ...control, binding: effect.binding, base: null, attempts: 0, nextAttempt: 0 }), 'control');
         } else {
           await outbox.delete('operation'); await outbox.delete('pending');
-          await state.put(syncStateSchema.parse({ ...control, binding: effect.binding, base: { snapshotId: effect.head.snapshotId, hash: effect.head.hash, protocolVersion: effect.head.protocolVersion, comparisonHashV2: effect.comparisonHashV2 }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }), 'control');
+          await state.put(syncStateSchema.parse({ ...control, binding: effect.binding, base: { snapshotId: effect.head.snapshotId, hash: effect.head.hash, protocolVersion: effect.head.protocolVersion, ...(effect.comparisonHashV2 ? { comparisonHashV2: effect.comparisonHashV2 } : {}), comparisonHashV3: effect.comparisonHashV3 }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }), 'control');
         }
         assertReady();
         await tx.done;

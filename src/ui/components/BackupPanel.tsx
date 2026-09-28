@@ -137,7 +137,7 @@ export function BackupPanel() {
         <h3>Conferir restauração</h3>
         <p>No arquivo: {bookCount(preview.incoming.count)}. Anos: {years(preview.incoming.years)}.</p>
         <p>Neste dispositivo: {bookCount(preview.current.count)}. Anos: {years(preview.current.years)}.</p>
-        <p>Todos os livros, notas, avaliações, capas e preferências atuais serão substituídos. Você pode exportar a biblioteca atual antes de continuar.</p>
+        <p>Todos os livros, notas, avaliações, capas, ano e filtro da estante serão substituídos. Você pode exportar a biblioteca atual antes de continuar.</p>
         <div className="form-actions"><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => void exportCurrent()}>Exportar biblioteca atual</button>
           <button className="button button-danger" disabled={Boolean(busy)} onClick={() => setConfirm(true)}>Substituir por {bookCount(preview.incoming.count)}</button></div>
       </>}
@@ -147,7 +147,7 @@ export function BackupPanel() {
     {error && <p role="alert" className="form-error">{error}</p>}
     {confirm && preview && <ConfirmDialog title="Substituir toda a biblioteca?" confirmLabel={`Substituir por ${bookCount(preview.incoming.count)}`}
       busy={busy === 'restore'} onCancel={() => setConfirm(false)} onConfirm={() => void restore()}>
-      <p>A biblioteca atual ({bookCount(preview.current.count)}) será substituída pelo arquivo ({bookCount(preview.incoming.count)}), de todos os anos informados. Esta ação também substitui notas, avaliações, capas e preferências.</p>
+      <p>A biblioteca atual ({bookCount(preview.current.count)}) será substituída pelo arquivo ({bookCount(preview.incoming.count)}), de todos os anos informados. Esta ação também substitui notas, avaliações, capas, ano e filtro da estante.</p>
       <p>Exporte a biblioteca atual antes de confirmar se quiser guardar uma cópia.</p>
     </ConfirmDialog>}
   </section>;

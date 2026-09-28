@@ -12,6 +12,7 @@ import { openLibraryRepository } from '../../adapters/indexeddb/library-reposito
 import type { LibraryDatabase } from '../../adapters/indexeddb/schema';
 import { createShelfService } from '../../services/shelf-service';
 import { AppRoutes } from '../../app/router';
+import { downloadLibrary } from './DataPage';
 import { getPwaState } from '../../pwa/register';
 import fixture from '../../../test/fixtures/backups/v1.json';
 import { encodedCover, syntheticCover, stubImageDecoder } from '../../../test/fixtures/covers/helpers';
@@ -48,7 +49,7 @@ afterEach(async () => {
 async function setup(withBook = false) {
   const name = crypto.randomUUID(); const repo = await openLibraryRepository({ name, channelFactory: null });
   const db = await openDB<LibraryDatabase>(name);
-  if (withBook) await repo.commit({ kind: 'replace', books: [parseBook(covers().books[0])], coverMedia: [syntheticCover()], preferences: fixture.preferences as { shelfYear: number; mode: 'list'; filter: 'all' } }, await repo.readRevision());
+  if (withBook) await repo.commit({ kind: 'replace', books: [parseBook(covers().books[0])], coverMedia: [syntheticCover()], preferences: { shelfYear: fixture.preferences.shelfYear, filter: 'read' } }, await repo.readRevision());
   const service = createShelfService(repo);
   opened.push({ name, close: () => { service.close(); db.close(); } });
   const view = render(<MemoryRouter initialEntries={['/dados']}><AppRoutes openService={async () => service} /></MemoryRouter>);
@@ -71,6 +72,12 @@ async function confirm(count = 1) {
 }
 
 describe('independent local backup interface', () => {
+  it('downloads a preserved V1 recovery as V2 without its old display mode', async () => {
+    downloadLibrary(fixture as import('../../backup/schema').LibraryExportV1, 'recuperacao');
+    const data = JSON.parse(await downloaded[0].text());
+    expect(data).toMatchObject({ schemaVersion: 2, preferences: { shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter } });
+    expect(data.preferences).not.toHaveProperty('mode');
+  });
   it('shows backup actions first and reveals the file picker on request', async () => {
     await setup();
     expect(screen.queryByLabelText('Importar JSON')).toBeNull();
@@ -108,7 +115,7 @@ describe('independent local backup interface', () => {
     await confirm();
     await screen.findByText('1 livro importado neste dispositivo.');
     expect((await target.repo.readAll()).books).toEqual(covers().books);
-    expect(await target.repo.readPreferences()).toMatchObject(fixture.preferences);
+    expect(await target.repo.readPreferences()).toMatchObject({ shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter, mode: 'grid' });
     expect(await (await target.repo.readCover(encodedCover().id))!.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
     expect(target.service.getSnapshot()).toMatchObject({ status: 'ready', snapshot: { books: covers().books } });
     expect(document.activeElement).toBe(screen.getByLabelText('Importar JSON'));

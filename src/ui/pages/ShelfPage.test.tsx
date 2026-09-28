@@ -239,10 +239,10 @@ describe('annual shelf with the real IndexedDB adapter', () => {
   it('updates after a local commit and restores imported preferences with the library', async () => {
     const { repository } = await setup();
     await act(async () => { await repository.commit({ kind: 'replace', books: [book('Restaurado', { status: 'read', shelfYear: 2025 })],
-      preferences: { shelfYear: 2025, filter: 'read', mode: 'list' } }, await repository.readRevision()); });
+      preferences: { shelfYear: 2025, filter: 'read' } }, await repository.readRevision()); });
     expect(await screen.findByRole('heading', { name: 'Restaurado' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Estante' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Ver em grade' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Ver em lista' })).toBeTruthy();
     expect(screen.getByRole('definition', { name: 'Páginas não informadas' }).textContent).toBe('—');
     expect(screen.getByRole('definition', { name: 'Autoria não informada' }).textContent).toBe('—');
     expect(within(screen.getByRole('list', { name: /Livros da estante/ })).getByText('Autoria não informada')).toBeTruthy();

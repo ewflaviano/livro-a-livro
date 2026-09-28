@@ -29,7 +29,9 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   let channel: RevisionChannel | undefined;
   let closed = false;
   let observed: LocalRevision | undefined;
+  let observedMode: 'grid' | 'list' | undefined;
   const listeners = new Set<(version: LocalRevision) => void>();
+  const localPreferenceListeners = new Set<() => void>();
   const focusTarget = options.focusTarget === undefined
     ? (typeof window === 'undefined' ? null : window) : options.focusTarget;
 
@@ -61,6 +63,13 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       try { listener(versionOf(version)); } catch { /* Persistence is already confirmed. */ }
     }
   }
+  function notifyLocalPreferences(mode: 'grid' | 'list') {
+    if (closed || observedMode === mode) return;
+    observedMode = mode;
+    for (const listener of localPreferenceListeners) {
+      try { listener(); } catch { /* Persistence is already confirmed. */ }
+    }
+  }
 
   const repository: LibraryRepository = {
     readBackupSnapshot: () => transaction(['books', 'meta', 'preferences', 'coverMedia'], 'readonly', async (tx) => {
@@ -71,8 +80,8 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       const books = parseLibrary(values);
       const meta = parseMetadata(rawMeta);
       if (meta.bookCount !== books.length || meta.serializedBytes !== bytes(books)) throw new DomainError('InvalidLibrary');
-      const { shelfYear, mode, filter } = parseDomain(preferencesSchema, rawPreferences, 'InvalidLibrary');
-      return { books, version: versionOf(meta), preferences: { shelfYear, mode, filter },
+      const { shelfYear, filter } = parseDomain(preferencesSchema, rawPreferences, 'InvalidLibrary');
+      return { books, version: versionOf(meta), preferences: { shelfYear, filter },
         coverMedia: referencedMedia(books, media.map(value => parseDomain(coverMediaSchema, value, 'InvalidLibrary'))) };
     }),
     readAll: () => transaction(['books', 'meta'], 'readonly', async (tx) => {
@@ -143,7 +152,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
         const preferences = parseDomain(preferencesSchema, { ...previous,
           ...Object.fromEntries(Object.entries(validated).filter(([, value]) => value !== undefined)),
         }, 'InvalidLibrary');
-        if (previous.shelfYear !== preferences.shelfYear || previous.mode !== preferences.mode || previous.filter !== preferences.filter) {
+        if (previous.shelfYear !== preferences.shelfYear || previous.filter !== preferences.filter) {
           const meta = parseMetadata(await tx.objectStore('meta').get('library'));
           if (meta.revision === Number.MAX_SAFE_INTEGER) throw new DomainError('UnsupportedVersion');
           const next = { ...meta, revision: meta.revision + 1 };
@@ -155,13 +164,26 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
         return preferences;
       });
       if (changed) { notify(changed); try { channel?.postMessage({ type: 'revision-changed' }); } catch { /* Advisory. */ } }
+      else if (validated.mode !== undefined) {
+        notifyLocalPreferences(result.mode);
+        try { channel?.postMessage({ type: 'local-preferences-changed' }); } catch { /* Focus will recheck. */ }
+      }
+      if (changed) observedMode = result.mode;
       return result;
     },
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async checkForChanges() { notify(await repository.readRevision()); },
+    subscribeLocalPreferences(listener) { localPreferenceListeners.add(listener); return () => { localPreferenceListeners.delete(listener); }; },
+    async checkForChanges() {
+      const [revision, mode] = await transaction(['meta', 'preferences'], 'readonly', async tx => {
+        const [meta, preferences] = await Promise.all([tx.objectStore('meta').get('library'), tx.objectStore('preferences').get('ui')]);
+        return [versionOf(parseMetadata(meta)), parseDomain(preferencesSchema, preferences, 'InvalidLibrary').mode] as const;
+      });
+      notify(revision); notifyLocalPreferences(mode);
+    },
     close() {
       closed = true;
       listeners.clear();
+      localPreferenceListeners.clear();
       focusTarget?.removeEventListener('focus', observe);
       if (channel) {
         channel.onmessage = null;
@@ -180,12 +202,13 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   try {
     // Validate the existing library once before exposing a writable repository.
     observed = (await repository.readAll()).version;
+    observedMode = (await repository.readPreferences()).mode;
     const factory = options.channelFactory === undefined
       ? (typeof BroadcastChannel === 'undefined' ? null : (name: string) => new BroadcastChannel(name))
       : options.channelFactory;
     try { channel = factory?.(`${options.name ?? DATABASE_NAME}:revision`); } catch { /* Optional capability. */ }
     if (channel) channel.onmessage = (event) => {
-      if (event.data?.type === 'revision-changed') observe();
+      if (event.data?.type === 'revision-changed' || event.data?.type === 'local-preferences-changed') observe();
     };
     focusTarget?.addEventListener('focus', observe);
     return repository;

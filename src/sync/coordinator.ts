@@ -1,4 +1,4 @@
-import { canonicalJson, headerOf, sameHeader, type SyncSnapshotV2 } from './protocol';
+import { canonicalJson, headerOf, sameHeader, type SyncSnapshotV3 } from './protocol';
 import type { SyncCommitFence, SyncResolutionRepository } from '../ports/sync-resolution-repository';
 import { prepareMerge, materializeUnion, unionPolicy, type PreparedMerge } from './merge';
 import { utf8ByteLength } from '../domain/library';
@@ -6,9 +6,9 @@ import { assertPortableBudget, prepareBackupMedia, validateMediaCollection } fro
 import type { LibraryRepository, LocalRevision } from '../ports/library-repository';
 import { sameRevision } from '../adapters/indexeddb/schema';
 import { SyncError, sameBinding, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SyncView, type AuthorizationIntent, type LoginSession } from './contracts';
-import { libraryHashV2, parseSnapshot, referencedExport, remoteHeads } from './snapshot';
+import { libraryHashV2, libraryHashV3, parseSnapshot, referencedExport, remoteHeads } from './snapshot';
 import type { SyncStore } from './outbox';
-import type { LibraryExport } from '../backup/schema';
+import type { LibraryExport, LibraryExportV2 } from '../backup/schema';
 import { encodeCover } from '../adapters/indexeddb/cover-media';
 
 type Options = { resolutionRepository: SyncResolutionRepository; repository: LibraryRepository; store: SyncStore; auth: AuthClient; drive: (binding: Binding) => DriveClient;
@@ -35,17 +35,17 @@ export function createSyncCoordinator(options: Options) {
   let firstEdit = 0; let lastPoll = 0;
   const publish = (next: SyncView) => { if (!closed) { view = { ...next, login: next.login ?? view.login, drivePromptDismissed: next.drivePromptDismissed ?? view.drivePromptDismissed, logoutUnconfirmed: next.logoutUnconfirmed ?? view.logoutUnconfirmed, revocationPending: next.revocationPending ?? view.revocationPending }; listeners.forEach(listener => listener()); } };
   const guard = async () => { const current = await store.read(); if (!current.enabled || current.authorization || closed || controller?.signal.aborted) throw new SyncError('cancelled'); await store.assertLease(owner); };
-  async function library(): Promise<{ library: LibraryExport; version: LocalRevision }> {
+  async function library(): Promise<{ library: LibraryExportV2; version: LocalRevision }> {
     const snapshot = await repository.readBackupSnapshot();
     validateMediaCollection(snapshot.books, snapshot.coverMedia);
     assertPortableBudget(utf8ByteLength(JSON.stringify(snapshot.books)), snapshot.coverMedia);
-    return { version: snapshot.version, library: { format: 'livro-a-livro', schemaVersion: 1, exportedAt: new Date().toISOString(),
+    return { version: snapshot.version, library: { format: 'livro-a-livro', schemaVersion: 2, exportedAt: new Date().toISOString(),
       books: snapshot.books, preferences: snapshot.preferences, coverMedia: await Promise.all(snapshot.coverMedia.map(encodeCover)) } };
   }
-  async function snapshot(data: LibraryExport, parent: string | null, resolved: string[] = []): Promise<SyncSnapshotV2> {
+  async function snapshot(data: LibraryExport, parent: string | null, resolved: string[] = []): Promise<SyncSnapshotV3> {
     const portable = referencedExport(data);
-    return { format: 'livro-a-livro-sync', protocolVersion: 2, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(),
-      parentSnapshotId: parent, resolvedSnapshotIds: resolved, hash: await libraryHashV2(portable), createdAt: new Date().toISOString(), library: portable };
+    return { format: 'livro-a-livro-sync', protocolVersion: 3, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(),
+      parentSnapshotId: parent, resolvedSnapshotIds: resolved, hash: await libraryHashV3(portable), createdAt: new Date().toISOString(), library: portable };
   }
   function ancestor(files: DriveFile[], head: string, base: string) {
     const map = new Map(files.map(file => [file.header.snapshotId.toLowerCase(), file.header])); const seen = new Set<string>(); const queue = [head.toLowerCase()];
@@ -72,11 +72,13 @@ export function createSyncCoordinator(options: Options) {
   }
   async function receive(binding: Binding, heads: DriveFile[], incoming: SyncSnapshot, local: Awaited<ReturnType<typeof library>>, context: Awaited<ReturnType<SyncStore['context']>>, drive: DriveClient, signal: AbortSignal) {
     publish({ status: 'receiving' });
-    const media = await prepareBackupMedia(incoming.library); const recovery = await snapshot(local.library, context.record.base?.snapshotId ?? null);
-    const comparisonHashV2 = await libraryHashV2(incoming.library);
+    const portable = referencedExport(incoming.library);
+    const media = await prepareBackupMedia(portable); const recovery = await snapshot(local.library, context.record.base?.snapshotId ?? null);
+    const comparisonHashV3 = await libraryHashV3(incoming.library);
+    const comparisonHashV2 = incoming.library.schemaVersion === 1 ? await libraryHashV2(incoming.library) : undefined;
     await revalidate(binding, heads, drive, signal);
-    const version = await options.resolutionRepository.commit({ fence: fence(context), library: incoming.library, media, recovery,
-      effect: { kind: 'receive', binding, head: headerOf(incoming), comparisonHashV2 } }, () => ready(signal));
+    const version = await options.resolutionRepository.commit({ fence: fence(context), library: portable, media, recovery,
+      effect: { kind: 'receive', binding, head: headerOf(incoming), wireLibrary: incoming.library, comparisonHashV3, comparisonHashV2 } }, () => ready(signal));
     conflict = null; preview = null;
     const current = await repository.readRevision();
     await guard();
@@ -93,10 +95,10 @@ export function createSyncCoordinator(options: Options) {
     conflict = { binding, heads, version, accountChanged };
     publish({ status: 'conflict', localCount, remote, accountChanged });
   }
-  async function accepted(head: DriveFile, version: LocalRevision, comparisonHashV2: string) {
+  async function accepted(head: DriveFile, version: LocalRevision, comparisonHashV3: string, comparisonHashV2?: string) {
     await guard();
     conflict = null;
-    await store.update({ base: { snapshotId: head.header.snapshotId, hash: head.header.hash, protocolVersion: head.header.protocolVersion, comparisonHashV2 }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }, owner, false, version);
+    await store.update({ base: { snapshotId: head.header.snapshotId, hash: head.header.hash, protocolVersion: head.header.protocolVersion, ...(comparisonHashV2 ? { comparisonHashV2 } : {}), comparisonHashV3 }, attempts: 0, nextAttempt: 0, lastSyncedAt: new Date().toISOString() }, owner, false, version);
     const current = await repository.readRevision();
     await guard();
     publish(sameRevision(current, version) ? { status: 'synced', lastSyncedAt: new Date().toISOString() } : { status: 'pending' });
@@ -119,8 +121,10 @@ export function createSyncCoordinator(options: Options) {
       await showConflict(binding, confirmed, local.version); return;
     }
     const persisted = await download(drive, confirmed[0], signal);
-    if (await libraryHashV2(persisted.library) !== await libraryHashV2(operation.snapshot.library)) throw new SyncError('invalid');
-    await accepted(confirmed[0], operation.version, await libraryHashV2(operation.snapshot.library));
+    if (operation.snapshot.library.schemaVersion === 1
+      ? persisted.library.schemaVersion !== 1 || await libraryHashV2(persisted.library) !== await libraryHashV2(operation.snapshot.library)
+      : await libraryHashV3(persisted.library) !== await libraryHashV3(operation.snapshot.library)) throw new SyncError('invalid');
+    await accepted(confirmed[0], operation.version, await libraryHashV3(operation.snapshot.library), operation.snapshot.library.schemaVersion === 1 ? await libraryHashV2(operation.snapshot.library) : undefined);
   }
   let loginRequest: Promise<void> | null = null; let loginAgain = false;
   const signedIn = (login: LoginSession) => ({ status: 'signed-in' as const, signInAttemptId: login.signInAttemptId, connectionId: login.connectionId });
@@ -206,7 +210,8 @@ export function createSyncCoordinator(options: Options) {
       const baseFile = files.find(file => file.header.snapshotId === record.base!.snapshotId);
       if (!baseFile || baseFile.header.hash !== record.base.hash || baseFile.header.protocolVersion !== record.base.protocolVersion) throw new SyncError('invalid');
       baseContent = await download(drive, baseFile, signal);
-      if (record.base.comparisonHashV2 && record.base.comparisonHashV2 !== await libraryHashV2(baseContent.library)) throw new SyncError('invalid');
+      if (record.base.comparisonHashV2 && (baseContent.library.schemaVersion !== 1 || record.base.comparisonHashV2 !== await libraryHashV2(baseContent.library))) throw new SyncError('invalid');
+      if (record.base.comparisonHashV3 && record.base.comparisonHashV3 !== await libraryHashV3(baseContent.library)) throw new SyncError('invalid');
     }
     const operation = context.operation;
     if (operation) {
@@ -215,8 +220,10 @@ export function createSyncCoordinator(options: Options) {
       if (found) {
         if (!sameHeader(found.header, headerOf(operation.snapshot))) throw new SyncError('invalid');
         const content = await download(drive, found, signal);
-        if (await libraryHashV2(content.library) !== await libraryHashV2(operation.snapshot.library)) throw new SyncError('invalid');
-        if (heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(found, operation.version, await libraryHashV2(content.library)); return; }
+        if (operation.snapshot.library.schemaVersion === 1
+          ? content.library.schemaVersion !== 1 || await libraryHashV2(content.library) !== await libraryHashV2(operation.snapshot.library)
+          : await libraryHashV3(content.library) !== await libraryHashV3(operation.snapshot.library)) throw new SyncError('invalid');
+        if (heads.length === 1 && heads[0].header.snapshotId === found.header.snapshotId) { await accepted(found, operation.version, await libraryHashV3(content.library), content.library.schemaVersion === 1 ? await libraryHashV2(content.library) : undefined); return; }
         await showConflict(binding, heads, local.version); return;
       }
       const consumed = operation.snapshot.resolvedSnapshotIds;
@@ -226,7 +233,7 @@ export function createSyncCoordinator(options: Options) {
       await transfer(binding, drive, heads, local, signal); return;
     }
     if (heads.length > 1) { await showConflict(binding, heads, local.version); return; }
-    const hash = await libraryHashV2(local.library); const remote = heads[0];
+    const hash = await libraryHashV3(local.library); const remote = heads[0];
     if (!remote) {
       if (record.base) throw new SyncError('invalid');
       if (!record.binding) { await guard(); await store.update({ binding }, owner); }
@@ -234,17 +241,17 @@ export function createSyncCoordinator(options: Options) {
       else { await guard(); publish({ status: 'connected-empty' }); }
       return;
     }
-    const incoming = await download(drive, remote, signal); const remoteHash = await libraryHashV2(incoming.library);
+    const incoming = await download(drive, remote, signal); const remoteHash = await libraryHashV3(incoming.library);
     if (remoteHash === hash) {
       if (!record.binding) { await guard(); await store.update({ binding }, owner); }
-      await accepted(remote, local.version, remoteHash); return;
+      await accepted(remote, local.version, remoteHash, incoming.library.schemaVersion === 1 ? await libraryHashV2(incoming.library) : undefined); return;
     }
     const empty = !local.library.books.length && !record.base && !context.pending && local.version.revision === 0 &&
-      canonicalJson(local.library.preferences) === canonicalJson({ shelfYear: null, mode: 'grid', filter: 'all' });
+      canonicalJson(local.library.preferences) === canonicalJson({ shelfYear: null, filter: 'all' });
     if (empty && !options.hasDraft()) { await receive(binding, heads, incoming, local, context, drive, signal); return; }
     if (!record.base) { await showConflict(binding, heads, local.version); return; }
     if (remote.header.snapshotId === record.base.snapshotId) { await transfer(binding, drive, heads, local, signal); return; }
-    if (!baseContent || hash !== await libraryHashV2(baseContent.library) || !ancestor(files, remote.header.snapshotId, record.base.snapshotId) || options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
+    if (!baseContent || hash !== await libraryHashV3(baseContent.library) || !ancestor(files, remote.header.snapshotId, record.base.snapshotId) || options.hasDraft()) { await showConflict(binding, heads, local.version); return; }
     await receive(binding, heads, incoming, local, context, drive, signal);
   }
 
@@ -384,7 +391,7 @@ export function createSyncCoordinator(options: Options) {
       if (!conflict) throw new SyncError('conflict');
       const binding = await auth.session(); if (!sameBinding(conflict.binding, binding)) throw new SyncError('reconnect');
       const file = conflict.heads.find(head => head.header.snapshotId === id); if (!file) throw new SyncError('invalid');
-      return (await options.drive(binding).download(file, new AbortController().signal)).library;
+      return referencedExport((await download(options.drive(binding), file, new AbortController().signal)).library);
     },
     async localCopy() { return (await library()).library; },
     recoveryCopy: () => store.recovery(),
@@ -451,7 +458,7 @@ export function createSyncCoordinator(options: Options) {
           if (!base || base.header.hash !== context.record.base.hash || base.header.protocolVersion !== context.record.base.protocolVersion) throw new SyncError('invalid');
           await download(drive, base, signal);
         }
-        let data = local.library;
+        let data: LibraryExport = local.library;
         if (choice !== 'local') { const file = heads.find(head => head.header.snapshotId === choice); if (!file) throw new SyncError('invalid'); data = (await download(drive, file, signal)).library; }
         const media = await prepareBackupMedia(referencedExport(data)); const recovery = await snapshot(local.library, context.record.base?.snapshotId ?? null);
         const outgoing = await snapshot(data, heads[0]?.header.snapshotId ?? null, heads.map(head => head.header.snapshotId));

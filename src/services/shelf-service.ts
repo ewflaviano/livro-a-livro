@@ -35,17 +35,17 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
     const ticket = ++request;
     try {
       await preferenceQueue;
-      // One transaction includes books, revision and restored preferences.
-      const { books, version, preferences } = await repository.readBackupSnapshot();
+      const [{ books, version, preferences }, localPreferences] = await Promise.all([repository.readBackupSnapshot(), repository.readPreferences()]);
       if (ticket !== request || disposed) return;
       publish({ status: 'ready', snapshot: { books, version },
-        preferences: withOverlay(preferences), preferenceError: hasPreferenceError() });
+        preferences: withOverlay({ ...preferences, mode: localPreferences.mode }), preferenceError: hasPreferenceError() });
     } catch {
       if (ticket === request) publish({ status: 'error' });
     }
   }
 
   const unsubscribe = repository.subscribe(() => { void refresh(); });
+  const unsubscribeLocalPreferences = repository.subscribeLocalPreferences(() => { void refresh(); });
   return {
     books: createLibraryService(repository),
     backup: { ...backup, async confirmImport(preview: ImportPreview) {
@@ -90,7 +90,7 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
         void refresh();
       });
     },
-    close() { releasePreferenceHold?.(); releasePreferenceHold = undefined; backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },
+    close() { releasePreferenceHold?.(); releasePreferenceHold = undefined; backup.cancelImport(); disposed = true; ++request; unsubscribe(); unsubscribeLocalPreferences(); listeners.clear(); repository.close(); },
   };
 }
 

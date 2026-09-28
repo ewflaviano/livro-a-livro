@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { canonicalJson, sameHeader, headerSchema, SyncError, type AuthClient, type Binding, type DriveClient, type DriveFile, type SyncSnapshot, type SnapshotHeader } from './contracts';
 import { limitedJson, request } from './network';
 import { MAX_SYNC_BYTES, parseSnapshot, libraryHashV2, remoteHeads } from './snapshot';
+import type { LibraryExportV1 } from '../backup/schema';
 
 const origin = 'https://www.googleapis.com';
 const fileSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/u), size: z.string().regex(/^\d+$/u), appProperties: z.record(z.string(), z.string()) });
@@ -76,8 +77,8 @@ export function createDriveClient(auth: AuthClient, binding: Binding, fetcher: t
         if (!previous) { seen.set(key, { file }); continue; }
         if (!sameHeader(previous.file.header, file.header)) throw new SyncError('invalid');
         if (file.header.protocolVersion === 1) {
-          previous.digest ??= await libraryHashV2((await download(previous.file, signal)).library);
-          if (previous.digest !== await libraryHashV2((await download(file, signal)).library)) throw new SyncError('invalid');
+          previous.digest ??= await libraryHashV2((await download(previous.file, signal)).library as LibraryExportV1);
+          if (previous.digest !== await libraryHashV2((await download(file, signal)).library as LibraryExportV1)) throw new SyncError('invalid');
         }
       }
       return files;

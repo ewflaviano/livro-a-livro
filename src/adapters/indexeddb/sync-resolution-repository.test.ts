@@ -4,11 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { encodedCover, stubImageDecoder, syntheticCover } from '../../../test/fixtures/covers/helpers';
 import { createBook } from '../../domain/book';
 import { prepareBackupMedia } from '../../backup/media';
-import type { LibraryExport } from '../../backup/schema';
+import type { LibraryExportV2 } from '../../backup/schema';
 import type { PreparedSyncCommit } from '../../ports/sync-resolution-repository';
 import { defaultSyncRecord } from '../../sync/contracts';
-import { headerOf, type SyncSnapshotV2 } from '../../sync/protocol';
-import { libraryHashV2 } from '../../sync/snapshot';
+import { headerOf, type SyncSnapshotV3 } from '../../sync/protocol';
+import { libraryHashV3 } from '../../sync/snapshot';
 import { openSyncStore } from '../../sync/outbox';
 import { openLibraryRepository } from './library-repository';
 import { openSyncResolutionRepository } from './sync-resolution-repository';
@@ -18,7 +18,7 @@ const binding = { connectionId: 'synthetic-connection', generation: 1 };
 const close: (() => void)[] = [];
 beforeEach(stubImageDecoder);
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); close.splice(0).forEach(fn => fn()); });
-const snapshot = async (library: LibraryExport): Promise<SyncSnapshotV2> => ({ format: 'livro-a-livro-sync', protocolVersion: 2, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: null, resolvedSnapshotIds: [], createdAt: now, hash: await libraryHashV2(library), library });
+const snapshot = async (library: LibraryExportV2): Promise<SyncSnapshotV3> => ({ format: 'livro-a-livro-sync', protocolVersion: 3, snapshotId: crypto.randomUUID(), operationId: crypto.randomUUID(), parentSnapshotId: null, resolvedSnapshotIds: [], createdAt: now, hash: await libraryHashV3(library), library });
 async function setup(kind: 'resolution' | 'receive' = 'resolution') {
   const name = `sync-commit-${crypto.randomUUID()}`;
   const repository = await openLibraryRepository({ name, channelFactory: null, focusTarget: null });
@@ -28,10 +28,10 @@ async function setup(kind: 'resolution' | 'receive' = 'resolution') {
   await repository.commit({ kind: 'put', book, coverMedia: syntheticCover() }, await repository.readRevision());
   await store.write({ ...defaultSyncRecord, binding, enabled: true }); await store.lease('owner');
   const local = await repository.readBackupSnapshot();
-  const library: LibraryExport = { format: 'livro-a-livro', schemaVersion: 1, exportedAt: now, books: local.books, preferences: local.preferences, coverMedia: await Promise.all(local.coverMedia.map(encodeCover)) };
-  const recovery = await snapshot(library); const next = await snapshot({ ...library, books: [{ ...book, title: 'Sintético recebido' }], preferences: { shelfYear: 2025, mode: 'list', filter: 'read' } });
+  const library: LibraryExportV2 = { format: 'livro-a-livro', schemaVersion: 2, exportedAt: now, books: local.books, preferences: local.preferences, coverMedia: await Promise.all(local.coverMedia.map(encodeCover)) };
+  const recovery = await snapshot(library); const next = await snapshot({ ...library, books: [{ ...book, title: 'Sintético recebido' }], preferences: { shelfYear: 2025, filter: 'read' } });
   const input: PreparedSyncCommit = { fence: { expectedRevision: local.version, expectedAuthRevision: 0, expectedBinding: binding, expectedOperation: null, expectedPending: local.version, leaseOwner: 'owner' }, library: next.library, media: await prepareBackupMedia(next.library), recovery,
-    effect: kind === 'resolution' ? { kind, binding, snapshot: next } : { kind, binding, head: headerOf(next), comparisonHashV2: next.hash } };
+    effect: kind === 'resolution' ? { kind, binding, snapshot: next } : { kind, binding, head: headerOf(next), wireLibrary: next.library, comparisonHashV3: next.hash } };
   const capture = async () => ({ library: await repository.readBackupSnapshot(), control: await db.getAll('syncState'), outbox: await db.getAll('syncOutbox'), meta: await db.getAll('meta'), preferences: await repository.readPreferences() });
   return { input, adapter, repository, store, db, capture };
 }
@@ -41,7 +41,7 @@ it.each(['resolution','receive'] as const)('atomically commits result/recovery/%
   expect(await (await s.repository.readCover(encodedCover().id))!.bytes.arrayBuffer()).toEqual(await syntheticCover().bytes.arrayBuffer());
   expect((await s.store.recovery())?.library).toEqual(s.input.recovery.library);
   if (kind === 'resolution') { expect((await s.store.operation())?.version).toEqual(version); expect(await s.store.pending()).toEqual(version); expect((await s.store.read()).base).toBeNull(); }
-  else { expect(await s.store.operation()).toBeNull(); expect(await s.store.pending()).toBeNull(); expect((await s.store.read()).base?.comparisonHashV2).toBe(s.input.effect.kind === 'receive' && s.input.effect.comparisonHashV2); }
+  else { expect(await s.store.operation()).toBeNull(); expect(await s.store.pending()).toBeNull(); expect((await s.store.read()).base?.comparisonHashV3).toBe(s.input.effect.kind === 'receive' && s.input.effect.comparisonHashV3); }
 });
 for (const kind of ['resolution','receive'] as const) it.each(Array.from({length: kind === 'resolution' ? 10 : 11}, (_,i) => i))(`rolls back every store if write %i fails during ${kind}`, async failAt => {
   const s = await setup(kind); const before = await s.capture(); let writes = 0;
@@ -58,7 +58,7 @@ for (const kind of ['resolution','receive'] as const) it.each(Array.from({length
 it.each(['revision','preferences','auth','binding','operation','pending','lease','draft'] as const)('refuses stale %s without replacing any captured data', async change => {
   const s = await setup();
   if (change === 'revision') await s.repository.commit({ kind: 'delete', id: s.input.library.books[0].id }, await s.repository.readRevision());
-  if (change === 'preferences') await s.repository.updatePreferences({ mode: 'list' });
+  if (change === 'preferences') await s.repository.updatePreferences({ filter: 'reading' });
   if (change === 'auth') await s.store.update({ enabled: false }, undefined, true);
   if (change === 'binding') await s.store.update({ binding: { ...binding, generation: 2 } });
   if (change === 'operation') await s.store.saveOperation({ binding, version: s.input.fence.expectedRevision, snapshot: await snapshot(s.input.recovery.library) });

@@ -97,10 +97,19 @@ describe('portable V1 backup', () => {
     expect((await b.repo.readAll()).books).toEqual([]);
     await b.service.confirmImport(preview);
     expect((await b.repo.readAll()).books).toEqual(fixture.books);
-    expect(await b.repo.readPreferences()).toEqual({ ...fixture.preferences, lastExport: null });
+    expect(await b.repo.readPreferences()).toEqual({ shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter, mode: 'grid', lastExport: null });
     expect((await b.service.exportBackup(fixture.exportedAt)).text).toBe(exported.text);
     expect(exported.filename).toBe('livro-a-livro-2026-09-26.json');
     expect(await exported.blob.text()).toBe(exported.text);
+    expect(parseBackupText(exported.text)).toMatchObject({ schemaVersion: 2, preferences: { shelfYear: 2025, filter: 'read' } });
+    expect(exported.text).not.toContain('"mode"');
+  });
+  it('keeps current display mode when a V1 backup is confirmed after a mode change', async () => {
+    const { repo, service } = await setup();
+    const preview = await service.prepareImport(file());
+    await repo.updatePreferences({ mode: 'list' });
+    await service.confirmImport(preview);
+    expect(await repo.readPreferences()).toMatchObject({ mode: 'list', shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter });
   });
 
   it('serializes deterministically regardless of key and book input order', () => {
@@ -129,7 +138,7 @@ describe('portable V1 backup', () => {
     expect(await repo.readBackupSnapshot()).toEqual(before);
   });
 
-  it.each([0, 2, 100])('refuses unsupported version %s explicitly', version => {
+  it.each([0, 3, 100])('refuses unsupported version %s explicitly', version => {
     expect(() => parseBackupText(JSON.stringify({ ...fixture, schemaVersion: version }))).toThrow('UnsupportedVersion');
   });
 
