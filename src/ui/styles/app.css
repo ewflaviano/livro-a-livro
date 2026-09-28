@@ -54,6 +54,9 @@ h2 { font-size: var(--text-h2); }
 .segmented-control button[aria-pressed="true"] { background: var(--color-selected-bg); color: var(--color-selected-text); border-color: var(--color-action); font-weight: var(--weight-semibold); }
 .segmented-control button:hover { background: var(--color-action-soft); }
 .book-collection { margin: 0; padding: 0; list-style: none; }
+.shelf-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-3); margin-block: var(--space-6); }
+.shelf-pagination .button { padding-inline: var(--space-3); }
+.shelf-pagination span { color: var(--color-text-secondary); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
 .book-collection--grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: var(--space-8) var(--space-5); }
 .book-entry { display: block; color: var(--color-text); text-decoration: none; min-width: 0; }
 .book-entry:hover { color: var(--color-text); }
