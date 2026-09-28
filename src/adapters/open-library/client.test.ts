@@ -13,6 +13,20 @@ const make = (fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(resp
 });
 afterEach(() => vi.useRealTimers());
 describe('explicit Open Library lookup', () => {
+  it('loads the selected edition and prefers its publication year, ISBN and pages', async () => {
+    const search = { ...response, docs: [{ ...response.docs[0], editions: { docs: [{ key: '/books/OL456M' }] } }] };
+    const edition = { key: '/books/OL456M', works: [{ key: '/works/OL123W' }], title: 'Edição brasileira',
+      publish_date: '15 Oct 2007', number_of_pages: 231, isbn_13: ['9780306406157'], covers: [321] };
+    const fetch = vi.fn((url: URL) => Promise.resolve(new Response(JSON.stringify(url.pathname.startsWith('/books/') ? edition : search))));
+    const { client } = make(fetch);
+    const candidate = (await client.search('livro', 1, new AbortController().signal)).candidates[0];
+    const details = await client.details(candidate, new AbortController().signal);
+    expect(fetch.mock.calls[1][0].pathname).toBe('/books/OL456M.json');
+    expect(candidateDraft(details)).toMatchObject({ title: 'Edição brasileira', publicationYear: 2007, pageCount: 231,
+      isbn: '9780306406157', source: { editionId: 'OL456M' }, cover: { coverId: 321 } });
+    await client.details(candidate, new AbortController().signal);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it('uses only a normalized query, fixed fields and no credentials/referrer', async () => {
     const { client, fetch, store } = make();
     expect(fetch).not.toHaveBeenCalled();
@@ -20,11 +34,11 @@ describe('explicit Open Library lookup', () => {
     const [url, options] = fetch.mock.calls[0];
     expect(url.origin).toBe('https://openlibrary.org'); expect(url.pathname).toBe('/search.json');
     expect(url.searchParams.get('q')).toBe('um livro'); expect(url.searchParams.get('limit')).toBe('20');
-    expect(url.searchParams.get('fields')).toBe('key,title,author_name,cover_i,first_publish_year');
+    expect(url.searchParams.get('fields')).toBe('key,title,author_name,cover_i,first_publish_year,editions,editions.key');
     expect(options).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' });
     expect(page.candidates[0]).toMatchObject({ title: 'Teste', firstPublishedYear: 1953 });
-    expect(candidateDraft(page.candidates[0])).not.toHaveProperty('publicationYear');
-    expect(candidateDraft(page.candidates[0])).not.toHaveProperty('pageCount');
+    expect(candidateDraft({ candidate: page.candidates[0], edition: null }).publicationYear).toBe(1953);
+    expect(candidateDraft({ candidate: page.candidates[0], edition: null })).not.toHaveProperty('pageCount');
     expect(store.write).toHaveBeenCalledOnce();
   });
   it('normalizes ISBN and rejects invalid requests without fetch', async () => {
@@ -80,7 +94,8 @@ describe('explicit Open Library lookup', () => {
   });
   it('deduplicates active submissions and discards stale responses even if provider ignores abort', async () => {
     const resolvers: ((value: { candidates: []; page: number; hasMore: boolean; cached: boolean }) => void)[] = [];
-    const provider = { search: vi.fn(() => new Promise<{ candidates: []; page: number; hasMore: boolean; cached: boolean }>((resolve) => resolvers.push(resolve))) };
+    const provider = { search: vi.fn(() => new Promise<{ candidates: []; page: number; hasMore: boolean; cached: boolean }>((resolve) => resolvers.push(resolve))),
+      details: vi.fn() };
     const service = createSearchService(provider);
     const first = service.search('one'); expect(service.search('one')).toBe(first);
     const rejected = expect(first).rejects.toMatchObject({ code: 'cancelled' });

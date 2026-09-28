@@ -34,7 +34,7 @@ O BioRotina é a referência funcional para conexão global, sincronização, re
 | Sem rede | “A busca precisa de conexão. Você pode cadastrar manualmente.” | “Você está offline. Tente mais tarde.” |
 | Erro de campo | “Informe o título do livro.” | “Campo inválido.” |
 | Exportação | “Arquivo JSON gerado. Confira se ele foi salvo.” | “Backup garantido.” |
-| Nota | “Sua nota privada” | “Escreva uma resenha para a comunidade.” |
+| Nota | “Observações” | “Escreva uma resenha para a comunidade.” |
 | Ano concluído | “6 livros lidos em 2026.” | “Meta batida. Você venceu!” |
 
 ## 3. Cor: papel, tinta e marcador
@@ -135,7 +135,7 @@ Carregando: preservar largura, exibir verbo em andamento (“Salvando…”), `a
 
 Rótulo persistente, controle de 48 px, ajuda e erro próximos. Campos essenciais têm “obrigatório” por escrito; opcionais usam “opcional”. Placeholder só dá exemplo. Campo em erro usa contorno vermelho, `aria-invalid` e mensagem vinculada por `aria-describedby`; preservar o que foi digitado e levar o foco ao primeiro erro após envio. Sem validação agressiva a cada tecla.
 
-Usar `select` nativo para ano e estado. Grade/Lista é um grupo de botões com `aria-pressed`, não abas sem painéis. Filtros podem ser botões de seleção com rótulo e contagem; trocar filtro não altera estatísticas anuais. Avaliação usa um `fieldset` com rádios de 1 a 5, rótulos “1 de 5” … “5 de 5” e opção “Sem avaliação”. Estrelas são complemento visual; zero não é sinônimo de não avaliado. Não exigir avaliação nem nota para marcar como Lido.
+No cadastro, estado usa três opções visíveis e ano da estante usa controle de diminuir/aumentar com entrada numérica. Na estante, Grade/Lista é uma única ação por ícone que anuncia o modo de destino; filtros têm `aria-pressed`, ocupam uma linha e usam sublinhado para marcar a escolha. Trocar filtro não altera estatísticas anuais. Avaliação usa um `fieldset` com cinco rádios apresentados como estrelas individuais; cada um anuncia “1 de 5 estrelas” … “5 de 5 estrelas”. A seleção colore todas as estrelas até a escolhida; “Limpar” devolve o valor nulo. Não exigir avaliação nem observações para marcar como Lido.
 
 ### Status e feedback
 
@@ -147,7 +147,7 @@ Exclusão de um livro pede “Excluir [título] desta estante?” e explica que 
 
 ## 8. Estante anual: Grade e Lista
 
-Ordem: marca e acesso ao Google quando disponível; título “Estante” e seletor de ano; filtros, busca e Grade/Lista quando houver livros; coleção ou estado vazio; estatísticas; “Compartilhar ano” como ação secundária. Em mobile, Apoiar e Configurações ficam em Mais, os filtros usam uma linha rolável sem quebra dos rótulos, e o estado vazio mostra Adicionar livro logo abaixo do ano.
+Ordem atual: marca, Apoiar e acesso ao Google quando disponível; título “Estante”, ano e ação Adicionar livro perto da coleção no desktop; campo de busca e alternância Grade/Lista; filtros discretos; coleção ou estado vazio; estatísticas. A ação “Compartilhar ano” foi retirada da estante para revisão de posição. Em mobile, Adicionar fica na navegação inferior, Configurações em Mais, os quatro filtros dividem a largura em uma linha, e o estado vazio mostra Adicionar livro logo abaixo do ano.
 
 **Convenção proposta para V1:** cada registro pertence a um ano de estante escolhido pela pessoa, com padrão no ano selecionado. O mesmo título pode existir em outro ano como registro independente, sem automatizar releitura. Todos os estados usam esse mesmo ano. “Lidos em 2026” conta registros Lido na estante de 2026, não a data em que foram cadastrados. Se uma data de término for de outro ano, oferecer corrigir o ano antes de salvar; não mover silenciosamente. O ano é explícito no cadastro/página e permanece editável. Essa convenção deve ser confirmada na implementação, sem inferir retrospectivamente datas que a pessoa não informou.
 
@@ -157,26 +157,26 @@ Ordem: marca e acesso ao Google quando disponível; título “Estante” e sele
 
 ## 9. Busca e cadastro manual
 
-“Adicionar livro” abre uma região com duas rotas visíveis: **Buscar livro** e **Cadastrar manualmente**. Busca tem rótulo “Título, autor ou ISBN”, botão Buscar e nota “A busca consulta a Open Library. Sua nota e avaliação não são enviadas.” A consulta é explícita: não mandar texto a um serviço só por digitar. Resultados mostram título, autor, capa se existir e dados bibliográficos disponíveis, com origem “Open Library”. A fonte enriquece o registro; não é a biblioteca pessoal nem garante completude.
+“Adicionar livro” abre uma região com busca por “Título, autor ou ISBN” e ação **Adicionar manualmente**. A consulta é explícita: não mandar texto a um serviço só por digitar. Resultados mostram título, autor, primeiro ano da obra quando disponível, capa pequena e botão compacto “Selecionar” à direita. A fonte enriquece o registro; não é a biblioteca pessoal nem garante completude.
 
-Selecionar resultado abre revisão editável antes de salvar, sem adicionar automaticamente. Não inventar autoria, páginas, edição ou ano ausentes. Distinguir ano de publicação de ano da estante. ISBN e detalhes editoriais são opcionais; não obrigar a escolher uma edição inexistente. A integração futura deverá respeitar a [documentação de busca da Open Library](https://openlibrary.org/dev/docs/api/search).
+“Selecionar” consulta a edição identificada e abre revisão editável antes de salvar, sem adicionar automaticamente. Ano da edição preenche o campo quando disponível; primeiro ano da obra serve de fallback; páginas e ISBN só vêm da edição. Se a edição não tiver páginas, o campo mostra “Não informado” sem gravar uma estimativa. Distinguir ano de publicação de ano da estante. ISBN e detalhes editoriais são opcionais; não obrigar a escolher uma edição inexistente. Consultar a [documentação de busca da Open Library](https://openlibrary.org/dev/docs/api/search) e da [Books API](https://openlibrary.org/dev/docs/api/books).
 
 | Estado de busca | Conteúdo e saída |
 | --- | --- |
-| Inicial | Campo vazio, ajuda e rota manual |
+| Inicial | Campo vazio e rota manual |
 | Buscando | “Buscando na Open Library…”; manter consulta; bloquear envio duplicado |
-| Resultados | Lista com botão “Usar este livro”; revisão antes de salvar |
+| Resultados | Lista com capa pequena e botão “Selecionar” à direita; revisão antes de salvar |
 | Nenhum resultado | “Não encontramos este livro. Tente outro título ou cadastre manualmente.” |
 | Sem conexão | “A busca precisa de conexão. Você pode cadastrar manualmente.” |
 | Erro/limite do serviço | “A busca está indisponível agora.” + Tentar novamente e Cadastrar manualmente |
 
-Cadastro mínimo: título obrigatório; autor opcional (“Autoria não informada” quando ausente); estado obrigatório, inicialmente Quero ler; ano da estante obrigatório, preenchido pelo contexto. Data de término opcional aparece em Lido, com ajuda para manter coerência com o ano. Não exigir sinopse, gênero, páginas, ISBN ou capa. Avisar sobre provável duplicata (título/autor/ano), permitindo revisar ou salvar conscientemente; nunca bloquear homônimos. “Salvar livro” só confirma depois de salvar no dispositivo. Cancelar preserva contexto e pede confirmação se houver texto não salvo.
+Cadastro mínimo: título obrigatório; autor opcional (“Autoria não informada” quando ausente); estado obrigatório, inicialmente Quero ler; ano da estante obrigatório, preenchido pelo contexto. Os campos de datas foram removidos da UI; datas de registros antigos são preservadas, com confirmação antes de removê-las quando o novo estado ou ano for incompatível. Não exigir sinopse, gênero, páginas, ISBN ou capa. Avisar sobre provável duplicata (título/autor/ano), permitindo revisar ou salvar conscientemente; nunca bloquear homônimos. “Salvar livro” só confirma depois de salvar no dispositivo e retorna à estante. Cancelar preserva contexto e pede confirmação se houver texto não salvo.
 
 ## 10. Página do livro
 
-Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado editável; avaliação opcional; campo “Sua nota privada”; Salvar alterações e ação de exclusão secundária. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Nota tem largura de leitura confortável e cresce com o conteúdo. Rótulo “Sua nota é privada e acompanha o backup. Não entra na imagem compartilhada.” deve acompanhar a nota, sem alegar criptografia.
+Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado editável; avaliação opcional; campo “Observações”; Salvar alterações e ação de exclusão secundária. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Observações têm largura de leitura confortável e crescem com o conteúdo.
 
-Datas, quando informadas, usam “26 set 2026”; datas exatas ficam disponíveis, sem depender de “ontem”. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Nota e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
+Datas legadas permanecem no registro e no backup, embora não apareçam no fluxo atual. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Observações e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
 
 ## 11. Estatísticas mínimas
 
@@ -268,7 +268,7 @@ Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semâ
 
 **Revisão de UX da issue #65:** a estante dá prioridade à coleção antes das estatísticas, e a busca local abre por um botão identificado. O ano vazio omite filtros e métricas e apresenta Adicionar livro logo após o seletor. O consentimento de visitas fica suspenso no rodapé, acima da navegação mobile, sem empurrar os livros. O foco programático no conteúdo permanece para navegação de rotas, mas o contêiner `main` não desenha anel; links, campos e botões continuam com foco visível. No cadastro, Estado usa rádios nativos com alvos visíveis e Ano da estante oferece passos anterior/próximo junto à entrada numérica para anos distantes. A capa opcional fica em Mais detalhes. Textos de orientação são curtos; confirmação de envio, substituição e erros conservam as consequências da ação. A marca possui favicon SVG/ICO e ícones PNG para instalação. A [revisão completa](ux-review-2026-09-27.md) registra achados e verificação local.
 
-A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, mantém navegação lateral e Adicionar livro no cabeçalho. Mais liga Seus dados, Configurações, Instalar e Apoiar. Lendo e Quero ler continuam como filtros e rotas diretas.
+A issue #44 entrega barra inferior **Estante · Adicionar · Mais** abaixo de 1024 CSS px, incluindo tablet. A partir de 1024 px, a navegação lateral traz Estante, Seus dados e Configurações; Adicionar livro aparece na estante com livros, ao lado do ano, e no estado vazio como ação principal. Mais liga Seus dados, Configurações, Instalar e Apoiar. Lendo e Quero ler continuam como filtros e rotas diretas, sem repetir destinos na lateral.
 
 Rótulos e ícones permanecem visíveis, seleção usa `aria-current`, alvos têm pelo menos 44 px e o rodapé reserva área segura. A barra usa a camada sticky, abaixo dos diálogos. Os links seguem a proteção existente de rascunho e operações de backup; navegação muda o foco para o conteúdo. Não duplicar Adicionar no cabeçalho mobile.
 

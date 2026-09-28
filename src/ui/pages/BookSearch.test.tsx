@@ -9,10 +9,13 @@ import { openLibraryRepository } from '../../adapters/indexeddb/library-reposito
 import { createShelfService } from '../../services/shelf-service';
 import { AppRoutes } from '../../app/router';
 
-const payload = { numFound: 1, docs: [{ key: '/works/OL12W', title: 'Livro encontrado', author_name: ['Autora'], cover_i: 123, first_publish_year: 1953 }] };
+const payload = { numFound: 1, docs: [{ key: '/works/OL12W', title: 'Livro encontrado', author_name: ['Autora'], cover_i: 123, first_publish_year: 1953,
+  editions: { docs: [{ key: '/books/OL34M' }] } }] };
+const edition = { key: '/books/OL34M', works: [{ key: '/works/OL12W' }], title: 'Edição encontrada', publish_date: '2002', number_of_pages: 240,
+  isbn_13: ['9780306406157'], covers: [456] };
 beforeEach(async () => {
   const db = await openDatabase(); await db.db.clear('searchCache'); db.close();
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
+  vi.stubGlobal('fetch', vi.fn((url: URL) => Promise.resolve(new Response(JSON.stringify(url.pathname.includes('/books/') ? edition : payload)))));
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -24,37 +27,42 @@ async function setup() {
   return repository;
 }
 describe('optional book search UI', () => {
-  it('does not fetch on mount or typing, waits for selection before a cover, and saves reviewed data locally', async () => {
+  it('shows covers in results and saves the chosen edition metadata locally', async () => {
     const repository = await setup();
     await userEvent.type(screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }), 'Livro');
     expect(fetch).not.toHaveBeenCalled(); expect(document.querySelector('img')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
-    const choose = await screen.findByRole('button', { name: 'Usar este livro: Livro encontrado' });
-    expect(document.querySelector('img')).toBeNull(); expect((await repository.readAll()).books).toHaveLength(0);
+    const choose = await screen.findByRole('button', { name: 'Selecionar Livro encontrado (1953)' });
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-S.jpg?default=false');
+    expect((await repository.readAll()).books).toHaveLength(0);
+    expect(screen.getByText('Ano da obra: 1953')).toBeTruthy();
     await userEvent.click(choose);
-    const title = screen.getByRole('textbox', { name: 'Título (obrigatório)' });
-    expect((title as HTMLInputElement).value).toBe('Livro encontrado');
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    const title = await screen.findByRole('textbox', { name: 'Título (obrigatório)' }, { timeout: 3000 });
+    expect((title as HTMLInputElement).value).toBe('Edição encontrada');
+    await userEvent.click(screen.getByText('Mais detalhes (opcional)'));
+    expect((screen.getByRole('spinbutton', { name: 'Ano de publicação' }) as HTMLInputElement).value).toBe('2002');
+    expect((screen.getByRole('spinbutton', { name: 'Páginas' }) as HTMLInputElement).value).toBe('240');
+    expect((screen.getByRole('textbox', { name: 'ISBN' }) as HTMLInputElement).value).toBe('9780306406157');
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/456-M.jpg?default=false');
     expect(document.querySelector('img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
     fireEvent.error(document.querySelector('img')!);
-    expect(screen.getByText('Sem capa · Livro encontrado')).toBeTruthy();
+    expect(screen.getByText('Sem capa · Edição encontrada')).toBeTruthy();
     await userEvent.clear(title); await userEvent.type(title, 'Título revisado');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Sua nota privada' }), { target: { value: 'Nota que fica local' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Observações' }), { target: { value: 'Nota que fica local' } });
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     await screen.findByRole('heading', { name: 'Título revisado' });
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/456-M.jpg?default=false');
     const saved = (await repository.readAll()).books[0];
-    expect(saved).toMatchObject({ title: 'Título revisado', note: 'Nota que fica local', publicationYear: null, pageCount: null,
-      cover: { provider: 'open_library', coverId: 123 }, source: { provider: 'open_library', workId: 'OL12W', editionId: null } });
-    expect(fetch).toHaveBeenCalledOnce();
-    await userEvent.click(screen.getByRole('link', { name: 'Voltar para a estante' }));
-    await screen.findByRole('heading', { name: /Estante/ }); expect(fetch).toHaveBeenCalledOnce();
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
-    await userEvent.click(screen.getByRole('button', { name: 'Lista' }));
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    expect(saved).toMatchObject({ title: 'Título revisado', note: 'Nota que fica local', publicationYear: 2002, pageCount: 240, isbn: '9780306406157',
+      cover: { provider: 'open_library', coverId: 456 }, source: { provider: 'open_library', workId: 'OL12W', editionId: 'OL34M' } });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await screen.findByRole('heading', { name: /Estante/ }); expect(fetch).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/456-M.jpg?default=false');
+    await userEvent.click(screen.getByRole('button', { name: 'Ver em lista' }));
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/456-M.jpg?default=false');
     await userEvent.click(screen.getByRole('link', { name: /Título revisado/ }));
     await screen.findByRole('heading', { name: 'Título revisado' });
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/456-M.jpg?default=false');
   });
   it('keeps manual entry available on malformed data, empty results and offline', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response('not json'));
@@ -83,7 +91,7 @@ describe('optional book search UI', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }));
     expect(signal?.aborted).toBe(true);
     resolve(new Response(JSON.stringify(payload)));
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Usar este livro/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Selecionar Livro encontrado/ })).toBeNull());
     expect((screen.getByRole('textbox', { name: 'Título (obrigatório)' }) as HTMLInputElement).value).toBe('');
   });
   it('displays an empty result and preserves the manual route', async () => {

@@ -12,14 +12,14 @@ const subscribeOnline = (listener: () => void) => {
 const onlineSnapshot = () => navigator.onLine;
 
 /** Adjacent title/author label every use; the image and typographic fallback are decorative. */
-export function BookCover({ cover, title, className = '' }: { cover: Book['cover']; title: string; className?: string }) {
+export function BookCover({ cover, title, className = '', size = 'M' }: { cover: Book['cover']; title: string; className?: string; size?: 'S' | 'M' }) {
   const { books, state } = useLibrary();
   const online = useSyncExternalStore(subscribeOnline, onlineSnapshot, () => false);
   const generation = state.status === 'ready' ? state.snapshot.version.generation : '';
   const key = cover?.provider === 'local' ? `local:${cover.mediaId.toLowerCase()}:${generation}` :
-    cover?.provider === 'open_library' ? `remote:${cover.coverId}:${online}` : 'none';
+    cover?.provider === 'open_library' ? `remote:${cover.coverId}:${size}:${online}` : 'none';
   return <CoverImage key={key} cover={cover} title={title} className={className}
-    remoteUrl={online && cover?.provider === 'open_library' ? bookCoverUrl(cover.coverId) : null} readLocal={books?.readCover} />;
+    remoteUrl={online && cover?.provider === 'open_library' ? bookCoverUrl(cover.coverId, size) : null} readLocal={books?.readCover} />;
 }
 
 function CoverImage({ cover, title, className, remoteUrl, readLocal }: {

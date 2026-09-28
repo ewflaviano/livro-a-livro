@@ -72,6 +72,18 @@ describe('shelf service consistency', () => {
     await service.refresh();
     expect((await repository.readPreferences()).mode).toBe('list');
   });
+
+  it('shows a newly committed book after a no-op preference update on return to the shelf', async () => {
+    const { repository, service } = await setup();
+    const book = createBook({ title: 'Novo registro' }, { id: crypto.randomUUID(), now: '2026-09-26T12:00:00.000Z', shelfYear: 2026 });
+    await repository.commit({ kind: 'put', book }, await repository.readRevision());
+    service.updatePreferences({ shelfYear: 2026, filter: 'all' });
+    await vi.waitFor(() => {
+      const current = service.getSnapshot();
+      expect(current.status).toBe('ready');
+      if (current.status === 'ready') expect(current.snapshot.books.map((item) => item.title)).toEqual(['Novo registro']);
+    });
+  });
 });
 
 it('retains only failed fields across a later successful patch and a remote preference refresh', async () => {

@@ -85,6 +85,9 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
         }
         if (state.status === 'ready') publish({ ...state, preferences: withOverlay(state.preferences), preferenceError: hasPreferenceError() });
         releaseSettledPreferences();
+        // A preference write can invalidate a read started by a preceding book commit.
+        // No-op writes do not notify the repository, so always read the committed shelf.
+        void refresh();
       });
     },
     close() { releasePreferenceHold?.(); releasePreferenceHold = undefined; backup.cancelImport(); disposed = true; ++request; unsubscribe(); listeners.clear(); repository.close(); },

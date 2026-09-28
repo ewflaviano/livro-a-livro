@@ -22,13 +22,16 @@ describe('application shell', () => {
   it('uses hash navigation, marks the current destination and focuses the content', async () => {
     window.location.hash = '#/estante';
     render(<AppRouter />);
-    await userEvent.click(screen.getByRole('link', { name: 'Quero ler' }));
-    expect(window.location.hash).toBe('#/quero-ler');
-    expect(screen.getByRole('heading', { name: 'Quero ler' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Quero ler' }).getAttribute('aria-current')).toBe('page');
+    const sidebar = within(screen.getByRole('navigation', { name: 'Navegação principal' }));
+    expect(sidebar.queryByRole('link', { name: 'Lendo' })).toBeNull();
+    expect(sidebar.queryByRole('link', { name: 'Quero ler' })).toBeNull();
+    await userEvent.click(sidebar.getByRole('link', { name: 'Seus dados' }));
+    expect(window.location.hash).toBe('#/dados');
+    expect(screen.getByRole('heading', { name: 'Seus dados' })).toBeTruthy();
+    expect(sidebar.getByRole('link', { name: 'Seus dados' }).getAttribute('aria-current')).toBe('page');
     expect(document.activeElement).toBe(screen.getByRole('main'));
-    await waitFor(() => expect(document.title).toBe('Quero ler · Livro a Livro'));
-    await userEvent.click(screen.getByRole('link', { name: 'Adicionar livro' }));
+    await waitFor(() => expect(document.title).toBe('Seus dados · Livro a Livro'));
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Adicionar' }));
     expect(window.location.hash).toBe('#/adicionar');
     expect(screen.getByRole('heading', { name: 'Adicionar livro' })).toBeTruthy();
   });

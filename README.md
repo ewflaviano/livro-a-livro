@@ -6,17 +6,17 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 ## Estado atual
 
-**Revisado em 27 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 28 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
 | Estante anual, Grade/Lista, filtros e estatísticas | Integrados à interface e ao IndexedDB |
 | Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
-| Busca Open Library | Explícita, com revisão antes de salvar; indisponível no simulador local |
+| Busca Open Library | Explícita, com capa pequena no resultado e dados da edição carregados ao escolher; revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
 | Capas enviadas | Cadastro, estante e detalhe, inclusive offline; livro e capa gravados juntos, com limites portáveis |
 | Backup JSON | Backup local em Seus dados, offline e sem Drive: exportação, prévia, confirmação e restauração atômica com capas |
-| Imagem anual | Prévia e PNG Story/Quadrado locais, com capas tipográficas |
+| Imagem anual | Gerador local existente; acesso pela estante removido enquanto a posição da ação é revista |
 | PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
 | Google Drive | Liberado no workflow público para teste manual do responsável, com login e autorização em duas etapas; gates entre perfis ainda pendentes na issue #13 |
@@ -85,6 +85,6 @@ Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo
 
 ### Navegação e busca local
 
-Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações, Instalar e Apoiar; desktop mantém a lateral. A estante busca título e autoria localmente, sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas; compartilhar ano aparece após a coleção quando há livros lidos.
+Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações, Instalar e Apoiar; no desktop, a lateral traz Estante, Seus dados e Configurações, e Adicionar livro fica junto ao título da estante. Lendo e Quero ler são filtros da estante. O campo de busca local filtra título e autoria sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas. A ação de compartilhar ano foi retirada da estante enquanto se decide um lugar adequado.
 
 Configurações usa as mesmas preferências da estante. Em falha, informa que a escolha vale apenas na sessão e oferece tentar salvar novamente. Instalar mostra instruções por plataforma e botão somente quando o navegador oferece o evento nativo; aceitar o pedido ainda não confirma a conclusão. A primeira preparação offline não aparece como atualização. Atualizar exige uma versão aguardando, ausência de rascunho/operação e nenhuma outra aba aberta.

@@ -20,10 +20,10 @@ afterEach(() => { cleanup(); expect(getUiOccupancy()).toBe(0); expect(getPwaStat
 function Shell({ children }: { children?: ReactNode }) {
   return <MemoryRouter><GlobalSyncControls><GlobalSyncHeader /><GlobalSyncAttention />{children}</GlobalSyncControls></MemoryRouter>;
 }
-it('offers global support/settings and a confirmed sign-in without automatic Drive consent', async () => {
+it('offers global support and a confirmed sign-in without automatic Drive consent', async () => {
   const view = render(<Shell />);
   expect(screen.getByRole('link', { name: 'Apoiar' }).getAttribute('href')).toBe('/apoiar');
-  expect(screen.getByRole('link', { name: 'Abrir configurações' }).getAttribute('href')).toBe('/configuracoes');
+  expect(screen.queryByRole('link', { name: 'Abrir configurações' })).toBeNull();
   const login = screen.getByRole('button', { name: 'Entrar com Google' });
   await userEvent.click(login);
   const dialog = within(screen.getByRole('alertdialog'));
