@@ -53,8 +53,10 @@ describe('application shell', () => {
     expect(mobile.getByRole('link', { name: 'Estante' }).getAttribute('aria-current')).toBe('page');
     await userEvent.click(mobile.getByRole('link', { name: 'Mais' }));
     const options = within(screen.getByRole('navigation', { name: 'Outras opções' }));
-    expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/instalar', '/apoiar']);
-    await userEvent.click(options.getByRole('link', { name: /Seus dados/ }));
+    expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/instalar']);
+    expect(options.getAllByRole('link').map(link => link.textContent)).toEqual(['Seus dados', 'Configurações', 'Instalar']);
+    expect(within(screen.getByRole('navigation', { name: 'Conta e opções' })).getByRole('link', { name: 'Apoiar' }).getAttribute('href')).toBe('/apoiar');
+    await userEvent.click(options.getByRole('link', { name: 'Seus dados' }));
     expect(mobile.getByRole('link', { name: 'Mais' }).getAttribute('aria-current')).toBe('page');
     expect(document.activeElement).toBe(screen.getByRole('main'));
   });
