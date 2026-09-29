@@ -1,21 +1,18 @@
 #!/usr/bin/env node
 // Browser release gate with disposable profiles and synthetic books only.
 import { chromium, expect } from '@playwright/test';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { setTimeout as pause } from 'node:timers/promises';
+import { preview } from 'vite';
 
-const origin = 'http://127.0.0.1:5197';
 const images = JSON.parse(await readFile(new URL('../test/fixtures/covers/synthetic.json', import.meta.url), 'utf8'));
 const emit = code => process.stdout.write(`${code}\n`);
 const check = value => { if (!value) throw new Error('GATE_ASSERTION'); };
 let stage = 'BUILD', browser, server;
 try {
   execFileSync('npm', ['run', 'build'], { stdio: 'ignore', env: { ...process.env, VITE_DRIVE_ENABLED: 'false' } });
-  server = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', '5197', '--strictPort'], { stdio: 'ignore' });
-  let ready = false;
-  for (let n = 0; n < 100; n++) { try { if ((await fetch(origin)).ok) { ready = true; break; } } catch {} await pause(100); }
-  check(ready);
+  server = await preview({ preview: { host: '127.0.0.1', port: 0, strictPort: true } });
+  const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   const makeContext = async () => {
     const context = await browser.newContext({ serviceWorkers: 'allow', acceptDownloads: true, locale: 'pt-BR', viewport: { width: 390, height: 844 } });
@@ -85,5 +82,5 @@ try {
   emit(`LOCAL_LIBRARY_GATE_FAIL_${stage}`); process.exitCode = 1;
 } finally {
   await browser?.close();
-  if (server) server.kill('SIGTERM');
+  if (server) await new Promise(resolve => server.httpServer.close(resolve));
 }

@@ -1,15 +1,12 @@
 import { chromium } from '@playwright/test';
-import { spawn, execFileSync } from 'node:child_process';
-import { setTimeout as pause } from 'node:timers/promises';
+import { execFileSync } from 'node:child_process';
+import { preview } from 'vite';
 
-const origin = 'http://127.0.0.1:5196';
 execFileSync('npm', ['run', 'build'], { stdio: 'ignore' });
-const server = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', '5196', '--strictPort'], { stdio: 'ignore' });
+const server = await preview({ preview: { host: '127.0.0.1', port: 0, strictPort: true } });
+const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 let browser;
 try {
-  let ready = false;
-  for (let n = 0; n < 100; n++) { try { const response = await fetch(origin); if (response.ok) { ready = true; break; } } catch {} await pause(100); }
-  if (!ready) throw new Error('SERVER_UNAVAILABLE');
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 320, height: 844 } });
   const page = await context.newPage();
@@ -52,4 +49,4 @@ try {
   await page.waitForTimeout(150); if (requests.length !== afterReopen) throw new Error('POSTREVOCATION_REQUEST');
   const cookies = await context.cookies(); if (cookies.some(cookie => cookie.name === '_ga' || cookie.name.startsWith('_ga_'))) throw new Error('COOKIES_REMAIN');
   console.log('GA_CONSENT_GATE_PASS');
-} finally { await browser?.close(); server.kill('SIGTERM'); }
+} finally { await browser?.close(); await new Promise(resolve => server.httpServer.close(resolve)); }
