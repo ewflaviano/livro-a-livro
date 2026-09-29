@@ -249,12 +249,18 @@ async function pauseOrDisconnect(id, kind) {
   // Completion of a local command is distinct from Google's revocation acknowledgement.
   if (kind !== 'pause') await expect(page.getByRole('alertdialog')).toHaveCount(0);
   else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
-  stage = 'DISCONNECT_STATE'; const control = await localControl(page); check(!control.enabled);
+  stage = 'DISCONNECT_CONTROL';
+  await expect.poll(async () => (await localControl(page)).enabled).toBe(false);
+  const control = await localControl(page);
+  stage = 'DISCONNECT_STATUS';
   if (control.revocationPending) {
     await expect(page.getByRole('heading', { name: 'Revogação no Google ainda não confirmada', exact: true })).toBeVisible();
   } else if (kind === 'logout') await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
   else await expect(page.getByText('Sincronização pausada neste dispositivo.', { exact: false })).toBeVisible();
-  if (kind === 'logout') check((await snapshot(page)).books.length === 0);
+  if (kind === 'logout') {
+    stage = 'DISCONNECT_ERASE';
+    await expect.poll(async () => (await snapshot(page)).books.length).toBe(0);
+  }
   else check(isDeepStrictEqual(before, await snapshot(page)));
   stage = 'DISCONNECT_RELOAD'; await page.reload();
   const restored = await localControl(page); check(!restored.enabled && restored.revocationPending === control.revocationPending);
