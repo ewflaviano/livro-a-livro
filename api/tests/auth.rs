@@ -1140,6 +1140,85 @@ async fn callback_failure_is_static_human_readable_and_never_echoes_query() {
 }
 
 #[tokio::test]
+async fn callback_error_uses_bounded_browser_language_without_echoing_it() {
+    let (auth, _, _, _) = setup();
+    let oversized = format!("en,{}", "x".repeat(512));
+    for (language, expected_lang, expected_text) in [
+        (
+            "en-US,en;q=0.9,pt-BR;q=0.8",
+            "en",
+            "Your library remains on this device.",
+        ),
+        (
+            "pt-BR, en;q=0.8",
+            "pt-BR",
+            "Sua biblioteca continua neste dispositivo.",
+        ),
+        (
+            "en;q=0,pt-BR;q=0.8",
+            "pt-BR",
+            "Sua biblioteca continua neste dispositivo.",
+        ),
+        (
+            "en<script>;q=1,pt-BR;q=0.8",
+            "pt-BR",
+            "Sua biblioteca continua neste dispositivo.",
+        ),
+        (
+            "en;q=0;q=1,pt-BR;q=0.8",
+            "pt-BR",
+            "Sua biblioteca continua neste dispositivo.",
+        ),
+        (
+            &oversized,
+            "pt-BR",
+            "Sua biblioteca continua neste dispositivo.",
+        ),
+    ] {
+        let response = router(auth.clone()).oneshot(Request::builder()
+            .uri("/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state=PRIVATE_STATE&error_description=PRIVATE_DESCRIPTION")
+            .header("accept-language", language).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        assert_eq!(response.headers()["vary"], "Origin, Accept-Language");
+        assert!(response.headers().get("set-cookie").is_none());
+        let html = String::from_utf8(to_bytes(response.into_body(), 8192).await.unwrap().to_vec())
+            .unwrap();
+        assert!(html.contains(&format!("<html lang=\"{expected_lang}\">")));
+        assert!(html.contains(expected_text));
+        for private in ["PRIVATE_STATE", "PRIVATE_DESCRIPTION", language, "<script>"] {
+            assert!(!html.contains(private));
+        }
+    }
+}
+
+#[tokio::test]
+async fn english_callback_denial_consumes_state_and_keeps_static_error() {
+    let (auth, _, _, _) = setup();
+    let (url, cookie) = auth
+        .start_sign_in(&attempt_uuid(), None, None, None, None)
+        .await
+        .unwrap();
+    let state = &params(&url)["state"];
+    let response = router(auth.clone()).oneshot(Request::builder()
+        .uri(format!("/v1/auth/google/callback?iss=https%3A%2F%2Faccounts.google.com&state={state}&error=access_denied&error_description=PRIVATE_DESCRIPTION"))
+        .header("accept-language", "en-US,en;q=0.9")
+        .header("cookie", format!("__Host-lal_oauth={cookie}"))
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let html =
+        String::from_utf8(to_bytes(response.into_body(), 8192).await.unwrap().to_vec()).unwrap();
+    assert!(html.contains("Authorization was cancelled or denied"));
+    assert!(!html.contains(state));
+    assert!(!html.contains("PRIVATE_DESCRIPTION"));
+    assert_eq!(
+        auth.callback(state, &cookie, "code").await.err(),
+        Some(Error::Unauthorized)
+    );
+}
+
+#[tokio::test]
 async fn callback_errors_are_specific_static_and_denial_consumes_state() {
     let (auth, _, _, _) = setup();
     for (provider_error, expected) in [

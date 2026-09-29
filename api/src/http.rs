@@ -87,7 +87,14 @@ async fn guard(State(auth): State<Auth>, mut request: Request, next: Next) -> Re
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    headers.insert(header::VARY, HeaderValue::from_static("Origin"));
+    headers.insert(
+        header::VARY,
+        HeaderValue::from_static(if callback {
+            "Origin, Accept-Language"
+        } else {
+            "Origin"
+        }),
+    );
     headers.insert(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
@@ -269,32 +276,118 @@ struct Callback {
     prompt: Option<String>,
 }
 async fn callback(state: State<Auth>, headers: HeaderMap, request: Request) -> Response {
+    let english = callback_english(&headers);
     match callback_inner(state, headers, request).await {
         Ok(response) => response,
         Err(error) => {
-            let message = match error {
-                Error::ConsentDenied => {
+            let message = match (english, &error) {
+                (true, Error::ConsentDenied) => {
+                    "Authorization was cancelled or denied. You can try again in the app."
+                }
+                (true, Error::IdentityExpired) => {
+                    "Your identification expired. Sign in with Google again to continue."
+                }
+                (true, Error::IncompleteConsent) => {
+                    "Google Drive was not fully authorized. Return to the app to authorize Drive."
+                }
+                (true, Error::AccountMismatch) => {
+                    "The chosen account differs from the confirmed account. Return to the app and use the same account or sign in again."
+                }
+                (true, _) => "Could not complete the Google connection.",
+                (false, Error::ConsentDenied) => {
                     "A autorização foi cancelada ou negada. Você pode tentar novamente no aplicativo."
                 }
-                Error::IdentityExpired => {
+                (false, Error::IdentityExpired) => {
                     "Sua identificação expirou. Entre com Google novamente para continuar."
                 }
-                Error::IncompleteConsent => {
+                (false, Error::IncompleteConsent) => {
                     "O Google Drive não foi autorizado integralmente. Volte ao aplicativo para autorizar o Drive."
                 }
-                Error::AccountMismatch => {
+                (false, Error::AccountMismatch) => {
                     "A conta escolhida é diferente da conta confirmada. Volte ao aplicativo e use a mesma conta ou entre novamente."
                 }
-                _ => "Não foi possível concluir a conexão com Google.",
+                (false, _) => "Não foi possível concluir a conexão com Google.",
             };
             let status = error.into_response().status();
+            let (lang, title, saved, back) = if english {
+                (
+                    "en",
+                    "Google connection",
+                    "Your library remains on this device.",
+                    "Back to the app",
+                )
+            } else {
+                (
+                    "pt-BR",
+                    "Conexão com Google",
+                    "Sua biblioteca continua neste dispositivo.",
+                    "Voltar ao aplicativo",
+                )
+            };
             let html = format!(
-                "<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Conexão com Google</title><h1>{message}</h1><p>Sua biblioteca continua neste dispositivo.</p><a href=\"https://livroalivro.app.br/#/dados\">Voltar ao aplicativo</a></html>"
+                "<!doctype html><html lang=\"{lang}\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{title}</title><h1>{message}</h1><p>{saved}</p><a href=\"https://livroalivro.app.br/#/dados\">{back}</a></html>"
             );
             // Do not clear a newer attempt if this callback response arrives late.
             (status, axum::response::Html(html)).into_response()
         }
     }
+}
+
+/** Accept-Language is presentation-only. Never store it or attach it to OAuth state. */
+fn callback_english(headers: &HeaderMap) -> bool {
+    let Some(raw) = headers
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    if raw.len() > 512 {
+        return false;
+    }
+    let mut best = 0.0_f32;
+    let mut english = false;
+    for item in raw.split(',').take(16) {
+        let mut parts = item.trim().split(';');
+        let tag = parts.next().unwrap_or("").trim();
+        if tag.is_empty()
+            || !tag.split('-').all(|part| {
+                !part.is_empty()
+                    && part.len() <= 8
+                    && part.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            })
+        {
+            continue;
+        }
+        let mut quality = 1.0_f32;
+        let mut valid = true;
+        let mut seen_quality = false;
+        for part in parts {
+            let Some((name, value)) = part.trim().split_once('=') else {
+                valid = false;
+                break;
+            };
+            if seen_quality
+                || !name.eq_ignore_ascii_case("q")
+                || value.len() > 5
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'.')
+            {
+                valid = false;
+                break;
+            }
+            seen_quality = true;
+            quality = value.parse::<f32>().unwrap_or(0.0);
+        }
+        if !valid || !(0.0..=1.0).contains(&quality) || quality == 0.0 {
+            continue;
+        }
+        if quality > best {
+            best = quality;
+            english = tag.eq_ignore_ascii_case("en") || tag.to_ascii_lowercase().starts_with("en-");
+        }
+    }
+    english
 }
 
 async fn callback_inner(
