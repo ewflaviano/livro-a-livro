@@ -6,6 +6,7 @@ import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncE
 import { parseSnapshot } from './snapshot';
 import { canonicalJson } from './protocol';
 import type { LocalRevision } from '../ports/library-repository';
+import { LOCALE_SESSION_KEY } from '../i18n/store';
 
 async function parseOperation(value: unknown): Promise<Operation | null> {
   if (value === undefined) return null;
@@ -46,6 +47,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
         await tx.objectStore('meta').put({ generation: crypto.randomUUID(), revision: 0, recordVersion: RECORD_VERSION, bookCount: 0, serializedBytes: 2 }, 'library');
         await tx.objectStore('preferences').put(DEFAULT_PREFERENCES, 'ui');
         await tx.objectStore('syncState').put({ ...defaultSyncRecord, authRevision: current.authRevision + 1 }, 'control');
+        await tx.objectStore('syncState').put(crypto.randomUUID(), LOCALE_SESSION_KEY);
         await tx.done;
       } catch (error) {
         try { tx.abort(); } catch { /* Transaction may already be closed. */ }

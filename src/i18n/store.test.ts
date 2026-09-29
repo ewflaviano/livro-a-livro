@@ -34,7 +34,7 @@ it('stores a choice locally and invalidates another tab without sending the choi
   const initial = await first.read();
   expect(initial.choice).toBeNull();
   const changed = vi.fn(); second.subscribe(changed);
-  await first.write('en', initial.authRevision);
+  await first.write('en', initial.session);
   expect(await second.read()).toEqual({ ...initial, choice: 'en' });
   expect(changed).toHaveBeenCalledOnce();
   expect(bus.all[0].postMessage).toHaveBeenCalledWith('changed');
@@ -54,15 +54,15 @@ it('erases locale on logout and fences a stale tab from restoring it', async () 
   const locale = await openLocaleStore({ name, channelFactory: bus.factory }); stores.push(locale);
   const sync = await openSyncStore({ name }); stores.push(sync);
   const before = await locale.read();
-  await locale.write('en', before.authRevision);
+  await locale.write('en', before.session);
   const changed = vi.fn(); locale.subscribe(changed);
   const control = await sync.read();
   await sync.eraseAfterLogout(control.authRevision);
   expect(changed).toHaveBeenCalledOnce();
   const after = await locale.read();
   expect(after.choice).toBeNull();
-  expect(after.authRevision).toBe(before.authRevision + 1);
-  await expect(locale.write('en', before.authRevision)).rejects.toThrow('LocaleSessionChanged');
+  expect(after.session).not.toBe(before.session);
+  await expect(locale.write('en', before.session)).rejects.toThrow('LocaleSessionChanged');
   expect((await locale.read()).choice).toBeNull();
 });
 
@@ -73,7 +73,18 @@ it('allows a local choice after a library replacement changes its generation', a
   const db = await openDB<LibraryDatabase>(name); stores.push(db);
   const metadata = (await db.get('meta', 'library'))!;
   await db.put('meta', { ...metadata, generation: crypto.randomUUID() }, 'library');
-  await locale.write('en', before.authRevision);
+  await locale.write('en', before.session);
+  expect((await locale.read()).choice).toBe('en');
+});
+
+it('allows a choice after an ordinary authorization revision changes', async () => {
+  const name = crypto.randomUUID(); names.push(name);
+  const locale = await openLocaleStore({ name, channelFactory: () => null }); stores.push(locale);
+  const sync = await openSyncStore({ name }); stores.push(sync);
+  const before = await locale.read();
+  await sync.update({ enabled: false }, undefined, true);
+  expect((await sync.read()).authRevision).toBe(1);
+  await locale.write('en', before.session);
   expect((await locale.read()).choice).toBe('en');
 });
 
@@ -81,7 +92,7 @@ it('works when BroadcastChannel construction fails', async () => {
   const name = crypto.randomUUID(); names.push(name);
   const locale = await openLocaleStore({ name, channelFactory: () => { throw new Error('disabled'); } }); stores.push(locale);
   const before = await locale.read();
-  await locale.write('en', before.authRevision);
+  await locale.write('en', before.session);
   expect((await locale.read()).choice).toBe('en');
 });
 

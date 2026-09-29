@@ -1,13 +1,13 @@
 import { openDatabase } from '../adapters/indexeddb/database';
-import { defaultSyncRecord, syncStateSchema } from '../sync/contracts';
 import type { Locale } from './locale';
 
 const KEY = 'ui-locale-v1';
+export const LOCALE_SESSION_KEY = 'ui-locale-session-v1';
 const CHANNEL = 'ui-locale';
 
 export interface LocalePreference {
   choice: Locale | null;
-  authRevision: number;
+  session: string;
 }
 
 /** UI preference lives only in this browser, outside books, backups and Drive. */
@@ -25,25 +25,23 @@ export async function openLocaleStore(options: {
   return {
     async read(): Promise<LocalePreference> {
       connection.ensureOpen();
-      const tx = db.transaction(['experimentState', 'syncState'], 'readonly');
-      const [value, control] = await Promise.all([
-        tx.objectStore('experimentState').get(KEY),
-        tx.objectStore('syncState').get('control'),
-      ]);
+      const tx = db.transaction(['experimentState', 'syncState'], 'readwrite');
+      void tx.done.catch(() => {});
+      const [value, rawSession] = await Promise.all([tx.objectStore('experimentState').get(KEY), tx.objectStore('syncState').get(LOCALE_SESSION_KEY)]);
+      const session = rawSession === undefined ? crypto.randomUUID() : rawSession;
+      if (typeof session !== 'string') { tx.abort(); throw new Error('InvalidLocaleSession'); }
+      if (rawSession === undefined) await tx.objectStore('syncState').put(session, LOCALE_SESSION_KEY);
       await tx.done;
       if (value !== undefined && value !== 'pt-BR' && value !== 'en') throw new Error('InvalidLocalePreference');
-      return { choice: value ?? null, authRevision: control === undefined ? defaultSyncRecord.authRevision : syncStateSchema.parse(control).authRevision };
+      return { choice: value ?? null, session };
     },
-    async write(choice: Locale, expectedAuthRevision: number): Promise<void> {
+    async write(choice: Locale, expectedSession: string): Promise<void> {
       connection.ensureOpen();
       const tx = db.transaction(['experimentState', 'syncState'], 'readwrite');
       void tx.done.catch(() => {});
       try {
-        const control = await tx.objectStore('syncState').get('control');
-        const authRevision = control === undefined ? defaultSyncRecord.authRevision : syncStateSchema.parse(control).authRevision;
-        // Logout increments authRevision and clears the choice in the same transaction.
-        // Backup restore/Drive replace may change the library generation alone.
-        if (authRevision !== expectedAuthRevision) throw new Error('LocaleSessionChanged');
+        const session = await tx.objectStore('syncState').get(LOCALE_SESSION_KEY);
+        if (session !== expectedSession) throw new Error('LocaleSessionChanged');
         await tx.objectStore('experimentState').put(choice, KEY);
         await tx.done;
       } catch (error) {
