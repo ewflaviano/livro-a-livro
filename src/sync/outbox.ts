@@ -6,6 +6,7 @@ import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncE
 import { parseSnapshot } from './snapshot';
 import { canonicalJson } from './protocol';
 import type { LocalRevision } from '../ports/library-repository';
+import { LOCALE_SESSION_KEY } from '../i18n/keys';
 
 async function parseOperation(value: unknown): Promise<Operation | null> {
   if (value === undefined) return null;
@@ -18,6 +19,9 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
   const revisionChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:revision`);
   const consentChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-a-livro-usage-consent');
+  let localeChannel: BroadcastChannel | null = null;
+  try { if (typeof BroadcastChannel !== 'undefined') localeChannel = new BroadcastChannel(`${db.name}:ui-locale`); }
+  catch { /* Locale invalidation is optional; focused tabs reread storage. */ }
   const notify = () => listeners.forEach(listener => listener());
   if (channel) channel.onmessage = notify;
   const changed = () => { channel?.postMessage('control'); };
@@ -43,6 +47,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
         await tx.objectStore('meta').put({ generation: crypto.randomUUID(), revision: 0, recordVersion: RECORD_VERSION, bookCount: 0, serializedBytes: 2 }, 'library');
         await tx.objectStore('preferences').put(DEFAULT_PREFERENCES, 'ui');
         await tx.objectStore('syncState').put({ ...defaultSyncRecord, authRevision: current.authRevision + 1 }, 'control');
+        await tx.objectStore('syncState').put(crypto.randomUUID(), LOCALE_SESSION_KEY);
         await tx.done;
       } catch (error) {
         try { tx.abort(); } catch { /* Transaction may already be closed. */ }
@@ -52,6 +57,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       changed();
       try { revisionChannel?.postMessage({ type: 'revision-changed' }); } catch { /* Focus rechecks. */ }
       try { consentChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
+      try { localeChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
     /** Patch current control and fence cycle writes in the same transaction. */
@@ -160,7 +166,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const value = await db.get('syncState', 'lease') as { owner: string; until: number } | undefined;
       if (value?.owner !== owner || value.until <= Date.now()) throw new SyncError('cancelled');
     },
-    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); listeners.clear(); connection.close(); },
+    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); localeChannel?.close(); listeners.clear(); connection.close(); },
   };
 }
 export type SyncStore = Awaited<ReturnType<typeof openSyncStore>>;
