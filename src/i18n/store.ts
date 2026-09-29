@@ -1,8 +1,8 @@
 import { openDatabase } from '../adapters/indexeddb/database';
 import type { Locale } from './locale';
+import { LOCALE_SESSION_KEY } from './keys';
 
 const KEY = 'ui-locale-v1';
-export const LOCALE_SESSION_KEY = 'ui-locale-session-v1';
 const CHANNEL = 'ui-locale';
 
 export interface LocalePreference {

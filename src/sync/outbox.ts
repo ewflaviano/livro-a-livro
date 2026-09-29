@@ -6,7 +6,7 @@ import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncE
 import { parseSnapshot } from './snapshot';
 import { canonicalJson } from './protocol';
 import type { LocalRevision } from '../ports/library-repository';
-import { LOCALE_SESSION_KEY } from '../i18n/store';
+import { LOCALE_SESSION_KEY } from '../i18n/keys';
 
 async function parseOperation(value: unknown): Promise<Operation | null> {
   if (value === undefined) return null;
