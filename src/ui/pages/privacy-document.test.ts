@@ -32,6 +32,6 @@ it('retains the material privacy topics below the summary', () => {
     'dez minutos', '30 dias', '180 dias', '24 horas',
     'não carrega o script do Analytics nem envia esses códigos',
     'uma escolha única para contar visitas', 'mesmo aceite do aviso permite',
-    'Open Library', '14 dias', 'ewanderson.flaviano@gmail.com',
+    'Open Library', 'Pesquisar no Google Books', 'somente quando você clica', '14 dias', 'ewanderson.flaviano@gmail.com',
   ]) expect(text).toContain(phrase);
 });

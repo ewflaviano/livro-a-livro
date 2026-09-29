@@ -13,6 +13,13 @@ const messages = {
   'invalid-response': 'Não foi possível ler os resultados. Tente novamente ou adicione manualmente.',
   cooldown: 'A Open Library pediu uma pausa. Aguarde um pouco antes de tentar novamente; o cadastro manual continua disponível.',
 };
+function googleBooksSearchUrl(query: string): string {
+  const url = new URL('https://books.google.com/books');
+  url.searchParams.set('hl', 'pt-BR');
+  const text = query.trim().replace(/\s+/gu, ' ');
+  if (text) url.searchParams.set('q', text);
+  return url.toString();
+}
 export function BookSearch({ active, onSelect, onManual }: { active: boolean; onSelect: (draft: NewBook) => void; onManual: () => void }) {
   const [service] = useState(openBookSearch);
   const [query, setQuery] = useState('');
@@ -64,7 +71,10 @@ export function BookSearch({ active, onSelect, onManual }: { active: boolean; on
       <label className="form-field">Título, autor ou ISBN<input ref={input} value={query} maxLength={200} onChange={(event) => setQuery(event.target.value)} /></label>
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || Boolean(choosing)}>Buscar</button>
         {busy && <button className="button button-secondary" type="button" onClick={() => { sequence.current++; service.cancel(); setBusy(false); }}>Cancelar busca</button>}
+        <button className="button button-quiet" type="button" aria-label="Pesquisar no Google Books (abre em outra guia)"
+          onClick={() => window.open(googleBooksSearchUrl(query), '_blank', 'noopener,noreferrer')}>Pesquisar no Google Books ↗</button>
         <button className="button button-quiet" type="button" onClick={(event) => { selectedButton.current = event.currentTarget; onManual(); }}>Adicionar manualmente</button></div>
+      <p className="field-help">Google Books abre em outra guia e recebe o texto digitado somente quando você clicar no botão.</p>
     </form>
     {busy && <p role="status">Buscando na Open Library…</p>}
     {error && <div role="alert"><p>{error}</p><button className="button button-secondary" onClick={() => void search(submitted)}>Tentar novamente</button></div>}

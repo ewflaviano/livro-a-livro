@@ -27,6 +27,23 @@ async function setup() {
   return repository;
 }
 describe('optional book search UI', () => {
+  it('opens a Google Books search only by an explicit button without exposing its query to link tracking', async () => {
+    const repository = await setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    await userEvent.type(screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }), 'Dom  Casmurro');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(document.querySelector('a[href*="Dom"]')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Pesquisar no Google Books (abre em outra guia)' }));
+    expect(open).toHaveBeenCalledOnce();
+    const [url, target, features] = open.mock.calls[0];
+    expect(new URL(url!).searchParams.get('q')).toBe('Dom Casmurro');
+    expect(new URL(url!).origin).toBe('https://books.google.com');
+    expect(target).toBe('_blank');
+    expect(features).toBe('noopener,noreferrer');
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await repository.readAll()).books).toHaveLength(0);
+  });
   it('shows covers in results and saves the chosen edition metadata locally', async () => {
     const repository = await setup();
     await userEvent.type(screen.getByRole('textbox', { name: 'Título, autor ou ISBN' }), 'Livro');
