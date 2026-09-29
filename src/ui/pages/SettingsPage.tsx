@@ -2,26 +2,28 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAnalytics } from '../../analytics/AnalyticsProvider';
 import { PwaStatus } from '../components/PwaStatus';
+import { useLocale } from '../../i18n/context';
 
 export function SettingsPage() {
+  const { t } = useLocale();
   const analytics = useAnalytics();
-  useEffect(() => { document.title = 'Configurações · Livro a Livro'; }, []);
+  useEffect(() => { document.title = `${t('settings')} · ${t('appName')}`; }, [t]);
   return <section className="page-content" aria-labelledby="settings-title">
-    <h1 id="settings-title">Configurações</h1>
+    <h1 id="settings-title">{t('settings')}</h1>
     <section aria-labelledby="analytics-settings-title">
-      <h2 id="analytics-settings-title">Uso do aplicativo</h2>
-      <p>Visitas e diagnóstico: {analytics.loading ? 'Verificando…' : analytics.error ? 'Não foi possível verificar' : analytics.choice === 'accepted' ? 'Aceito' : analytics.choice === 'rejected' ? 'Recusado' : 'Ainda não escolhido'}.</p>
-      {analytics.analyticsUnavailable && <p role="status">O Analytics está indisponível neste navegador. O diagnóstico segue sua escolha.</p>}
-      <button className="button button-secondary" aria-label="Revisar escolha de uso do aplicativo" onClick={analytics.review}>Rever escolha</button>
+      <h2 id="analytics-settings-title">{t('appUsage')}</h2>
+      <p>{t('visitsDiagnostics', { choice: analytics.loading ? t('checking') : analytics.error ? t('checkFailed') : analytics.choice === 'accepted' ? t('accepted') : analytics.choice === 'rejected' ? t('rejected') : t('undecided') })}</p>
+      {analytics.analyticsUnavailable && <p role="status">{t('analyticsUnavailable')}</p>}
+      <button className="button button-secondary" aria-label={t('reviewUsageChoice')} onClick={analytics.review}>{t('reviewChoice')}</button>
     </section>
     <section aria-labelledby="app-settings-title">
-      <h2 id="app-settings-title">Aplicativo</h2>
-      <p className="settings-version">Versão {__APP_VERSION__} · commit {__BUILD_ID__}{import.meta.env.DEV ? ' · desenvolvimento' : ''}</p>
+      <h2 id="app-settings-title">{t('application')}</h2>
+      <p className="settings-version">{t('versionCommit', { version: __APP_VERSION__, commit: __BUILD_ID__ })}{import.meta.env.DEV ? t('development') : ''}</p>
       <PwaStatus showUnsupported />
-      <p><Link to="/dados">Seus dados e backup</Link></p>
-      <details className="settings-options"><summary>Instalação e atualização</summary>
+      <p><Link to="/dados">{t('dataAndBackup')}</Link></p>
+      <details className="settings-options"><summary>{t('installUpdate')}</summary>
         <PwaStatus detailed showStatus={false} />
-        <Link to="/instalar">Como instalar</Link>
+        <Link to="/instalar">{t('howToInstall')}</Link>
       </details>
     </section>
   </section>;

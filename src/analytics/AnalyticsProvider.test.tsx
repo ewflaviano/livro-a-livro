@@ -21,10 +21,20 @@ vi.mock('../ui/components/PwaStatus', () => ({ PwaStatus: () => null }));
 import { AnalyticsProvider, useAnalytics } from './AnalyticsProvider';
 import { AnalyticsBanner } from '../ui/components/AnalyticsBanner';
 import { SettingsPage } from '../ui/pages/SettingsPage';
+import { LocalePreview } from '../i18n/context';
 function View() { const analytics = useAnalytics(); const navigate = useNavigate(); return <><AnalyticsBanner /><button onClick={() => navigate('/livro/private-id?secret=1')}>Abrir livro</button><button onClick={analytics.review}>Revisar escolha</button><button onClick={() => void analytics.choose('rejected')}>Forçar recusa</button><span>{analytics.choice ?? 'indeciso'}</span></>; }
-const mount = () => render(<MemoryRouter initialEntries={['/estante']}><AnalyticsProvider><View /></AnalyticsProvider></MemoryRouter>);
+const mount = (locale: 'pt-BR' | 'en' = 'pt-BR') => render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/estante']}><AnalyticsProvider><View /></AnalyticsProvider></MemoryRouter></LocalePreview>);
 beforeEach(() => { harness.openFail = false; harness.openGate = null; harness.opened.mockClear(); harness.persisted = null; harness.read.mockClear(); harness.write.mockClear(); harness.enable.mockClear(); harness.disable.mockClear(); harness.page.mockClear(); diagnostic.setEnabled.mockClear(); });
 afterEach(cleanup);
+it('previews English consent without enabling Analytics before acceptance', async () => {
+  mount('en');
+  expect(await screen.findByRole('button', { name: 'Accept' })).toBeTruthy();
+  expect(screen.getByText(/does not follow you across other sites/)).toBeTruthy();
+  expect(harness.enable).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
+  expect(harness.persisted).toBe('rejected');
+  expect(harness.enable).not.toHaveBeenCalled();
+});
 it('does not load GA undecided or rejected and persists before enabling on acceptance', async () => {
   harness.enable.mockImplementationOnce(async () => { expect(harness.persisted).toBe('accepted'); return true; });
   mount(); await screen.findByRole('button', { name: 'Aceitar' });

@@ -6,13 +6,23 @@ import { MemoryRouter } from 'react-router-dom';
 const installation = vi.hoisted(() => ({ state: { installed: false, available: false, busy: false, outcome: 'none' }, request: vi.fn() }));
 vi.mock('../../pwa/install', () => ({ getInstallState: () => installation.state, subscribeInstall: () => () => {}, startInstallObservation() {}, requestInstall: installation.request }));
 import { detectInstallGuide, InstallPage } from './InstallPage';
+import { LocalePreview } from '../../i18n/context';
 afterEach(() => { cleanup(); installation.state = { installed: false, available: false, busy: false, outcome: 'none' }; vi.restoreAllMocks(); vi.clearAllMocks(); });
-const mount = () => render(<MemoryRouter><InstallPage /></MemoryRouter>);
+const mount = (locale: 'pt-BR' | 'en' = 'pt-BR') => render(<LocalePreview locale={locale}><MemoryRouter><InstallPage /></MemoryRouter></LocalePreview>);
 const android = 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36';
 const androidWebView = 'Mozilla/5.0 (Linux; Android 15; Pixel 8; wv) AppleWebKit/537.36 Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36';
 const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
 const iosChrome = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/130.0 Mobile/15E148 Safari/604.1';
 const desktop = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36';
+
+it('previews English install guidance without claiming installation is a backup', () => {
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Unknown browser');
+  mount('en');
+  expect(screen.getByRole('heading', { name: 'Install' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'iPhone or iPad with Safari' })).toBeTruthy();
+  expect(screen.getByText(/Installing does not create a backup/)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open local backup' }).getAttribute('href')).toBe('/dados');
+});
 
 it.each([
   [android, 'android', false], [androidWebView, 'android', true], [iphone, 'ios', false], [iosChrome, 'ios', true], [desktop, 'desktop', false],
