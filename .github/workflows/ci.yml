@@ -113,6 +113,7 @@ jobs:
       auth: ${{ steps.detect.outputs.auth }}
       revocation: ${{ steps.detect.outputs.revocation }}
       diagnostics: ${{ steps.detect.outputs.diagnostics }}
+      workflow: ${{ steps.detect.outputs.workflow }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -123,6 +124,8 @@ jobs:
           auth=false
           revocation=false
           diagnostics=false
+          workflow=false
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]] && ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- .github/workflows/ci.yml; then workflow=true; fi
           if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
             auth=true
             revocation=true
@@ -148,7 +151,23 @@ jobs:
           echo "auth=$auth" >> "$GITHUB_OUTPUT"
           echo "revocation=$revocation" >> "$GITHUB_OUTPUT"
           echo "diagnostics=$diagnostics" >> "$GITHUB_OUTPUT"
+          echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
           if [[ "$auth$revocation$diagnostics" == falsefalsefalse ]]; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
+
+  verify_api_oidc:
+    if: github.event_name == 'push' && needs.api_changes.outputs.workflow == 'true'
+    needs: [api_changes]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_API_DEPLOY_ROLE_ARN }}
+          aws-region: sa-east-1
+      - name: Verify API deployment role without publishing
+        run: aws sts get-caller-identity >/dev/null
 
   publish_api:
     if: github.event_name == 'workflow_dispatch' || needs.api_changes.outputs.changed == 'true'
