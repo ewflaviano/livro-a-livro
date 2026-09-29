@@ -19,6 +19,8 @@ import { encodedCover, syntheticCover, stubImageDecoder } from '../../../test/fi
 import { parseBook } from '../../domain/book';
 import { DomainError } from '../../domain/errors';
 import { LIBRARY_LIMITS } from '../../domain/library';
+import { LocalePreview } from '../../i18n/context';
+import type { Locale } from '../../i18n/locale';
 
 const original = parseBook(fixture.books[0]);
 const covers = () => ({ ...fixture, books: [{ ...original, cover: { provider: 'local', mediaId: encodedCover().id } }], coverMedia: [encodedCover()] });
@@ -46,14 +48,14 @@ afterEach(async () => {
   vi.restoreAllMocks(); vi.unstubAllGlobals(); downloaded.length = 0;
   for (const item of opened.splice(0)) { item.close(); await deleteDB(item.name); }
 });
-async function setup(withBook = false) {
+async function setup(withBook = false, locale: Locale = 'pt-BR') {
   const name = crypto.randomUUID(); const repo = await openLibraryRepository({ name, channelFactory: null });
   const db = await openDB<LibraryDatabase>(name);
   if (withBook) await repo.commit({ kind: 'replace', books: [parseBook(covers().books[0])], coverMedia: [syntheticCover()], preferences: { shelfYear: fixture.preferences.shelfYear, filter: 'read' } }, await repo.readRevision());
   const service = createShelfService(repo);
   opened.push({ name, close: () => { service.close(); db.close(); } });
-  const view = render(<MemoryRouter initialEntries={['/dados']}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Fazer backup' }) as HTMLButtonElement).disabled).toBe(false));
+  const view = render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/dados']}><AppRoutes openService={async () => service} /></MemoryRouter></LocalePreview>);
+  await vi.waitFor(() => expect((screen.getByRole('button', { name: locale === 'en' ? 'Make backup' : 'Fazer backup' }) as HTMLButtonElement).disabled).toBe(false));
   return { repo, db, service, view };
 }
 async function select(value = file()) {
@@ -72,6 +74,22 @@ async function confirm(count = 1) {
 }
 
 describe('independent local backup interface', () => {
+  it('previews English backup controls and a safe restoration summary offline', async () => {
+    const target = await setup(false, 'en');
+    expect(screen.getByRole('heading', { name: 'Local backup' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Restore backup' }));
+    await userEvent.upload(screen.getByLabelText('Import JSON'), file());
+    expect(await screen.findByText('In the file: 1 book. Years: 2025.')).toBeTruthy();
+    expect(screen.getByText('On this device: 0 books. Years: none.')).toBeTruthy();
+    expect((await target.repo.readAll()).books).toHaveLength(0);
+    expect(fetch).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Replace with 1 book' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText(/current library \(0 books\) will be replaced/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Replace with 1 book' }));
+    expect(await screen.findByText('1 book imported on this device.')).toBeTruthy();
+    expect((await target.repo.readAll()).books).toEqual(fixture.books);
+  });
   it('downloads a preserved V1 recovery as V2 without its old display mode', async () => {
     downloadLibrary(fixture as import('../../backup/schema').LibraryExportV1, 'recuperacao');
     const data = JSON.parse(await downloaded[0].text());

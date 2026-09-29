@@ -11,20 +11,22 @@ import { createBook, type Book } from '../../domain/book';
 import { DomainError } from '../../domain/errors';
 import { createShelfService } from '../../services/shelf-service';
 import { AppRoutes } from '../../app/router';
+import { LocalePreview } from '../../i18n/context';
+import type { Locale } from '../../i18n/locale';
 
 const synthetic = (patch: Partial<Book> = {}) => createBook({ title: 'Livro de teste', ...patch }, {
   id: crypto.randomUUID(), now: '2026-09-26T12:00:00.000Z', shelfYear: 2026,
 });
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); vi.spyOn(window, 'scrollTo').mockImplementation(() => {}); });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-async function setup(books: Book[] = [], route = '/adicionar') {
+async function setup(books: Book[] = [], route = '/adicionar', locale: Locale = 'pt-BR') {
   const name = crypto.randomUUID();
   const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
-  render(<MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  if (route === '/adicionar') await userEvent.click(await screen.findByRole('button', { name: 'Adicionar manualmente' }));
+  render(<LocalePreview locale={locale}><MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter></LocalePreview>);
+  if (route === '/adicionar') await userEvent.click(await screen.findByRole('button', { name: locale === 'en' ? 'Add manually' : 'Adicionar manualmente' }));
   return { repository, service, name };
 }
 const titleField = () => screen.getByRole('textbox', { name: 'Título (obrigatório)' });
@@ -42,6 +44,19 @@ const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
 };
 
 describe('manual books and private detail', () => {
+  it('previews English form and detail while preserving the original book title and note', async () => {
+    const { repository } = await setup([], '/adicionar', 'en');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title (required)' }), 'Árvore de papel');
+    await userEvent.click(screen.getByText('More details (optional)'));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Notes' }), 'Nota privada');
+    await userEvent.click(screen.getByRole('button', { name: 'Save book' }));
+    expect(await screen.findByRole('heading', { name: 'Árvore de papel' })).toBeTruthy();
+    expect((await repository.readAll()).books[0].note).toBe('Nota privada');
+    const entry = screen.getByRole('link', { name: /Árvore de papel/ });
+    await userEvent.click(entry);
+    expect(await screen.findByRole('button', { name: 'Edit book' })).toBeTruthy();
+    expect(screen.getByText('Nota privada')).toBeTruthy();
+  });
   it('shows Editar beside the book state and omits empty optional details', async () => {
     const original = synthetic();
     await setup([original], `/livro/${original.id}`);

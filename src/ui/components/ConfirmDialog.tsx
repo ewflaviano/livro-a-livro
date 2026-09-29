@@ -1,13 +1,15 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { occupyUi } from '../interaction-guard';
 import { createPortal } from 'react-dom';
+import { useLocale } from '../../i18n/context';
 
 const dialogs: symbol[] = [];
 
-export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfirm, busy = false, cancelLabel = 'Cancelar', variant = 'danger', returnFocus }: {
+export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfirm, busy = false, cancelLabel, variant = 'danger', returnFocus }: {
   title: string; children: ReactNode; confirmLabel: string; onCancel: () => void;
   onConfirm: () => void; busy?: boolean; cancelLabel?: string; variant?: 'primary' | 'danger'; returnFocus?: RefObject<HTMLElement | null>;
 }) {
+  const { t } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -55,7 +57,7 @@ export function ConfirmDialog({ title, children, confirmLabel, onCancel, onConfi
   return createPortal(<div className="dialog-backdrop"><div className="confirm-dialog" ref={ref} tabIndex={-1}
     role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={busy}>
     <h2 id={titleId}>{title}</h2><div id={descriptionId}>{children}</div>
-    <div className="form-actions"><button className="button button-secondary" disabled={busy} onClick={onCancel}>{cancelLabel}</button>
-      <button className={`button button-${variant}`} disabled={busy} onClick={onConfirm}>{busy ? 'Aguarde…' : confirmLabel}</button></div>
+    <div className="form-actions"><button className="button button-secondary" disabled={busy} onClick={onCancel}>{cancelLabel ?? t('cancel')}</button>
+      <button className={`button button-${variant}`} disabled={busy} onClick={onConfirm}>{busy ? t('wait') : confirmLabel}</button></div>
   </div></div>, document.body);
 }
