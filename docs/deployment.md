@@ -32,6 +32,8 @@ O consentimento Google está em produção, com escopos `openid` e `drive.appdat
 
 Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline. Configurações mostra os sete primeiros caracteres do commit da execução que construiu o frontend; fora do CI, usa o commit local.
 
+`manifest-en.webmanifest`, `/privacidade.html` e `/privacy.html` também recebem `no-cache` e invalidação explícita no CloudFront. Os dois manifestos conservam o mesmo `id`, `start_url`, `scope` e ícones; as duas políticas são HTML estático e entram no precache offline. Até a ativação da escolha de idioma, o HTML principal ainda aponta para o manifesto português.
+
 ## API
 
 `infra/api-deploy.yml` provisiona o bucket privado de artefatos e a role `livro-a-livro-api-deploy`, em `sa-east-1`. `infra/api.yml` provisiona a composição de autorização: API Gateway HTTP no domínio `api.livroalivro.app.br`, funções Lambda `auth` e `revocation`, tabela DynamoDB exclusiva, chave KMS, rotina por minuto e alarmes. A issue #95 acrescenta uma função `diagnostics` com role e log próprios, sem permissão de sessão ou segredo. O endpoint padrão execute-api é desabilitado. O serviço não tem bucket para biblioteca nem permissão para S3 nas roles de execução.

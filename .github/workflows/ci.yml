@@ -108,11 +108,14 @@ jobs:
           test -n "$DISTRIBUTION" && test "$DISTRIBUTION" != None
           aws s3 sync dist/assets/ "s3://$BUCKET/assets/" --cache-control 'public,max-age=31536000,immutable'
           aws s3 sync dist/icons/ "s3://$BUCKET/icons/" --cache-control 'public,max-age=300,must-revalidate'
-          aws s3 sync dist/ "s3://$BUCKET/" --exclude 'assets/*' --exclude 'icons/*' --exclude 'index.html' --exclude 'manifest.webmanifest' --exclude 'sw.js' --cache-control 'public,max-age=300,must-revalidate'
+          aws s3 sync dist/ "s3://$BUCKET/" --exclude 'assets/*' --exclude 'icons/*' --exclude 'index.html' --exclude 'privacidade.html' --exclude 'privacy.html' --exclude 'manifest.webmanifest' --exclude 'manifest-en.webmanifest' --exclude 'sw.js' --cache-control 'public,max-age=300,must-revalidate'
           aws s3 cp dist/manifest.webmanifest "s3://$BUCKET/manifest.webmanifest" --cache-control 'no-cache'
+          aws s3 cp dist/manifest-en.webmanifest "s3://$BUCKET/manifest-en.webmanifest" --cache-control 'no-cache'
+          aws s3 cp dist/privacidade.html "s3://$BUCKET/privacidade.html" --cache-control 'no-cache'
+          aws s3 cp dist/privacy.html "s3://$BUCKET/privacy.html" --cache-control 'no-cache'
           aws s3 cp dist/sw.js "s3://$BUCKET/sw.js" --cache-control 'no-cache'
           aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache'
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest'
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest' '/manifest-en.webmanifest' '/privacidade.html' '/privacy.html'
 
   api_changes:
     if: github.event_name != 'pull_request'
