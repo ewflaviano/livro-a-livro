@@ -14,6 +14,8 @@ A tradução da SPA usa chaves tipadas nos dois catálogos e substituição text
 
 Cadastro, edição, detalhe e backup também têm prévia EN. Erros desses fluxos permanecem como códigos de apresentação no estado React e são traduzidos na renderização, inclusive após mudança de idioma. A prévia de restauração continua local e exige confirmação antes de substituir livros; o idioma não integra o arquivo de backup.
 
+Os estados globais e a página do Drive, incluindo conflitos, união, revogação e logout, passam pelo mesmo catálogo. IDs e estados de sincronização continuam valores técnicos sem tradução persistida. O aviso de apagar dados locais ou revogar Drive aparece antes da ação nos dois idiomas; EN ainda é prévia restrita aos testes.
+
 Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
 
 **Lacunas atuais:** experimentos/métricas não têm consumidores runtime. Configurações e ajuda de instalação foram entregues na issue #45. A issue #37 corrige atomicidade e validação da restauração com mídias (S1/S4); a issue #39 unifica limites de gravação, exportação e importação (S2); a issue #40 entrega a interface de backup independente (S5).

@@ -11,15 +11,29 @@ import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './Glo
 import { ConfirmDialog } from './ConfirmDialog';
 import { BookForm } from './BookForm';
 import type { LibraryService } from '../../services/library-service';
+import { LocalePreview } from '../../i18n/context';
+import type { Locale } from '../../i18n/locale';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false, initializing: false,
   coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), retryDriveAuthorization: vi.fn(async () => {}) },
 }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 afterEach(() => { cleanup(); expect(getUiOccupancy()).toBe(0); expect(getPwaState().blocked).toBe(false); vi.clearAllMocks(); sync.state = { status: 'disabled' }; sync.available = true; sync.initializing = false; });
-function Shell({ children }: { children?: ReactNode }) {
-  return <MemoryRouter><GlobalSyncControls><GlobalSyncHeader /><GlobalSyncAttention />{children}</GlobalSyncControls></MemoryRouter>;
+function Shell({ children, locale = 'pt-BR' }: { children?: ReactNode; locale?: Locale }) {
+  return <LocalePreview locale={locale}><MemoryRouter><GlobalSyncControls><GlobalSyncHeader /><GlobalSyncAttention />{children}</GlobalSyncControls></MemoryRouter></LocalePreview>;
 }
+it('previews English sign-in without granting Drive permission automatically', async () => {
+  const view = render(<Shell locale="en" />);
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+  expect(screen.getByText(/your library will not be uploaded at this step/)).toBeTruthy();
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sign in with Google' }));
+  expect(sync.coordinator.connect).toHaveBeenCalledOnce();
+  expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
+  sync.state = { status: 'authorize-drive' }; view.rerender(<Shell locale="en" />);
+  expect(screen.getByRole('heading', { name: 'Store your library in Drive?' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Not now' }));
+  expect(sync.coordinator.authorizeDrive).not.toHaveBeenCalled();
+});
 it('offers global support and a confirmed sign-in without automatic Drive consent', async () => {
   const view = render(<Shell />);
   expect(screen.getByRole('link', { name: 'Apoiar' }).getAttribute('href')).toBe('/apoiar');
