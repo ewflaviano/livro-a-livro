@@ -8,6 +8,8 @@ import { openLibraryRepository } from '../../adapters/indexeddb/library-reposito
 import { createBook, type Book } from '../../domain/book';
 import { createShelfService } from '../../services/shelf-service';
 import { AppRoutes } from '../../app/router';
+import { LocalePreview } from '../../i18n/context';
+import type { Locale } from '../../i18n/locale';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const book = (title: string, patch: Partial<Book> = {}) => createBook({ title, ...patch }, {
@@ -17,18 +19,27 @@ const numberedBooks = (count: number, patch: Partial<Book> = {}, year = 2026) =>
   title: `Livro ${String(index + 1).padStart(2, '0')}`, status: 'read', pageCount: 10, authors: ['Autora'], ...patch,
 }, { id: crypto.randomUUID(), now: new Date(Date.UTC(2026, 8, 26, 12, 0, index)).toISOString(), shelfYear: year }));
 
-async function setup(books: Book[] = [], route = '/estante') {
+async function setup(books: Book[] = [], route = '/estante', locale: Locale = 'pt-BR') {
   const name = crypto.randomUUID();
   const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
-  render(<MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await screen.findByRole('combobox', { name: 'Ano da estante' });
+  render(<LocalePreview locale={locale}><MemoryRouter initialEntries={[route]}><AppRoutes openService={async () => service} /></MemoryRouter></LocalePreview>);
+  await screen.findByRole('combobox', { name: locale === 'en' ? 'Shelf year' : 'Ano da estante' });
   return { repository, service, name };
 }
 
 describe('annual shelf with the real IndexedDB adapter', () => {
+  it('previews English shelf labels and formats without translating a book title', async () => {
+    await setup([book('Árvore de papel', { status: 'read', pageCount: 1234, authors: ['Ana'] })], '/estante', 'en');
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Árvore de papel' })).toBeTruthy();
+    expect(screen.getByRole('definition', { name: '1 book read in 2026' })).toBeTruthy();
+    expect(screen.getByRole('definition', { name: '1,234 pages reported in read books' }).textContent).toBe('1,234');
+    expect(screen.getByRole('button', { name: 'List view' })).toBeTruthy();
+    expect(document.title).toBe('My shelf · Livro a Livro');
+  });
   it('renders at most 24 cards per page while metrics and search cover the whole year', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     await setup(numberedBooks(50));
@@ -167,7 +178,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByRole('list', { name: /Livros da estante/ }).className).toContain('--list');
     expect(stats()).toBeTruthy();
     await userEvent.selectOptions(screen.getByRole('combobox'), '2025');
-    expect(screen.getByRole('definition', { name: '1 livros lidos em 2025' })).toBeTruthy();
+    expect(screen.getByRole('definition', { name: '1 livro lido em 2025' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Nenhum livro em Lendo nesta estante.' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Limpar filtro' }));
     expect(screen.getByRole('heading', { name: 'Ano anterior' })).toBeTruthy();
@@ -211,7 +222,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     await setup([book('Selecionado', { status }), book('Outro', { status: 'read' })], route);
     expect(screen.getByRole('heading', { name: 'Selecionado' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Outro' })).toBeNull();
-    expect(screen.getByRole('definition', { name: '1 livros lidos em 2026' })).toBeTruthy();
+    expect(screen.getByRole('definition', { name: '1 livro lido em 2026' })).toBeTruthy();
     await userEvent.click(screen.getByRole('link', { name: /Selecionado/ }));
     expect(screen.getByRole('link', { name: 'Voltar para a estante' }).getAttribute('href')).toBe(route);
   });

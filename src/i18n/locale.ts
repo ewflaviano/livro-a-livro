@@ -18,5 +18,7 @@ export function formatDate(locale: Locale, value: Date, options: Intl.DateTimeFo
 }
 
 export function pluralCategory(locale: Locale, count: number): Intl.LDMLPluralRule {
+  // Portuguese CLDR groups zero with singular; UI counts read more naturally in plural.
+  if (locale === 'pt-BR' && count === 0) return 'other';
   return new Intl.PluralRules(locale).select(count);
 }

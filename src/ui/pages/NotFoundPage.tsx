@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useLocale } from '../../i18n/context';
 export function NotFoundPage() {
-  useEffect(() => { document.title = 'Página não encontrada · Livro a Livro'; }, []);
-  return <section><h1>Página não encontrada</h1><p>Este endereço não faz parte do Livro a Livro. Seus registros continuam neste dispositivo.</p><div className="form-actions"><Link className="button button-primary" to="/estante">Voltar para a estante</Link><Link className="button button-secondary" to="/dados">Seus dados e backup</Link></div></section>;
+  const { t } = useLocale();
+  useEffect(() => { document.title = `${t('notFound')} · ${t('appName')}`; }, [t]);
+  return <section><h1>{t('notFound')}</h1><p>{t('notFoundExplanation')}</p><div className="form-actions"><Link className="button button-primary" to="/estante">{t('backToShelf')}</Link><Link className="button button-secondary" to="/dados">{t('dataAndBackup')}</Link></div></section>;
 }
