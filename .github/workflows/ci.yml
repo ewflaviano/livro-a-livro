@@ -27,7 +27,16 @@ jobs:
       - name: Verify only public assets are built
         run: |
           test -f dist/index.html
-          ! rg -n --hidden --glob '!*.map' '(refresh_token|client_secret|AKIA[0-9A-Z]{16})' dist
+          if grep -EIRq --exclude='*.map' '(refresh_token|client_secret|AKIA[0-9A-Z]{16})' dist; then
+            echo 'Sensitive value found in public assets' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "Public asset scan failed with status $status" >&2
+              exit "$status"
+            fi
+          fi
 
   browser:
     needs: [frontend]
