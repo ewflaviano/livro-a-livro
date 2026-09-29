@@ -59,7 +59,7 @@ try {
   const oldAsset = initialHtml.match(/src="(\/assets\/[^" ]+\.js)"/)[1];
   server = createServer(async (request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname;
-    if (!/^\/(?:|index\.html|sw\.js|privacidade\.html|manifest\.webmanifest|favicon\.ico|(?:assets|icons)\/[a-zA-Z0-9_.-]+)$/.test(path)) { response.writeHead(404).end(); return; }
+    if (!/^\/(?:|index\.html|sw\.js|privacidade\.html|privacy\.html|manifest\.webmanifest|manifest-en\.webmanifest|favicon\.ico|(?:assets|icons)\/[a-zA-Z0-9_.-]+)$/.test(path)) { response.writeHead(404).end(); return; }
     const name = path === '/' ? 'index.html' : path.slice(1);
     let body;
     try { body = await readFile(join(dirs[current], name)); }
@@ -84,6 +84,18 @@ try {
   stage = 'OFFLINE_NEW_AND_OLD_ASSETS'; await automatic.setOffline(true); await page.reload(); await version(page, 'b');
   check(isDeepStrictEqual(original, await snapshot(page)));
   check(await page.evaluate(async path => { const response = await fetch(path); return response.ok && response.headers.get('content-type')?.includes('javascript'); }, oldAsset));
+  check(await page.evaluate(async () => {
+    for (const [path, mime, phrase] of [
+      ['/privacidade.html', 'text/html', 'Privacidade'], ['/privacy.html', 'text/html', 'Privacy'],
+      ['/manifest.webmanifest', 'application/manifest+json', 'pt-BR'],
+      ['/manifest-en.webmanifest', 'application/manifest+json', '"lang": "en"'],
+    ]) {
+      const response = await fetch(path);
+      if (!response.ok || !response.headers.get('content-type')?.includes(mime) || !(await response.text()).includes(phrase)) return false;
+    }
+    return true;
+  }));
+  emit('BILINGUAL_PUBLIC_PAGES_OFFLINE_PASS');
   emit('UPDATED_OFFLINE_AND_OLD_CHUNKS_PASS'); await automatic.close();
 
   stage = 'DRAFT'; current = 'a'; const draftContext = await context(origin); const draft = await draftContext.newPage();

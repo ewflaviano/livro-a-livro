@@ -15,7 +15,7 @@ export function pwaPlugin(): Plugin {
     async closeBundle() {
       const assets = (await readdir(resolve(outDir, 'assets')))
         .filter((name) => /\.(js|css|woff2?|png|svg|webp)$/.test(name)).map((name) => `/assets/${name}`);
-      const urls = ['/index.html', '/privacidade.html', '/manifest.webmanifest', '/favicon.ico',
+      const urls = ['/index.html', '/privacidade.html', '/privacy.html', '/manifest.webmanifest', '/manifest-en.webmanifest', '/favicon.ico',
         '/icons/book.svg', '/icons/book-maskable.svg', '/icons/book-192.png', '/icons/book-512.png',
         '/icons/book-maskable-512.png', '/icons/apple-touch-icon.png', ...assets].sort();
       const entries = await Promise.all(urls.map(async (url) => ({ url,

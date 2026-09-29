@@ -64,7 +64,7 @@ async function routeRequest(route) {
   const request = route.request(); const url = new URL(request.url());
   if (url.origin !== web && offlineContexts.has(request.frame().page().context())) return route.abort();
   if (url.origin === web) {
-    const allowed = !url.search && (['/', '/index.html', '/privacidade.html', '/manifest.webmanifest'].includes(url.pathname) ||
+    const allowed = !url.search && (['/', '/index.html', '/privacidade.html', '/privacy.html', '/manifest.webmanifest', '/manifest-en.webmanifest'].includes(url.pathname) ||
       /^\/(assets|icons)\/[a-zA-Z0-9_.-]+$/.test(url.pathname));
     if (!allowed || request.method() !== 'GET') { violation = true; return route.abort(); }
     const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);

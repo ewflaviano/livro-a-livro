@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="description" content="How Livro a Livro stores your library and handles the optional Google Drive connection." />
+    <title>Privacy · Livro a Livro</title>
+    <link rel="stylesheet" href="/src/ui/styles/privacy.css" />
+  </head>
+  <body>
+    <header><a href="/">Livro a Livro</a><nav class="language-nav" aria-label="Language"><a href="/privacidade.html" lang="pt-BR" hreflang="pt-BR">Português</a><span aria-current="page">English</span></nav></header>
+    <main>
+      <h1>Privacy</h1>
+      <p>Updated September 29, 2026.</p>
+      <p class="privacy-summary">Your library is stored in this browser; the JSON backup is created here. With your separate authorization after sign-in, Drive receives a copy directly from the app. One choice in the notice controls visits and error diagnostics; submitted searches and external covers use Open Library. An optional action opens a search in Google Books.</p>
+      <nav class="privacy-nav" aria-label="On this page">
+        <h2>On this page</h2>
+        <ul>
+          <li><a href="#library">Library</a></li>
+          <li><a href="#google-drive">Google Drive</a></li>
+          <li><a href="#retention-removal">Retention and removal</a></li>
+          <li><a href="#search-covers">Search and covers</a></li>
+          <li><a href="#analytics">Analytics</a></li>
+          <li><a href="#diagnostics">Error diagnostics</a></li>
+          <li><a href="#infrastructure-third-parties">Infrastructure and third parties</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </nav>
+      <p>Livro a Livro is a personal library that works in this browser. You do not need to create an account to add, edit, view, or export your books.</p>
+      <h2 id="library">Your library stays on your device</h2>
+      <p>Books, notes, ratings, and uploaded covers stay in the browser’s local storage. The project does not receive this data. The JSON backup is created and restored on your device and contains your private information: keep it somewhere you trust.</p>
+      <p>Clearing browser data or changing browsers or site addresses may leave your shelf empty. Installing the app does not create a backup or guarantee that records will be kept.</p>
+      <h2 id="google-drive">Google Drive is optional</h2>
+      <p>If you choose “Sign in with Google”, the first step confirms your account and keeps you signed in on this browser without accessing Drive. When you return to the app, the connection may be restored without another sign-in. You can then choose “Authorize Google Drive” to allow access to Livro a Livro’s private app folder (<code>drive.appdata</code>). This second permission does not give the app access to your other Drive documents.</p>
+      <p>Your library and covers travel directly between the app in your browser and Google Drive. The Livro a Livro API does not receive books, notes, ratings, covers, snapshots, or backups. Uploads require the app to be open and connected; changes may wait until you return.</p>
+      <p>The authorization service, hosted on AWS, processes the technical identifier received from Google. The first step stores its own session and an opaque technical link; it does not create a Drive session or keep a Google refresh credential. Only after Drive authorization does the service store the link, sessions, and an encrypted refresh credential. It does not store your profile name or email. Short-lived access tokens stay only in the app’s memory; sign-in and authorization cookies are protected from JavaScript access.</p>
+      <p>Pausing uploads keeps the connection and local data. Signing out ends sign-in and Drive access on this browser and, after confirmation, erases books, notes, covers, preferences, and local recovery copies from this device. Changes not yet uploaded will also be lost; export a backup first if you want to keep them. Other devices and existing Drive files remain. If sign-out or local cleanup fails, the app tells you and lets you retry. Disconnecting Drive keeps you signed in, blocks the Drive link at the service, and requests revocation from Google without erasing the local library. Previously issued tokens may remain valid until revocation or expiry. You can also remove authorization in your <a href="https://myaccount.google.com/connections" rel="noreferrer">Google Account connections</a>. Revoking access does not automatically delete copies already stored in Drive.</p>
+      <h2 id="retention-removal">Retention and removal</h2>
+      <p>Authorization attempts and their cancellation controls expire within ten minutes. Sign-in and Drive sessions have a rolling lifetime of up to 30 days, renewable up to an absolute limit of 180 days from creation; a connection inactive for 180 days no longer authorizes access. These limits are enforced even if physical storage cleanup has not finished.</p>
+      <p>After disconnection, the credential may be used only to attempt revocation for up to 24 hours. A routine removes the retained credential; infrastructure failures may delay physical removal. A technical block record may remain to prevent old operations from reactivating the connection. An uncertain response from Google keeps the connection blocked until it can be resolved safely.</p>
+      <p>You can delete records in the app or remove this site’s data in your browser settings. Before doing so, export a backup if you want to keep a copy. For help with data held by the authorization service, use the contact below.</p>
+      <h2 id="search-covers">External search and covers</h2>
+      <p>A search you submit queries Open Library. Displaying an external cover also makes a request to its provider. The “Search Google Books” button opens another tab and sends Google the text you entered only when you click it; those search results are not automatically copied to your shelf. These services receive the information needed for the request and connection data such as your IP address. Manual entry and local covers remain available without these requests.</p>
+      <h2 id="analytics">Visit counting with Google Analytics</h2>
+      <p>The initial notice offers one choice to count visits with Google Analytics and send technical error codes to improve the app. If you decline or have not yet chosen, the app does not load the Analytics script or send these codes. Google Drive and library use work independently of this choice.</p>
+      <p>If you accept, we send visits to public pages by fixed categories such as Shelf, Data, and Book. The submitted address omits the real URL, book identifiers, query, title, note, rating, cover, and sign-in data. Google receives connection data needed for the request, such as your IP address, and may store <code>_ga</code> cookies in this browser for up to 30 days. Event data retention in the property is set to two months. Advertising, Google signals, and personalization are off.</p>
+      <p>This single choice is stored in this browser outside the library and backup. You can <a href="/#/configuracoes">review it in Settings</a>. On revocation, the app stops new measurements and error submissions, deletes Analytics cookies accessible to this site, and offers a safe reopen when possible. Cookies on other domains or in tabs the app cannot control may require browser controls.</p>
+      <p>Previous choices and old experiment settings are not treated as acceptance of this combined choice. Interface experiments and experiment telemetry remain inactive.</p>
+      <h2 id="diagnostics">Optional error diagnostics</h2>
+      <p>The same acceptance in the notice allows the app to send the Livro a Livro API only an area and a technical failure code from a fixed list, with limited counts. It does not send books, notes, ratings, covers, URLs, screens, identifiers, messages, stacks, or error times. The request does not use cookies. Authorizing Drive or experiments does not authorize this submission.</p>
+      <p>You can decline or review the choice in Settings; revocation cancels submissions in progress and discards counts still in memory. Offline, the app continues to work without this submission. The service and infrastructure may still receive connection data needed for the request, such as your IP address.</p>
+      <h2 id="infrastructure-third-parties">Infrastructure and third parties</h2>
+      <p>AWS distributes the app and hosts authorization. AWS, Google, and Open Library process connection data needed for their services, subject to their respective policies. The infrastructure may process technical data for security and operation; that does not mean it receives your library. We do not use behavioral advertising or sell your library.</p>
+      <p>Application logs do not include library content, tokens, or raw request data. Minimal operational execution logs are retained for 14 days. Infrastructure services may keep administrative and security records under their own rules.</p>
+      <h2 id="contact">Contact</h2>
+      <p>For privacy and support, contact the person responsible for Livro a Livro at <a href="mailto:ewanderson.flaviano@gmail.com">ewanderson.flaviano@gmail.com</a>. Do not send passwords, tokens, or your complete library; describe the problem first.</p>
+      <p><a href="/">Back to Livro a Livro</a></p>
+    </main>
+  </body>
+</html>
