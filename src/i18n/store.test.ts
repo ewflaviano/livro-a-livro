@@ -84,3 +84,14 @@ it('works when BroadcastChannel construction fails', async () => {
   await locale.write('en', before.authRevision);
   expect((await locale.read()).choice).toBe('en');
 });
+
+it('keeps sync available if only the locale broadcast channel is blocked', async () => {
+  const name = crypto.randomUUID(); names.push(name);
+  vi.stubGlobal('BroadcastChannel', class {
+    constructor(channelName: string) { if (channelName.endsWith(':ui-locale')) throw new Error('disabled'); }
+    postMessage() {}
+    close() {}
+  });
+  const sync = await openSyncStore({ name }); stores.push(sync);
+  expect((await sync.read()).authRevision).toBe(0);
+});

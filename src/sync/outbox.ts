@@ -18,7 +18,9 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
   const revisionChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:revision`);
   const consentChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-a-livro-usage-consent');
-  const localeChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:ui-locale`);
+  let localeChannel: BroadcastChannel | null = null;
+  try { if (typeof BroadcastChannel !== 'undefined') localeChannel = new BroadcastChannel(`${db.name}:ui-locale`); }
+  catch { /* Locale invalidation is optional; focused tabs reread storage. */ }
   const notify = () => listeners.forEach(listener => listener());
   if (channel) channel.onmessage = notify;
   const changed = () => { channel?.postMessage('control'); };
