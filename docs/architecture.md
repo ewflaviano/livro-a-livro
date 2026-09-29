@@ -4,6 +4,12 @@
 
 O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com biblioteca em IndexedDB e contrato de backup JSON versionado. O núcleo local, busca, compartilhamento anual e app shell estão implementados. A API opcional Rust/Axum tem composição durável AWS na issue #13; a habilitação pública do Drive depende dos gates reais de autorização e transferência. IA permanece fora do escopo.
 
+### Idioma da interface (issue #104, implementação em etapas)
+
+O idioma da interface será `pt-BR` ou `en`, com catálogos locais e formatação por `Intl`, sem serviço de tradução. A preferência explícita fica somente na chave `ui-locale-v1` de `experimentState`, fora de `Book`, backups e snapshots do Drive. Sem preferência gravada, o primeiro idioma do navegador escolhe inglês apenas para `en`/`en-*`; os demais usam português. A inferência não é gravada. A escolha ainda não está exposta: a interface atual continua em português até a tradução e validação de todas as rotas.
+
+Cada escrita da preferência compara a revisão de autenticação na mesma transação. O logout apaga a chave, incrementa essa revisão e avisa outras abas para relerem; uma escrita atrasada da sessão anterior falha. Uma restauração de backup pode mudar a geração da biblioteca sem afetar o idioma. As mensagens entre abas carregam apenas invalidação. A escolha de manifesto antes da instalação, as páginas estáticas e o callback OAuth ainda precisam de validação própria antes de oferecer EN ao público.
+
 Este documento combina decisões de arquitetura, contratos de destino e notas de implementação por issue. A árvore proposta e os gates não afirmam que todos os arquivos, serviços AWS ou fluxos já existem. Para disponibilidade por recurso, consulte o [README](../README.md#estado-atual) e a [auditoria de maturidade de 27/09](audit-2026-09-27.md).
 
 **Lacunas atuais:** experimentos/métricas não têm consumidores runtime. Configurações e ajuda de instalação foram entregues na issue #45. A issue #37 corrige atomicidade e validação da restauração com mídias (S1/S4); a issue #39 unifica limites de gravação, exportação e importação (S2); a issue #40 entrega a interface de backup independente (S5).

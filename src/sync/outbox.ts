@@ -18,6 +18,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
   const revisionChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:revision`);
   const consentChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-a-livro-usage-consent');
+  const localeChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:ui-locale`);
   const notify = () => listeners.forEach(listener => listener());
   if (channel) channel.onmessage = notify;
   const changed = () => { channel?.postMessage('control'); };
@@ -52,6 +53,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       changed();
       try { revisionChannel?.postMessage({ type: 'revision-changed' }); } catch { /* Focus rechecks. */ }
       try { consentChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
+      try { localeChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
     /** Patch current control and fence cycle writes in the same transaction. */
@@ -160,7 +162,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const value = await db.get('syncState', 'lease') as { owner: string; until: number } | undefined;
       if (value?.owner !== owner || value.until <= Date.now()) throw new SyncError('cancelled');
     },
-    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); listeners.clear(); connection.close(); },
+    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); localeChannel?.close(); listeners.clear(); connection.close(); },
   };
 }
 export type SyncStore = Awaited<ReturnType<typeof openSyncStore>>;
