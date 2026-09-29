@@ -245,7 +245,12 @@ async function pauseOrDisconnect(id, kind) {
   const label = { pause: 'Pausar neste dispositivo', logout: 'Sair e apagar dados deste navegador', revoke: 'Desconectar Google Drive' }[kind];
   await page.getByText('Gerenciar conexão', { exact: true }).click();
   stage = 'DISCONNECT_CLICK'; await page.getByRole('button', { name: label, exact: true }).click();
-  stage = 'DISCONNECT_CONFIRM'; if (kind !== 'pause') await confirm(page);
+  stage = 'DISCONNECT_CONFIRM';
+  if (kind === 'logout') {
+    // The UI reloads after the IndexedDB erase. Subscribe before confirming so
+    // subsequent page.evaluate calls cannot race with the navigation.
+    await Promise.all([page.waitForEvent('load'), confirm(page)]);
+  } else if (kind !== 'pause') await confirm(page);
   // Completion of a local command is distinct from Google's revocation acknowledgement.
   if (kind !== 'pause') await expect(page.getByRole('alertdialog')).toHaveCount(0);
   else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
