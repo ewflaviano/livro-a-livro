@@ -10,6 +10,7 @@ import { createShelfService } from '../../services/shelf-service';
 import { createBook } from '../../domain/book';
 import { projectYearShare } from '../../sharing/projection';
 import YearSharePreview from './YearSharePreview';
+import { LocalePreview } from '../../i18n/context';
 
 const context = { fillRect: vi.fn(), fillText: vi.fn(), measureText: (text: string) => ({ width: text.length * 10 }) };
 beforeEach(() => {
@@ -87,5 +88,14 @@ describe('annual image preview', () => {
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Baixar PNG' }));
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
+  });
+
+  it('shows English controls and an English description without translating the book title', async () => {
+    render(<LocalePreview locale="en"><YearSharePreview projection={projectYearShare([sampleBook()], 2026, true)} onClose={vi.fn()} /></LocalePreview>);
+    const region = screen.getByRole('region', { name: 'Share 2026' });
+    expect(within(region).getByText(/does not include your notes or ratings/)).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Download PNG' })).toBeTruthy();
+    expect((within(region).getByRole('textbox') as HTMLTextAreaElement).value).toContain('Typographic cover: Título público permitido');
+    expect(context.fillText.mock.calls.some(([value]) => value === 'My story in books')).toBe(true);
   });
 });
