@@ -38,7 +38,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByRole('definition', { name: '1 book read in 2026' })).toBeTruthy();
     expect(screen.getByRole('definition', { name: '1,234 pages reported in read books' }).textContent).toBe('1,234');
     expect(screen.getByRole('button', { name: 'List view' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Sort by' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sort by title' })).toBeTruthy();
     expect(document.title).toBe('My shelf · Livro a Livro');
   });
   it('renders at most 24 cards per page while metrics and search cover the whole year', async () => {
@@ -73,8 +73,9 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     const firstTitle = () => collection().getAllByRole('heading')[0].textContent;
     expect(firstTitle()).toBe('Livro 27');
     const revision = await repository.readRevision();
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ordenar por' }), 'title');
+    await userEvent.click(screen.getByRole('button', { name: 'Ordenar por título' }));
     expect(firstTitle()).toBe('Livro 01');
+    expect(screen.getByRole('button', { name: 'Ordenar por adição mais recente' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
     expect(firstTitle()).toBe('Livro 25');
     await userEvent.click(collection().getAllByRole('link')[0]);
@@ -82,8 +83,8 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(firstTitle()).toBe('Livro 25');
     expect(screen.getByText('Página 2 de 2')).toBeTruthy();
     expect(window.scrollTo).toHaveBeenCalledWith(0, 320);
-    expect((screen.getByRole('combobox', { name: 'Ordenar por' }) as HTMLSelectElement).value).toBe('title');
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ordenar por' }), 'recent');
+    expect(screen.getByRole('button', { name: 'Ordenar por adição mais recente' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Ordenar por adição mais recente' }));
     expect(firstTitle()).toBe('Livro 27');
     expect(screen.getByText('Página 1 de 2')).toBeTruthy();
     await waitFor(async () => expect((await repository.readPreferences()).sortOrder).toBe('recent'));
@@ -187,9 +188,9 @@ describe('annual shelf with the real IndexedDB adapter', () => {
   it('keeps a failed title order in this session and persists it on retry', async () => {
     const { repository } = await setup([book('Registro sintético')]);
     vi.spyOn(repository, 'updatePreferences').mockRejectedValueOnce(new Error('unavailable'));
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ordenar por' }), 'title');
+    await userEvent.click(screen.getByRole('button', { name: 'Ordenar por título' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
-    expect((screen.getByRole('combobox', { name: 'Ordenar por' }) as HTMLSelectElement).value).toBe('title');
+    expect(screen.getByRole('button', { name: 'Ordenar por adição mais recente' })).toBeTruthy();
     expect((await repository.readPreferences()).sortOrder).toBe('recent');
     await userEvent.click(screen.getByRole('button', { name: 'Tentar salvar preferências' }));
     await waitFor(async () => expect((await repository.readPreferences()).sortOrder).toBe('title'));

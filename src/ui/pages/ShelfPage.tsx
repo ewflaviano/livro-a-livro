@@ -1,7 +1,7 @@
 import { BookCover } from '../components/BookCover';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Grid2X2, List, Plus, Search, X } from 'lucide-react';
+import { ArrowDownAZ, Clock3, Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import type { ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear, orderShelfBooks } from '../../domain/library';
@@ -95,12 +95,12 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
               placeholder={t('searchBookOrAuthor')} onChange={event => setShelfQuery(event.target.value)} /></label>
           {shelfQuery && <button className="shelf-search-clear" aria-label={t('clearSearch')} onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
         </div>
-        <label className="shelf-sort">{t('sortBy')}
-          <select value={preferences.sortOrder} onChange={(event) => updatePreferences({ sortOrder: event.target.value === 'title' ? 'title' : 'recent' })}>
-            <option value="recent">{t('sortRecent')}</option>
-            <option value="title">{t('sortTitle')}</option>
-          </select>
-        </label>
+        <button className="shelf-sort" type="button"
+          aria-label={preferences.sortOrder === 'recent' ? t('sortByTitle') : t('sortByRecent')}
+          title={preferences.sortOrder === 'recent' ? t('sortByTitle') : t('sortByRecent')}
+          onClick={() => updatePreferences({ sortOrder: preferences.sortOrder === 'recent' ? 'title' : 'recent' })}>
+          {preferences.sortOrder === 'recent' ? <ArrowDownAZ aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
+        </button>
         <button className="shelf-mode" aria-label={preferences.mode === 'grid' ? t('listView') : t('gridView')}
           title={preferences.mode === 'grid' ? t('listView') : t('gridView')}
           onClick={() => updatePreferences({ mode: preferences.mode === 'grid' ? 'list' : 'grid' })}>
