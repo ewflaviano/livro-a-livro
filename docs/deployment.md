@@ -32,7 +32,7 @@ O consentimento Google está em produção, com escopos `openid` e `drive.appdat
 
 Os assets com hash são publicados primeiro com cache imutável. Ícones e outros arquivos públicos estáveis na raiz do build entram em seguida, com revalidação curta. Só então entram `manifest.webmanifest`, `sw.js` e `index.html`, que usam revalidação. O pipeline não executa `sync --delete`: versões anteriores continuam disponíveis para instalações offline. Configurações mostra os sete primeiros caracteres do commit da execução que construiu o frontend; fora do CI, usa o commit local.
 
-`manifest-en.webmanifest`, `/privacidade.html` e `/privacy.html` também recebem `no-cache` e invalidação explícita no CloudFront. Os dois manifestos conservam o mesmo `id`, `start_url`, `scope` e ícones; as duas políticas são HTML estático e entram no precache offline. Até a ativação da escolha de idioma, o HTML principal ainda aponta para o manifesto português.
+`manifest-en.webmanifest`, `/privacidade.html` e `/privacy.html` também recebem `no-cache` e invalidação explícita no CloudFront. Os dois manifestos conservam o mesmo `id`, `start_url`, `scope` e ícones; as duas políticas são HTML estático e entram no precache offline. O HTML principal não anuncia manifesto antes de ler o idioma local. A interface então adiciona o manifesto PT ou EN antes de observar a instalação.
 
 ## API
 

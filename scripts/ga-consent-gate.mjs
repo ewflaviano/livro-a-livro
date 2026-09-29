@@ -8,7 +8,7 @@ const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 let browser;
 try {
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 320, height: 844 } });
+  const context = await browser.newContext({ locale: 'pt-BR', serviceWorkers: 'block', viewport: { width: 320, height: 844 } });
   const page = await context.newPage();
   const requests = [];
   page.on('request', request => { if (/googletagmanager\.com|google-analytics\.com/.test(request.url())) requests.push(request.url()); });
