@@ -10,7 +10,7 @@ try {
   let ready = false;
   for (let n = 0; n < 100; n++) { try { const response = await fetch(origin); if (response.ok) { ready = true; break; } } catch {} await pause(100); }
   if (!ready) throw new Error('SERVER_UNAVAILABLE');
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium', headless: true });
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 320, height: 844 } });
   const page = await context.newPage();
   const requests = [];
