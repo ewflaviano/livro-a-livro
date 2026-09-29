@@ -18,7 +18,7 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
   let preferenceQueue = Promise.resolve();
   let releasePreferenceHold: (() => void) | undefined;
   const releaseSettledPreferences = () => { if (overlay.size === 0) { releasePreferenceHold?.(); releasePreferenceHold = undefined; } };
-  const preferenceFields = ['shelfYear', 'mode', 'filter'] as const;
+  const preferenceFields = ['shelfYear', 'mode', 'filter', 'sortOrder'] as const;
   const overlay = new Map<keyof PortablePreferences, { sequence: number; value: PortablePreferences[keyof PortablePreferences]; failed: boolean }>();
   const hasPreferenceError = () => [...overlay.values()].some(value => value.failed);
   const withOverlay = (persisted: PortablePreferences): PortablePreferences => ({ ...persisted,
@@ -38,7 +38,7 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
       const [{ books, version, preferences }, localPreferences] = await Promise.all([repository.readBackupSnapshot(), repository.readPreferences()]);
       if (ticket !== request || disposed) return;
       publish({ status: 'ready', snapshot: { books, version },
-        preferences: withOverlay({ ...preferences, mode: localPreferences.mode }), preferenceError: hasPreferenceError() });
+        preferences: withOverlay({ ...preferences, mode: localPreferences.mode, sortOrder: localPreferences.sortOrder }), preferenceError: hasPreferenceError() });
     } catch {
       if (ticket === request) publish({ status: 'error' });
     }

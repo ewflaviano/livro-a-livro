@@ -353,6 +353,29 @@ describe('IndexedDB library repository', () => {
     await a.updatePreferences({ mode: 'list' }); focusTarget.dispatchEvent(new Event('focus'));
     await vi.waitFor(() => expect(local).toHaveBeenCalledOnce()); expect(content).not.toHaveBeenCalled();
   });
+  it('defaults an older preference record and keeps title order local across tabs and replace', async () => {
+    const name = newName(); const initial = await open(name); initial.close();
+    const db = await openDB<LibraryDatabase>(name);
+    const { sortOrder: _oldField, ...older } = (await db.get('preferences', 'ui'))!;
+    await db.put('preferences', older as LibraryDatabase['preferences']['value'], 'ui');
+    const focusTarget = new EventTarget();
+    const a = await open(name); const b = await open(name, { focusTarget, channelFactory: null });
+    expect((await a.readPreferences()).sortOrder).toBe('recent');
+    const revision = await a.readRevision();
+    const pending = await db.get('syncOutbox', 'pending');
+    const local = vi.fn(); const content = vi.fn(); b.subscribeLocalPreferences(local); b.subscribe(content);
+    await a.updatePreferences({ sortOrder: 'title' });
+    focusTarget.dispatchEvent(new Event('focus'));
+    await vi.waitFor(() => expect(local).toHaveBeenCalledOnce());
+    expect((await b.readPreferences()).sortOrder).toBe('title');
+    expect(await a.readRevision()).toEqual(revision);
+    expect(await db.get('syncOutbox', 'pending')).toEqual(pending);
+    expect((await a.readBackupSnapshot()).preferences).toEqual({ shelfYear: null, filter: 'all' });
+    expect(content).not.toHaveBeenCalled();
+    await a.commit({ kind: 'replace', books: [book()], preferences: { shelfYear: 2026, filter: 'read' } }, revision);
+    expect((await a.readPreferences()).sortOrder).toBe('title');
+    db.close();
+  });
 });
 
 it('portable no-ops and lastExport stay outside content revision, but a mixed portable patch advances once', async () => {

@@ -9,11 +9,12 @@ export type LibraryChange =
   | { kind: 'replace'; books: Book[]; preferences?: SyncedPreferences; coverMedia?: CoverMedia[] };
 
 export type SyncedPreferences = Pick<LibraryPreferences, 'shelfYear' | 'filter'>;
-export type PortablePreferences = Pick<LibraryPreferences, 'shelfYear' | 'mode' | 'filter'>;
+export type PortablePreferences = Pick<LibraryPreferences, 'shelfYear' | 'mode' | 'filter' | 'sortOrder'>;
 
 export type LibraryPreferences = {
   shelfYear: number | null;
   mode: 'grid' | 'list';
+  sortOrder: 'recent' | 'title';
   filter: ReadingStatus | 'all';
   lastExport: { startedAt: string; version: LocalRevision } | null;
 };
