@@ -170,7 +170,7 @@ jobs:
             ZIP="release/$FUNCTION/bootstrap.zip"
             test -s "$ZIP"
             unzip -tq "$ZIP" >/dev/null
-            unzip -Z1 "$ZIP" | rg -q '^bootstrap$'
+            unzip -Z1 "$ZIP" | grep -Fxq bootstrap
           done
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
