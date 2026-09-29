@@ -4,8 +4,19 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MergePreview } from './MergePreview';
 import type { ResolutionPreview } from '../../sync/merge';
+import { LocalePreview } from '../../i18n/context';
 const preview: ResolutionPreview = { id: 'p', totalCount: 8, addedCount: 3, divergentCount: 2, remoteOnlyDivergentCount: 0, remoteSourceCount: 3 };
 afterEach(cleanup);
+it('previews English merge policy before explicit confirmation', async () => {
+  const onConfirm = vi.fn();
+  render(<LocalePreview locale="en"><MergePreview preview={preview} busy={false} error="" onCancel={vi.fn()} onConfirm={onConfirm} /></LocalePreview>);
+  expect(screen.getByRole('heading', { name: 'Merge libraries?' })).toBeTruthy();
+  expect(screen.getByText('8 books')).toBeTruthy();
+  expect(screen.getByText(/entire version wins, including its note and cover/)).toBeTruthy();
+  expect(onConfirm).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Merge libraries' }));
+  expect(onConfirm).toHaveBeenCalledOnce();
+});
 it('shows only a summary and confirms once without user-provided choices', async () => {
   const onConfirm = vi.fn(); render(<MergePreview preview={preview} busy={false} error="" onCancel={vi.fn()} onConfirm={onConfirm} />);
   expect(screen.getAllByRole('alertdialog')).toHaveLength(1);

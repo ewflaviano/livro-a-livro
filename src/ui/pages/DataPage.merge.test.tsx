@@ -8,6 +8,7 @@ import { prepareMerge, unionPolicy, type ResolutionPreview } from '../../sync/me
 import type { LibraryExport } from '../../backup/schema';
 import { DataPage } from './DataPage';
 import { GlobalSyncControls } from '../components/GlobalSyncControls';
+import { LocalePreview } from '../../i18n/context';
 const sync = vi.hoisted(() => ({ state: { status: 'conflict', localCount: 0, remote: [] } as SyncView, available: true, local: false,
   coordinator: { prepareResolution: vi.fn<() => Promise<ResolutionPreview>>(), cancelResolution: vi.fn(), confirmResolution: vi.fn(async () => 'localCommittedPending'), resolve: vi.fn() } }));
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
@@ -16,9 +17,17 @@ vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => ({ cho
 vi.mock('../../experiments/store', () => ({ openExperimentStore: async () => ({ read: async () => ({ experimentsConsent: false, telemetryConsent: false }), close() {} }) }));
 const data: LibraryExport = { format: 'livro-a-livro', schemaVersion: 1, exportedAt: '2026-09-26T12:00:00Z', books: [], coverMedia: [], preferences: { shelfYear: null, mode: 'grid', filter: 'all' } };
 const preview = () => unionPolicy(prepareMerge({ id: 'preview', sources: [{ id: 'local', library: data }, { id: 'remote', library: data }] })).preview;
-const mount = () => render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
+const mount = (locale: 'pt-BR' | 'en' = 'pt-BR') => render(<LocalePreview locale={locale}><MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter></LocalePreview>);
 beforeEach(() => { sync.coordinator.prepareResolution.mockResolvedValue(preview()); sync.coordinator.confirmResolution.mockResolvedValue('localCommittedPending'); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it('previews English whole-library choice before resolving a conflict', async () => {
+  mount('en');
+  await userEvent.click(screen.getByRole('button', { name: 'Keep local library' }));
+  const dialog = screen.getByRole('alertdialog');
+  expect(dialog.textContent).toContain('replaces the complete active version');
+  expect(dialog.textContent).toContain('Review and download both copies');
+  expect(sync.coordinator.resolve).not.toHaveBeenCalled();
+});
 it('cancels a late preparation without showing or applying it, then allows a fresh preview', async () => {
   let release!: (value: ResolutionPreview) => void; sync.coordinator.prepareResolution.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
   mount(); await userEvent.click(screen.getByRole('button', { name: 'Juntar bibliotecas' }));

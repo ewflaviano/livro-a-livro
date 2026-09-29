@@ -6,6 +6,7 @@ import type { SyncView } from '../../sync/contracts';
 import { MemoryRouter } from 'react-router-dom';
 import { GlobalSyncControls, GlobalSyncHeader } from '../components/GlobalSyncControls';
 import { DataPage } from './DataPage';
+import { LocalePreview } from '../../i18n/context';
 const sync = vi.hoisted(() => ({
   state: { status: 'disabled' } as SyncView, available: true, local: false,
   coordinator: { dismissDrivePrompt: vi.fn(async () => {}), connect: vi.fn(async () => {}), authorizeDrive: vi.fn(async () => {}), cancelAuthorization: vi.fn(async () => {}), retryAuthorization: vi.fn(async () => {}), recoveryCopy: vi.fn(async () => null) },
@@ -63,6 +64,29 @@ it('explains local deletion and unsent changes before logout', async () => {
   expect(dialog.textContent).toContain('alterações ainda não enviadas');
   expect(dialog.textContent).toContain('Faça backup antes');
   expect(dialog.textContent).toContain('outros dispositivos continuarão disponíveis');
+});
+
+it('previews English logout consequences before any local deletion', async () => {
+  sync.state = { status: 'synced', login: { status: 'signed-in', driveAuthorized: true } };
+  render(<LocalePreview locale="en"><MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter></LocalePreview>);
+  await userEvent.click(screen.getByText('Manage connection'));
+  await userEvent.click(screen.getByRole('button', { name: 'Sign out and erase this browser’s data' }));
+  const dialog = screen.getByRole('alertdialog');
+  expect(dialog.textContent).toContain('changes not yet uploaded');
+  expect(dialog.textContent).toContain('Make a backup first');
+  expect(dialog.textContent).toContain('Drive files and other devices will remain available');
+  expect(sync.coordinator.connect).not.toHaveBeenCalled();
+});
+
+it('previews global Drive revocation separately from local logout in English', async () => {
+  sync.state = { status: 'synced', login: { status: 'signed-in', driveAuthorized: true } };
+  render(<LocalePreview locale="en"><MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter></LocalePreview>);
+  await userEvent.click(screen.getByText('Manage connection'));
+  await userEvent.click(screen.getByRole('button', { name: 'Disconnect Google Drive' }));
+  const dialog = screen.getByRole('alertdialog');
+  expect(dialog.textContent).toContain('revoked on all devices');
+  expect(dialog.textContent).toContain('The local library and existing files will be preserved');
+  expect(dialog.textContent).not.toContain('will be erased');
 });
 
 it('describes an empty connected Drive without claiming a confirmed backup', () => {
