@@ -1,9 +1,11 @@
 import { openSyncResolutionRepository } from '../adapters/indexeddb/sync-resolution-repository';
 import { coverId, encodedCover, syntheticCover, stubImageDecoder } from '../../test/fixtures/covers/helpers';
 import 'fake-indexeddb/auto';
+import { openDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBook } from '../domain/book';
 import { openLibraryRepository } from '../adapters/indexeddb/library-repository';
+import type { LibraryDatabase } from '../adapters/indexeddb/schema';
 import { openCoverMediaRepository } from '../adapters/indexeddb/cover-media';
 import { openSyncStore } from './outbox';
 import { createSyncCoordinator } from './coordinator';
@@ -195,6 +197,62 @@ describe('durable local first coordinator', () => {
     await other.refreshLogin(); await other.runNow();
     expect(other.getSnapshot().login?.status).toBe('signed-in'); expect((await s.store.read()).enabled).toBe(false);
     expect(s.remote.list).not.toHaveBeenCalled();
+  });
+  it('erases all local user data only after confirmed logout, while leaving the Drive copy alone', async () => {
+    const s = await setup();
+    await s.repository.commit({ kind: 'replace', books: [book('Descartável')] }, await s.repository.readRevision());
+    const db = await openDB<LibraryDatabase>(s.name); close.push(() => db.close());
+    await db.put('syncState', { private: 'recovery' }, 'recovery');
+    await db.put('searchCache', { lastAccessedAt: 1 }, 'cached-query');
+    await db.put('experimentState', 'accepted', 'ga4-consent-v1');
+    await s.coordinator.refreshLogin();
+    const earlier = await s.repository.readRevision();
+    await s.coordinator.disconnect(false);
+    expect(s.auth.logout).toHaveBeenCalledOnce();
+    expect(s.auth.disconnect).not.toHaveBeenCalled();
+    expect((await s.repository.readAll()).books).toEqual([]);
+    expect((await s.repository.readRevision()).generation).not.toBe(earlier.generation);
+    await expect(s.repository.commit({ kind: 'put', book: book('Rascunho antigo') }, earlier)).rejects.toMatchObject({ code: 'StaleRevision' });
+    expect(await db.getAll('coverMedia')).toEqual([]);
+    expect(await db.getAll('syncOutbox')).toEqual([]);
+    expect(await db.getAll('searchCache')).toEqual([]);
+    expect(await db.getAll('experimentState')).toEqual([]);
+    expect(await db.get('syncState', 'recovery')).toBeUndefined();
+    expect(await s.store.read()).toMatchObject({ enabled: false, binding: null, base: null });
+    expect(s.coordinator.getSnapshot()).toMatchObject({ status: 'disabled', login: { status: 'signed-out' } });
+  });
+  it('keeps local data when logout is unconfirmed', async () => {
+    const s = await setup();
+    await s.repository.commit({ kind: 'replace', books: [book('Ainda local')] }, await s.repository.readRevision());
+    await s.coordinator.refreshLogin();
+    vi.mocked(s.auth.logout).mockRejectedValueOnce(new SyncError('retry'));
+    await expect(s.coordinator.disconnect(false)).rejects.toMatchObject({ code: 'retry' });
+    expect((await s.repository.readAll()).books).toHaveLength(1);
+    expect(s.coordinator.getSnapshot()).toMatchObject({ logoutUnconfirmed: true, login: { status: 'signed-in' } });
+  });
+  it('reports local cleanup failure after a confirmed logout and allows an explicit retry', async () => {
+    const s = await setup();
+    await s.repository.commit({ kind: 'replace', books: [book('Ainda local')] }, await s.repository.readRevision());
+    await s.coordinator.refreshLogin();
+    vi.spyOn(s.store, 'eraseAfterLogout').mockRejectedValueOnce(new Error('storage failed'));
+    await expect(s.coordinator.disconnect(false)).rejects.toMatchObject({ code: 'retry' });
+    expect((await s.repository.readAll()).books).toHaveLength(1);
+    expect(s.coordinator.getSnapshot()).toMatchObject({ localEraseFailed: true, login: { status: 'signed-out' } });
+    await s.coordinator.disconnect(false);
+    expect((await s.repository.readAll()).books).toEqual([]);
+  });
+  it('does not erase a newer local session when logout of an older session finishes late', async () => {
+    const s = await setup();
+    await s.repository.commit({ kind: 'replace', books: [book('Nova sessão')] }, await s.repository.readRevision());
+    await s.coordinator.refreshLogin();
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void; const waiting = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(s.auth.logout).mockImplementationOnce(async () => { entered(); await waiting; });
+    const logout = s.coordinator.disconnect(false); await ready;
+    await s.store.update({ enabled: false }, undefined, true);
+    release();
+    await expect(logout).rejects.toMatchObject({ code: 'retry' });
+    expect((await s.repository.readAll()).books).toHaveLength(1);
   });
   it('retains the known login for an explicit logout retry after a failed focus check', async () => {
     const s = await setup(); await s.coordinator.refreshLogin(); const id = s.coordinator.getSnapshot().login?.signInAttemptId;

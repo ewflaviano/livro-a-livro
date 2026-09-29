@@ -362,6 +362,7 @@ export function createSyncCoordinator(options: Options) {
     async disconnect(all: boolean) {
       const previous = await store.read();
       const logoutLogin = view.login?.signInAttemptId ?? (previous.authorization && ['signin', 'signin-starting'].includes(previous.authorization.stage) ? previous.authorization.id : undefined);
+      let logoutConfirmed = false;
       controller?.abort(); clearTimeout(timer);
       const record = await store.update({ enabled: false, authorization: null, ...(all ? { revocationPending: true } : {}) }, undefined, true);
       auth.invalidate();
@@ -374,12 +375,17 @@ export function createSyncCoordinator(options: Options) {
         } else {
           if ((await store.read()).authRevision !== record.authRevision || closed) throw new SyncError('cancelled');
           await auth.logout(logoutLogin);
-          if ((await store.read()).authRevision !== record.authRevision || closed) return;
-          await store.update({ enabled: false }, undefined, true, undefined, record.authRevision);
+          logoutConfirmed = true;
+          if ((await store.read()).authRevision !== record.authRevision || closed) throw new SyncError('cancelled');
+          await store.eraseAfterLogout(record.authRevision);
+          await repository.checkForChanges().catch(() => {});
           publish({ status: 'disabled', login: { status: 'signed-out' }, logoutUnconfirmed: false });
         }
       } catch {
-        if ((await store.read()).authRevision === record.authRevision) publish({ status: 'paused', revocationPending: record.revocationPending, logoutUnconfirmed: !all });
+        if ((await store.read()).authRevision === record.authRevision) {
+          if (logoutConfirmed) publish({ status: 'disabled', login: { status: 'signed-out' }, logoutUnconfirmed: false, localEraseFailed: true });
+          else publish({ status: 'paused', revocationPending: record.revocationPending, logoutUnconfirmed: !all });
+        }
         throw new SyncError('retry');
       }
     },

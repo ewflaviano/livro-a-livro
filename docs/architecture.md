@@ -606,10 +606,10 @@ Produção não aceita localhost no CORS. Rotas mutáveis validam Origin, sessã
 Distinguir:
 
 - **Pausar sincronização neste dispositivo:** suspende chamadas, mantém vínculo/pendências locais e permite retomar.
-- **Sair deste navegador:** remove LOGIN no servidor e invalida todas as SESSION ligadas a ela, limpa access token em memória e interrompe sync local; não revoga outros aparelhos, não apaga biblioteca.
+- **Sair e apagar dados deste navegador:** remove LOGIN no servidor e invalida as SESSION ligadas a ela; após confirmação, limpa em uma transação os livros, capas, notas, preferências, cópias de recuperação, busca local e controle de sync deste navegador. Não revoga outros aparelhos nem apaga arquivos do Drive. A confirmação alerta sobre alterações ainda não enviadas e oferece backup antes da saída.
 - **Desconectar Google Drive em todos os dispositivos:** mantém o login próprio e invalida sessões Drive, bloqueia emissão de access token, incrementa geração de consentimento e solicita revogação Google; elimina refresh token protegido após o processo. Arquivos já existentes no Drive não são apagados automaticamente.
 
-Sair só é anunciado como concluído após confirmação do serviço. Se não for possível confirmar a saída, os envios ficam pausados e o aplicativo avisa para tentar novamente; após reabrir, consulta o estado do login.
+Sair só é anunciado como concluído após confirmação do serviço **e** da limpeza local. Se o serviço não confirmar, os envios ficam pausados e os dados locais permanecem para nova tentativa. Se a limpeza local falhar depois da resposta do serviço, a interface avisa que os dados ainda estão neste navegador e oferece repetir a limpeza. A nova geração do IndexedDB impede que gravações antigas reutilizem a revisão anterior. A limpeza do armazenamento ativo não promete sobrescrever blocos físicos ou cópias próprias do navegador.
 
 Se revogação no Google falhar por rede, bloquear internamente de imediato e manter credencial cifrada apenas para tentar revogação por até 24 h, sem usá-la para acesso novo; orientar revogação na Conta Google. Access token já emitido/requisição em voo pode sobreviver até revogação efetiva/expiração: não prometer corte retroativo instantâneo. Serviços fazem limpeza de sessões expiradas e credenciais sem atividade por 180 dias, sem tocar nos arquivos Drive ou dados locais. Registro de revogação pendente contém só credencial/estado técnico, nunca biblioteca; pode ser tratado por invocação agendada pequena do módulo auth, sem fila de snapshots.
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { openDatabase } from '../adapters/indexeddb/database';
 import type { DatabaseOptions } from '../adapters/indexeddb/database';
-import { parseMetadata, versionOf, revisionSchema, sameRevision } from '../adapters/indexeddb/schema';
+import { DEFAULT_PREFERENCES, RECORD_VERSION, parseMetadata, versionOf, revisionSchema, sameRevision } from '../adapters/indexeddb/schema';
 import { bindingSchema, defaultSyncRecord, pendingSchema, syncStateSchema, SyncError, type Operation, type SyncRecord, type AuthorizationIntent } from './contracts';
 import { parseSnapshot } from './snapshot';
 import { canonicalJson } from './protocol';
@@ -16,6 +16,8 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
   const connection = await openDatabase(options); const db = connection.db;
   const listeners = new Set<() => void>();
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
+  const revisionChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:revision`);
+  const consentChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-a-livro-usage-consent');
   const notify = () => listeners.forEach(listener => listener());
   if (channel) channel.onmessage = notify;
   const changed = () => { channel?.postMessage('control'); };
@@ -24,6 +26,32 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
     async read(): Promise<SyncRecord> {
       const value = await db.get('syncState', 'control');
       return value === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(value);
+    },
+    /** Confirmed logout removes every local user-data store in one transaction. */
+    async eraseAfterLogout(expectedAuthRevision: number) {
+      const tx = db.transaction(['books', 'meta', 'preferences', 'coverMedia', 'syncState', 'syncOutbox', 'searchCache', 'experimentState'], 'readwrite');
+      void tx.done.catch(() => {});
+      try {
+        const raw = await tx.objectStore('syncState').get('control');
+        const current = raw === undefined ? { ...defaultSyncRecord } : syncStateSchema.parse(raw);
+        if (current.authRevision !== expectedAuthRevision || current.enabled) throw new SyncError('cancelled');
+        await Promise.all([
+          tx.objectStore('books').clear(), tx.objectStore('meta').clear(), tx.objectStore('preferences').clear(),
+          tx.objectStore('coverMedia').clear(), tx.objectStore('syncState').clear(), tx.objectStore('syncOutbox').clear(),
+          tx.objectStore('searchCache').clear(), tx.objectStore('experimentState').clear(),
+        ]);
+        await tx.objectStore('meta').put({ generation: crypto.randomUUID(), revision: 0, recordVersion: RECORD_VERSION, bookCount: 0, serializedBytes: 2 }, 'library');
+        await tx.objectStore('preferences').put(DEFAULT_PREFERENCES, 'ui');
+        await tx.objectStore('syncState').put({ ...defaultSyncRecord, authRevision: current.authRevision + 1 }, 'control');
+        await tx.done;
+      } catch (error) {
+        try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+        await tx.done.catch(() => {});
+        throw error;
+      }
+      changed();
+      try { revisionChannel?.postMessage({ type: 'revision-changed' }); } catch { /* Focus rechecks. */ }
+      try { consentChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
     /** Patch current control and fence cycle writes in the same transaction. */
@@ -132,7 +160,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const value = await db.get('syncState', 'lease') as { owner: string; until: number } | undefined;
       if (value?.owner !== owner || value.until <= Date.now()) throw new SyncError('cancelled');
     },
-    close() { channel?.close(); listeners.clear(); connection.close(); },
+    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); listeners.clear(); connection.close(); },
   };
 }
 export type SyncStore = Awaited<ReturnType<typeof openSyncStore>>;
