@@ -21,6 +21,7 @@ const check = condition => { if (!condition) throw new Error('GATE_ASSERTION'); 
 let publicHeaders = {};
 let browser; let input; let violation = false; let stage = 'BUILD';
 let smokeDrive = false; let smokeDisconnectFailure = false;
+const smokeSignedOutContexts = new Set();
 const knownOperations = new Set(); const putCounts = new Map(); const listedOperations = new Map();
 let lostPut = null; let gateSequence = 0;
 const fakeDriveFiles = [];
@@ -80,7 +81,15 @@ async function routeRequest(route) {
       const headers = { 'access-control-allow-origin': web, 'access-control-allow-credentials': 'true',
         'access-control-allow-methods': 'GET, POST, DELETE', 'access-control-allow-headers': 'x-lal-csrf,x-lal-attempt', 'cache-control': 'no-store' };
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-      if (url.pathname === '/v1/login' && request.method() === 'GET') return route.fulfill({ status: 200, headers, json: { connectionId: 'synthetic-gate', signInAttemptId: '6f05cd15-3c0e-4b22-b126-25c8f15f1ab7', csrfToken: 'synthetic-login-csrf', expiresAt: 2000000000, absoluteExpiresAt: 2000000000 } });
+      const signedOut = smokeSignedOutContexts.has(request.frame().page().context());
+      if (url.pathname === '/v1/login' && request.method() === 'GET') return signedOut
+        ? route.fulfill({ status: 401, headers, json: { error: 'unauthorized' } })
+        : route.fulfill({ status: 200, headers, json: { connectionId: 'synthetic-gate', signInAttemptId: '6f05cd15-3c0e-4b22-b126-25c8f15f1ab7', csrfToken: 'synthetic-login-csrf', expiresAt: 2000000000, absoluteExpiresAt: 2000000000 } });
+      if (smokeDrive && url.pathname === '/v1/login' && request.method() === 'DELETE') {
+        smokeSignedOutContexts.add(request.frame().page().context());
+        return route.fulfill({ status: 204, headers });
+      }
+      if (signedOut) return route.fulfill({ status: 401, headers, json: { error: 'unauthorized' } });
       if (smokeDrive && url.pathname === '/v1/auth/drive-token') return route.fulfill({ status: 200, headers, json: { accessToken: 'synthetic-drive-token', expiresIn: 3600, scopes: ['openid', 'https://www.googleapis.com/auth/drive.appdata'] } });
       const valid = smokeDrive || smokeDisconnectFailure || (await request.headerValue('cookie') ?? '').split(';').some(part => part.trim() === `__Host-lal_session=${syntheticSession}`);
       if (!valid) return route.fulfill({ status: 401, headers, json: { error: 'unauthorized' } });
@@ -233,7 +242,7 @@ async function localControl(page) {
 async function pauseOrDisconnect(id, kind) {
   stage = 'LOCAL_DISCONNECT';
   const page = pages[id]; const before = await snapshot(page); await dataPage(page);
-  const label = { pause: 'Pausar neste dispositivo', logout: 'Sair deste navegador', revoke: 'Desconectar Google Drive' }[kind];
+  const label = { pause: 'Pausar neste dispositivo', logout: 'Sair e apagar dados deste navegador', revoke: 'Desconectar Google Drive' }[kind];
   await page.getByText('Gerenciar conexão', { exact: true }).click();
   stage = 'DISCONNECT_CLICK'; await page.getByRole('button', { name: label, exact: true }).click();
   stage = 'DISCONNECT_CONFIRM'; if (kind !== 'pause') await confirm(page);
@@ -245,7 +254,8 @@ async function pauseOrDisconnect(id, kind) {
     await expect(page.getByRole('heading', { name: 'Revogação no Google ainda não confirmada', exact: true })).toBeVisible();
   } else if (kind === 'logout') await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
   else await expect(page.getByText('Sincronização pausada neste dispositivo.', { exact: false })).toBeVisible();
-  check(isDeepStrictEqual(before, await snapshot(page)));
+  if (kind === 'logout') check((await snapshot(page)).books.length === 0);
+  else check(isDeepStrictEqual(before, await snapshot(page)));
   stage = 'DISCONNECT_RELOAD'; await page.reload();
   const restored = await localControl(page); check(!restored.enabled && restored.revocationPending === control.revocationPending);
   if (restored.revocationPending) {
@@ -253,8 +263,14 @@ async function pauseOrDisconnect(id, kind) {
     emit('REVOCATION_UNCONFIRMED');
   } else if (kind === 'logout') await expect(page.getByRole('button', { name: 'Entrar com Google', exact: true }).first()).toBeVisible();
   else await expect(page.getByRole('button', { name: 'Retomar sincronização', exact: true })).toBeVisible();
-  check(isDeepStrictEqual(before, await snapshot(page)));
-  emit('LOCAL_PRESERVED_AND_PAUSED');
+  if (kind === 'logout') {
+    const cleared = await snapshot(page);
+    check(cleared.books.length === 0 && cleared.coverMedia.length === 0);
+    emit('LOCAL_ERASED_AND_SIGNED_OUT');
+  } else {
+    check(isDeepStrictEqual(before, await snapshot(page)));
+    emit('LOCAL_PRESERVED_AND_PAUSED');
+  }
 }
 async function setOffline(id, value) {
   if (value) offlineContexts.add(contexts[id]); else offlineContexts.delete(contexts[id]);
@@ -271,7 +287,7 @@ async function offlineCrud(id) {
     stage = 'OFFLINE_SAVE';
     await page.getByLabel('Título (obrigatório)', { exact: true }).fill('Gate sintético offline');
     await page.getByRole('radio', { name: 'Lido', exact: true }).check();
-    await page.getByLabel('Ano da estante', { exact: false }).fill(String(before.preferences.shelfYear));
+    await page.getByLabel('Ano da estante', { exact: false }).fill(String(before.preferences.shelfYear ?? new Date().getFullYear()));
     await page.getByRole('button', { name: 'Salvar livro', exact: true }).click();
     await page.getByRole('link', { name: /Gate sintético offline/ }).click();
     await expect(page.getByRole('button', { name: 'Editar livro', exact: true })).toBeVisible();
@@ -289,6 +305,7 @@ async function offlineCrud(id) {
       const filter = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler' }[before.preferences.filter];
       await page.getByRole('button', { name: filter, exact: true }).click();
     }
+    if (before.preferences.shelfYear === null) await page.getByRole('combobox', { name: 'Ano da estante' }).selectOption('current');
     stage = 'OFFLINE_EQUAL';
     check(isDeepStrictEqual(before, await snapshot(page)));
     emit('OFFLINE_CRUD_PRESERVED');
@@ -588,7 +605,12 @@ try {
     check(isDeepStrictEqual(await snapshot(pages.A), await snapshot(pages.B)));
     check(await pages.B.getByRole('heading', { name: 'Escolher uma versão', exact: true }).count() === 0);
     emit('FRESH_EMPTY_AUTO_RECEIVE_PASS');
-    await conflictGate(); await mergeGate(); await lostPutGate('A'); smokeDrive = false;
+    await conflictGate(); await mergeGate(); await lostPutGate('A');
+    const beforeLogout = await snapshot(pages.B);
+    await pauseOrDisconnect('A', 'logout');
+    check(isDeepStrictEqual(beforeLogout, await snapshot(pages.B)));
+    await synced('B'); emit('INDEPENDENT_LOGOUT_LOCAL_ERASE_PASS');
+    smokeDrive = false;
     const invalid = { url: () => `${api}/v1/session`, method: () => 'POST', postDataBuffer: () => Buffer.from('synthetic'), isNavigationRequest: () => false };
     check(!apiAllowed(invalid)); check(!apiAllowed({ ...invalid, postDataBuffer: () => null, method: () => 'GET', url: () => `${api}/v1/session?library=synthetic` }));
     emit('SMOKE_PASS');

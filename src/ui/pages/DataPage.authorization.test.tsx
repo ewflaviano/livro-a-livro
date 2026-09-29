@@ -49,9 +49,20 @@ it('shows unconfirmed logout honestly and offers no global Drive revocation for 
   expect(screen.getByRole('alert').textContent).toContain('A saída não foi confirmada');
   expect(screen.getByText('Gerenciar conexão')).toBeTruthy();
   screen.getByText('Gerenciar conexão').click();
-  expect(screen.getByRole('button', { name: 'Sair deste navegador' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sair e apagar dados deste navegador' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Desconectar Google Drive' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Retomar sincronização' })).toBeNull();
+});
+
+it('explains local deletion and unsent changes before logout', async () => {
+  sync.state = { status: 'synced', login: { status: 'signed-in', driveAuthorized: true } };
+  render(<MemoryRouter><GlobalSyncControls><DataPage /></GlobalSyncControls></MemoryRouter>);
+  await userEvent.click(screen.getByText('Gerenciar conexão'));
+  await userEvent.click(screen.getByRole('button', { name: 'Sair e apagar dados deste navegador' }));
+  const dialog = screen.getByRole('alertdialog');
+  expect(dialog.textContent).toContain('alterações ainda não enviadas');
+  expect(dialog.textContent).toContain('Faça backup antes');
+  expect(dialog.textContent).toContain('outros dispositivos continuarão disponíveis');
 });
 
 it('describes an empty connected Drive without claiming a confirmed backup', () => {

@@ -223,12 +223,12 @@ Ainda não há usuários públicos do Drive; sessões atuais são do ensaio. Pre
 
 - Entrar Google uma vez, retornar sem Drive, navegar/recarregar/reabrir e observar login restaurado + Drive ausente; nenhum novo consentimento automático.
 - Segundo clique autoriza Drive; upload/restauração exclusivamente sintéticos. Login e status acessíveis em todas as páginas.
-- Pausar mantém login; cancelar segundo consentimento mantém login; sair permanece encerrado após reload e preserva biblioteca. Troca de conta não envia biblioteca à nova conta antes de escolha explícita.
+- Pausar mantém login; cancelar segundo consentimento mantém login; sair permanece encerrado após reload. Por decisão posterior do responsável, a saída confirmada também limpa a biblioteca e demais dados locais do navegador, após confirmação explícita do risco para alterações ainda não enviadas. Troca de conta não envia biblioteca à nova conta antes de escolha explícita.
 - O gate “sair permanece encerrado” requer DELETE confirmado. Cobrir separadamente DELETE offline/5xx → aviso sem sucesso → reload: se LOGIN ainda válida, mostrar conectado/Drive pausado; enabled continua false, nenhum upload e Sair continua disponível. Em falha de resposta após commit, bootstrap 401 pode confirmar estado desconectado sem alegar que a resposta anterior foi recebida. Cobrir também cancelamento de entrada offline seguido de callback concluído: LOGIN pode reaparecer, mas a intenção local cancelada nunca habilita sincronização automaticamente.
 - Fronteira de rede continua sem biblioteca/nota/capa/hash na API própria. Não afirmar cobertura de navegações não observadas pelo instrumento.
 
 ## 10. Fora do escopo e fechamento
 
-Não implementar CRDT, merge por campo, banco por conta, email/avatar, refresh Google de login-only, sessão infinita ou login obrigatório. Não alterar o grant global para simular logout de um dispositivo. Não resolver races limpando toda a tabela, todos os cookies do domínio ou IndexedDB.
+Não implementar CRDT, merge por campo, banco por conta, email/avatar, refresh Google de login-only, sessão infinita ou login obrigatório. Não alterar o grant global para simular logout de um dispositivo. Não resolver corridas de OAuth limpando toda a tabela, todos os cookies do domínio ou IndexedDB; a limpeza local após logout confirmado é uma escolha de privacidade posterior e explícita, com fence próprio.
 
 Esta fatia exige PR da #13, gates, revisão independente e publicação ainda sem liberar Drive globalmente. Merge adaptado e consentimentos/runtime seguem as fatias já acordadas.
