@@ -1,6 +1,7 @@
 export type Locale = 'pt-BR' | 'en';
 
 export const DEFAULT_LOCALE: Locale = 'pt-BR';
+export const privacyPath = (locale: Locale) => locale === 'en' ? '/privacy.html' : '/privacidade.html';
 
 /** An explicit local choice wins; browser languages are only a first-visit hint. */
 export function resolveLocale(choice: Locale | null, languages: readonly string[]): Locale {

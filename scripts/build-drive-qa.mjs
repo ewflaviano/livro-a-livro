@@ -49,12 +49,14 @@ for (const slot of ['a', 'b']) {
         }
         if (id === join(root, 'src/app/main.tsx')) {
           seen.add('entry');
-          source = replaceOnce(source, "import { startInstallObservation } from '../pwa/install';", '');
-          source = replaceOnce(source, "import { registerPwa } from '../pwa/register';", '');
-          source = replaceOnce(source, 'startInstallObservation();', '');
-          source = replaceOnce(source, 'if (import.meta.env.PROD) void registerPwa();',
+          source = replaceOnce(source, 'observePwaInteraction();',
             `if (window.location.origin !== 'https://livroalivro.app.br' || window.location.pathname !== ${JSON.stringify(base + 'index.html')}) throw new Error('QA_PATH_REQUIRED');`);
           return source;
+        }
+        if (id === join(root, 'src/i18n/context.tsx')) {
+          seen.add('locale');
+          source = replaceOnce(source, 'if (import.meta.env.PROD) void registerPwa();', '');
+          return replaceOnce(source, "if (manifest.getAttribute('href') !== path) manifest.href = path;", 'manifest.remove();');
         }
         if (id === join(root, 'src/pwa/install.ts')) {
           seen.add('install');
@@ -69,13 +71,12 @@ for (const slot of ['a', 'b']) {
         }
       },
       transformIndexHtml(html) {
-        html = replaceOnce(html, '    <link rel="manifest" href="/manifest.webmanifest" />\n', '');
         html = replaceOnce(html, '<title>Livro a Livro</title>', `<title>Validação ${slot.toUpperCase()} · Livro a Livro</title>`);
         html = replaceOnce(html, '<head>', `<head>\n    <meta name="robots" content="noindex,nofollow,noarchive" />\n    <link rel="stylesheet" href="${base}qa.css" />`);
         return replaceOnce(html, '<body>', `<body>\n    <aside class="qa-banner" aria-label="Ambiente de validação">Validação ${slot.toUpperCase()} · Somente dados sintéticos · Armazenamento separado · Não instalar</aside>`);
       },
       generateBundle() {
-        if (seen.size !== 4) throw new Error('QA isolation transforms were not applied.');
+        if (seen.size !== 5) throw new Error('QA isolation transforms were not applied.');
         this.emitFile({ type: 'asset', fileName: 'qa.css', source: '.qa-banner{position:sticky;top:0;z-index:10000;padding:.65rem 1rem;background:#fff1b8;color:#382800;border-bottom:2px solid #765a00;font:600 14px/1.4 system-ui,sans-serif;text-align:center} .qa-banner~#root{min-height:calc(100dvh - 3rem)}' });
       },
     }, react()],

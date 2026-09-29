@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useAnalytics } from '../../analytics/AnalyticsProvider';
 import { useLocale } from '../../i18n/context';
+import { privacyPath } from '../../i18n/locale';
 
 export function AnalyticsBanner() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const state = useAnalytics(); const ref = useRef<HTMLElement>(null);
   useEffect(() => { if (state.reviewing) ref.current?.querySelector<HTMLButtonElement>('button')?.focus(); }, [state.reviewing]);
   if (state.loading || state.choice !== null && !state.reviewing && !state.error && !state.reloadSuggested) return null;
@@ -14,7 +15,7 @@ export function AnalyticsBanner() {
     </div>
     <div className="analytics-actions"><button className="button button-secondary" disabled={state.saving} onClick={() => void state.choose('rejected')}>{t('reject')}</button>
       <button className="button button-primary" disabled={state.saving} onClick={() => void state.choose('accepted')}>{t('accept')}</button>
-      <a href="/privacidade.html">{t('learnMore')}</a>
+      <a href={privacyPath(locale)}>{t('learnMore')}</a>
       {state.reloadSuggested && <button className="button button-secondary" disabled={state.saving} onClick={state.reload}>{t('reopenApp')}</button>}
       {state.error && <button className="button button-secondary" disabled={state.saving} onClick={state.retry}>{t('retry')}</button>}
       {state.reviewing && <button className="button button-secondary" disabled={state.saving} onClick={state.closeReview}>{t('close')}</button>}</div>

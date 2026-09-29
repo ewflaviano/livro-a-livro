@@ -50,6 +50,7 @@ jobs:
       - run: node scripts/drive-gate.mjs --smoke
       - run: node scripts/local-library-gate.mjs
       - run: node scripts/pwa-update-gate.mjs
+      - run: node scripts/language-gate.mjs
       - run: node scripts/ga-consent-gate.mjs
 
   api:

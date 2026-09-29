@@ -6,7 +6,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 ## Estado atual
 
-**Revisado em 28 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 29 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
@@ -19,6 +19,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Imagem anual | Gerador local existente; acesso pela estante removido enquanto a posição da ação é revista |
 | PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
+| Idioma PT/EN | Interface e políticas públicas bilíngues; escolha local em Configurações, disponível offline e fora do backup/Drive |
 | Google Drive | Liberado no workflow público para teste manual do responsável, com login e autorização em duas etapas; gates entre perfis ainda pendentes na issue #13 |
 | Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
 

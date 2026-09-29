@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAnalytics } from '../../analytics/AnalyticsProvider';
 import { PwaStatus } from '../components/PwaStatus';
 import { useLocale } from '../../i18n/context';
+import { SettingsLanguageChoice } from '../components/LanguageChoice';
 
 export function SettingsPage() {
   const { t } = useLocale();
@@ -10,6 +11,7 @@ export function SettingsPage() {
   useEffect(() => { document.title = `${t('settings')} · ${t('appName')}`; }, [t]);
   return <section className="page-content" aria-labelledby="settings-title">
     <h1 id="settings-title">{t('settings')}</h1>
+    <SettingsLanguageChoice />
     <section aria-labelledby="analytics-settings-title">
       <h2 id="analytics-settings-title">{t('appUsage')}</h2>
       <p>{t('visitsDiagnostics', { choice: analytics.loading ? t('checking') : analytics.error ? t('checkFailed') : analytics.choice === 'accepted' ? t('accepted') : analytics.choice === 'rejected' ? t('rejected') : t('undecided') })}</p>

@@ -1,15 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppRouter } from './router';
+import { LocaleProvider } from '../i18n/context';
 import '../../docs/tokens.css';
 import '../ui/styles/app.css';
-import { startInstallObservation } from '../pwa/install';
-import { observePwaInteraction, registerPwa } from '../pwa/register';
+import { observePwaInteraction } from '../pwa/register';
 
 observePwaInteraction();
-startInstallObservation();
-if (import.meta.env.PROD) void registerPwa();
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><AppRouter /></StrictMode>,
+  <StrictMode><LocaleProvider><AppRouter /></LocaleProvider></StrictMode>,
 );

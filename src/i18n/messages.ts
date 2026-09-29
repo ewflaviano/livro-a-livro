@@ -431,6 +431,12 @@ const pt = {
   shareMoreBooks: '+ {count} livros',
   shareMoreBookOne: '+ {count} livro',
   shareTagline: 'Minha história em livros',
+  language: 'Idioma',
+  portuguese: 'Português',
+  english: 'English',
+  languagePrompt: 'Escolha o idioma deste navegador. Você pode mudá-lo em Configurações.',
+  languageHint: 'A escolha fica apenas neste navegador; não entra no backup nem no Google Drive.',
+  languageSaveFailed: 'Não foi possível salvar o idioma neste navegador. Tente novamente; a escolha pode mudar ao reabrir o aplicativo.',
 } as const;
 
 const en: Record<keyof typeof pt, string> = {
@@ -864,6 +870,12 @@ const en: Record<keyof typeof pt, string> = {
   shareMoreBooks: '+ {count} books',
   shareMoreBookOne: '+ {count} book',
   shareTagline: 'My story in books',
+  language: 'Language',
+  portuguese: 'Português',
+  english: 'English',
+  languagePrompt: 'Choose the language for this browser. You can change it in Settings.',
+  languageHint: 'The choice stays in this browser; it is not included in your backup or Google Drive.',
+  languageSaveFailed: 'Could not save the language in this browser. Try again; it may change when you reopen the app.',
 };
 
 export type MessageKey = keyof typeof pt;

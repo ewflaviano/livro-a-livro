@@ -6,7 +6,9 @@ import { useLibrary } from '../../app/LibraryProvider';
 import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
 import { PwaStatus } from './PwaStatus';
 import { PwaUpdateBanner } from './PwaUpdateBanner';
-import { useLocale } from '../../i18n/context';
+import { useLocale, useLocalePreference } from '../../i18n/context';
+import { privacyPath } from '../../i18n/locale';
+import { FirstVisitLanguageChoice } from './LanguageChoice';
 
 const navigation = [
   { to: '/estante', label: 'shelf', icon: Library },
@@ -18,12 +20,14 @@ export function AppShell() {
   return <GlobalSyncControls><Shell /></GlobalSyncControls>;
 }
 function Shell() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  const languageChoice = useLocalePreference();
   const location = useLocation();
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
   const { positions } = useLibrary();
   const returnTo = ['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
+  const showLanguagePrompt = location.pathname !== '/configuracoes' && languageChoice?.suggestChoice === true;
 
   useEffect(() => {
     if (previousPath.current !== location.pathname) {
@@ -46,7 +50,8 @@ function Shell() {
         <GlobalSyncHeader />
       </header>
       <PwaUpdateBanner />
-      <AnalyticsBanner />
+      {showLanguagePrompt && <FirstVisitLanguageChoice />}
+      {!showLanguagePrompt && <AnalyticsBanner />}
       <GlobalSyncAttention />
       {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="local-test-notice">{t('localTestNotice')}</p>}
       <div className="app-layout">
@@ -73,7 +78,7 @@ function Shell() {
         </Link>
       </nav>
       {location.pathname !== '/configuracoes' && <PwaStatus />}
-      <footer className="app-footer"><span>{t('footerTagline')}</span><div className="footer-links"><a href="/privacidade.html">{t('privacy')}</a><Link to="/apoiar">{t('supportProject')}</Link></div></footer>
+      <footer className="app-footer"><span>{t('footerTagline')}</span><div className="footer-links"><a href={privacyPath(locale)}>{t('privacy')}</a><Link to="/apoiar">{t('supportProject')}</Link></div></footer>
     </>
   );
 }

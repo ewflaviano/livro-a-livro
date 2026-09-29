@@ -10,6 +10,8 @@ Este guia define a primeira direção visual do Livro a Livro. Os [tokens CSS](t
 
 O Livro a Livro é privado, local-first, sem conta obrigatória e sem componente social. A V1 reúne **Quero ler, Lendo e Lido**, estante anual em Grade/Lista, cadastro por busca ou manual, página do livro, avaliação e nota privadas, estatísticas mínimas, exportação/importação JSON e imagem anual em Story/Quadrado. A arquitetura posterior inclui Google Drive opcional; seu cliente e simulador existem, mas a habilitação de produção depende dos gates da API. Consulte o [estado atual](../README.md#estado-atual); o catálogo visual continua conceitual. Não introduzir feed, metas, sequências de dias, recomendações, IA, comentários, seguidores ou rankings.
 
+A interface tem catálogos locais em PT-BR e EN. A escolha do idioma fica neste navegador, em Configurações; a primeira visita com navegador em inglês apresenta um convite curto no fluxo da página fora de Configurações. Nesse convite, o aviso de visitas aparece após a escolha do idioma, sem aceite implícito. A troca não traduz livros ou notas da pessoa nem muda o idioma dos termos enviados à busca. Links de privacidade seguem o idioma da interface; a política pública oferece ambos os idiomas sem JavaScript.
+
 1. **O livro é o centro.** Capa, título e autoria têm precedência. A interface organiza a estante e depois sai do caminho.
 2. **Calma com precisão.** Muito espaço em torno do conteúdo, pouco ornamento e rótulos que descrevem o efeito de cada ação.
 3. **Memória sem cobrança.** Um livro lido e um ano vazio são igualmente legítimos. Contar registros, sem avaliar o ritmo de leitura.
