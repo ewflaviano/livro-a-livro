@@ -5,10 +5,18 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { PIX_COPY_PASTE, PIX_KEY } from '../../support/pix';
 import { SupportPage } from './SupportPage';
+import { LocalePreview } from '../../i18n/context';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('SupportPage', () => {
+  it('previews English without changing Pix recipient or code', () => {
+    render(<LocalePreview locale="en"><MemoryRouter><SupportPage /></MemoryRouter></LocalePreview>);
+    expect(screen.getByRole('heading', { name: 'Support Livro a Livro' })).toBeTruthy();
+    expect(screen.getByText('Inovaprog Desenvolvimento')).toBeTruthy();
+    expect((screen.getByLabelText('Pix copy and paste') as HTMLTextAreaElement).value).toBe(PIX_COPY_PASTE);
+    expect(screen.getByText(/does not process payments/)).toBeTruthy();
+  });
   it('puts copy and recipient before the QR alternative without a request', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);

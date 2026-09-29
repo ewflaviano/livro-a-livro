@@ -6,11 +6,20 @@ import { MemoryRouter } from 'react-router-dom';
 const analytics = vi.hoisted(() => ({ view: { choice: null as 'accepted' | 'rejected' | null, loading: false, error: false, review: vi.fn() } }));
 vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => analytics.view }));
 import { SettingsPage } from './SettingsPage';
+import { LocalePreview } from '../../i18n/context';
 
 beforeEach(() => { analytics.view.choice = null; analytics.view.loading = false; analytics.view.error = false; analytics.view.review.mockClear();
 });
 afterEach(cleanup);
-const mount = () => render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+const mount = (locale: 'pt-BR' | 'en' = 'pt-BR') => render(<LocalePreview locale={locale}><MemoryRouter><SettingsPage /></MemoryRouter></LocalePreview>);
+
+it('previews English settings and keeps usage choice explicit', async () => {
+  mount('en');
+  expect(screen.getByText('Visits and diagnostics: Not chosen yet.')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Review app usage choice' }));
+  expect(analytics.view.review).toHaveBeenCalledOnce();
+  expect(screen.getByRole('link', { name: 'Your data and backup' }).getAttribute('href')).toBe('/dados');
+});
 
 it('replaces duplicate shelf controls with one usage choice', async () => {
   mount();
