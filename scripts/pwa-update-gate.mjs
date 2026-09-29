@@ -33,13 +33,14 @@ async function snapshot(page) {
 }
 const boots = page => page.evaluate(() => Number(sessionStorage.getItem('pwa-gate-boots')));
 const ready = page => expect(page.getByText('Aplicativo disponível offline neste navegador.', { exact: true })).toBeVisible();
-const version = (page, id) => expect(page.getByText(new RegExp(`build pwa-gate-${id}$`))).toBeVisible({ timeout: 30_000 });
+const version = (page, id) => expect(page.getByText(new RegExp(`commit pwa-gate-${id}$`))).toBeVisible({ timeout: 30_000 });
 async function waiting(page) {
   await page.evaluate(async () => { await (await navigator.serviceWorker.getRegistration()).update(); });
   await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration()).waiting))).toBe(true);
 }
 async function seed(page, origin) {
   await page.goto(`${origin}/#/dados`);
+  await page.getByRole('button', { name: 'Restaurar backup', exact: true }).click();
   await page.getByLabel('Importar JSON').setInputFiles({ name: 'synthetic-pwa.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
   await page.getByRole('button', { name: /^Substituir por/ }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: /^Substituir por/ }).click();
@@ -58,12 +59,12 @@ try {
   const oldAsset = initialHtml.match(/src="(\/assets\/[^" ]+\.js)"/)[1];
   server = createServer(async (request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname;
-    if (!/^\/(?:|index\.html|sw\.js|privacidade\.html|manifest\.webmanifest|(?:assets|icons)\/[a-zA-Z0-9_.-]+)$/.test(path)) { response.writeHead(404).end(); return; }
+    if (!/^\/(?:|index\.html|sw\.js|privacidade\.html|manifest\.webmanifest|favicon\.ico|(?:assets|icons)\/[a-zA-Z0-9_.-]+)$/.test(path)) { response.writeHead(404).end(); return; }
     const name = path === '/' ? 'index.html' : path.slice(1);
     let body;
     try { body = await readFile(join(dirs[current], name)); }
     catch { try { if (!path.startsWith('/assets/')) throw new Error(); body = await readFile(join(dirs.a, name)); } catch { response.writeHead(404).end(); return; } }
-    const type = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' }[extname(name)] ?? 'application/octet-stream';
+    const type = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' }[extname(name)] ?? 'application/octet-stream';
     response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'vary': 'Origin' }); response.end(body);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -91,16 +92,17 @@ try {
   await draft.getByLabel('Título (obrigatório)', { exact: true }).fill('Livro sintético da atualização');
   const draftBoots = await boots(draft); current = 'b'; await waiting(draft);
   const update = draft.getByRole('button', { name: 'Atualizar aplicativo', exact: true });
-  await expect(update).toBeVisible(); await expect(update).toBeDisabled();
+  await expect(update).toHaveCount(0);
   check(await boots(draft) === draftBoots);
   await expect(draft.getByLabel('Título (obrigatório)', { exact: true })).toHaveValue('Livro sintético da atualização');
   await draft.setViewportSize({ width: 320, height: 900 }); await draft.evaluate(() => window.scrollTo(0, 0));
   check(await draft.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  check((await update.boundingBox()).y < 700);
-  if (process.env.LAL_PWA_SCREENSHOT) await draft.screenshot({ path: resolve(process.env.LAL_PWA_SCREENSHOT) });
   await draft.getByRole('button', { name: 'Salvar livro', exact: true }).click();
   await expect(draft.getByRole('heading', { name: 'Livro sintético da atualização', exact: true })).toBeVisible();
-  const saved = await snapshot(draft); await expect(update).toBeEnabled(); await update.click();
+  const saved = await snapshot(draft); await expect(update).toBeVisible();
+  check((await update.boundingBox()).y < 700);
+  if (process.env.LAL_PWA_SCREENSHOT) await draft.screenshot({ path: resolve(process.env.LAL_PWA_SCREENSHOT) });
+  await update.click();
   await expect.poll(() => boots(draft)).toBe(draftBoots + 1);
   await draft.goto(`${origin}/#/configuracoes`); await version(draft, 'b');
   check(isDeepStrictEqual(saved, await snapshot(draft))); emit('DRAFT_SAVED_BEFORE_MANUAL_UPDATE_MOBILE_PASS'); await draftContext.close();
@@ -116,5 +118,5 @@ try {
   await first.getByRole('button', { name: 'Atualizar aplicativo', exact: true }).click(); await version(first, 'b');
   check(await boots(first) === multiBoots + 1); check(isDeepStrictEqual(beforeMulti, await snapshot(first)));
   emit('MULTI_TAB_REFUSAL_AND_RETRY_PASS'); await multi.close(); emit('PWA_UPDATE_GATE_PASS');
-} catch { emit(`PWA_UPDATE_GATE_FAIL_${stage}`); process.exitCode = 1; }
+} catch (error) { if (process.env.LAL_GATE_DEBUG === 'true') console.error(error); emit(`PWA_UPDATE_GATE_FAIL_${stage}`); process.exitCode = 1; }
 finally { await browser?.close(); if (server) await new Promise(resolve => server.close(resolve)); await rm(temporary, { recursive: true, force: true }); }
