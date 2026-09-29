@@ -50,13 +50,17 @@ Os testes TypeScript ficam junto ao código (`*.test.ts`/`*.test.tsx`); `test/fi
 | --- | --- |
 | `npm test` | Suíte TypeScript/React com Vitest e IndexedDB emulado |
 | `npm run test:local` | Isolamento e persistência do simulador |
+| `node scripts/local-library-gate.mjs` | Cadastro/edição com capa e backup restaurado offline em outro perfil Chromium sintético |
+| `node scripts/drive-gate.mjs --smoke` | Sincronização simulada, conflito, recuperação, logout e fronteira da API |
+| `node scripts/pwa-update-gate.mjs` | Cache offline, atualização e proteção de rascunho/abas |
+| `node scripts/ga-consent-gate.mjs` | Ausência de Analytics antes de aceitar e limpeza ao recusar |
 | `npm run typecheck` | Tipos TypeScript |
 | `npm run build` | Build estático e app shell em `dist/` |
 | `make api-check` | rustfmt, Clippy sem warnings e testes Rust |
 | `make check` | Todos os anteriores |
 | `make preview` | Build servido para inspeção manual da PWA |
 
-O CI atual não executa o teste do simulador; rode-o localmente. Não existe suíte E2E de navegador configurada no repositório. Testes de componentes não comprovam responsividade, quota real ou instalação em iOS/Android.
+O CI executa o simulador e esses quatro gates de navegador com Chromium instalado no runner. Os gates não usam biblioteca pessoal nem substituem OAuth/Drive reais, quota de dispositivo, Safari/iOS/Android ou leitor de tela. Localmente, use `npx playwright install chromium` se necessário; `CHROMIUM_PATH` permite escolher um Chromium já instalado.
 
 Na auditoria de 27/09/2026, `npm test` apresentou falhas de tempo/espera; `npm test -- --maxWorkers=2` passou os 239 testes. Se isso ocorrer, preserve o resultado original e compare com concorrência reduzida para diagnóstico. Não aumente timeouts nem declare a execução padrão aprovada sem investigar.
 

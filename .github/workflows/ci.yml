@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:local
       - run: npm run build
         env:
           VITE_DRIVE_ENABLED: 'true'
@@ -27,6 +28,20 @@ jobs:
         run: |
           test -f dist/index.html
           ! rg -n --hidden --glob '!*.map' '(refresh_token|client_secret|AKIA[0-9A-Z]{16})' dist
+
+  browser:
+    needs: [frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/drive-gate.mjs --smoke
+      - run: node scripts/local-library-gate.mjs
+      - run: node scripts/pwa-update-gate.mjs
+      - run: node scripts/ga-consent-gate.mjs
 
   api:
     runs-on: ubuntu-latest
@@ -56,7 +71,7 @@ jobs:
 
   publish_frontend:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [frontend]
+    needs: [frontend, browser]
     runs-on: ubuntu-latest
     permissions:
       contents: read
