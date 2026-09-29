@@ -31,6 +31,15 @@ describe('share allowlist', () => {
     expect(shareDescription(projection)).not.toContain('Título');
     expect(projectYearShare([], 1, true)).toEqual({ year: '0001', books: 0, pages: 0, authors: 0, titles: [], remaining: 0 });
   });
+
+  it('localizes only the shared labels while keeping allowed titles unchanged', () => {
+    const projection = projectYearShare(books, 2026, true);
+    const description = shareDescription(projection, 'en');
+    expect(description).toContain('8 books read · 960 pages reported · 1 distinct author');
+    expect(description).toContain('Typographic cover: Título 0');
+    expect(description).toContain('+ 2 books');
+    expect(description).not.toContain('SEGREDO');
+  });
 });
 
 describe('local renderer', () => {
@@ -60,6 +69,31 @@ describe('local renderer', () => {
     expect(result.at(-1)).toBe('🌿'.repeat(9) + '…');
     expect(result.every((line) => Array.from(line).length <= 10)).toBe(true);
     expect(titleLines('  Uma\n leitura  ', (text) => text.length * 10, 200, 6)).toEqual(['Uma leitura']);
+  });
+  it('draws English labels without changing the local-only image inputs', () => {
+    const draw = context();
+    renderYearShare(draw, projectYearShare(books, 2026, true), 'story', theme, 'en');
+    const labels = draw.fillText.mock.calls.map(([value]) => value);
+    expect(labels).toContain('books read');
+    expect(labels).toContain('My story in books');
+    expect(labels).toContain('+ 2 books');
+    expect(labels).not.toContain('livros lidos');
+  });
+  it.each([
+    ['pt-BR', ['livros lidos', 'páginas informadas', 'autores distintos'], ['livro lido', 'página informada', 'autor distinto']],
+    ['en', ['books read', 'pages reported', 'distinct authors'], ['book read', 'page reported', 'distinct author']],
+  ] as const)('uses singular only for one in %s canvas labels', (locale, plural, singular) => {
+    for (const [projection, expected, excluded] of [
+      [projectYearShare([], 2026, true), plural, singular],
+      [projectYearShare([{ ...books[0], pageCount: 1 }], 2026, true), singular, plural],
+      [projectYearShare(books.map((book, index) => ({ ...book, authors: [`Author ${index}`] })), 2026, true), plural, singular],
+    ] as const) {
+      const draw = context();
+      renderYearShare(draw, projection, 'story', theme, locale);
+      const labels = draw.fillText.mock.calls.map(([value]) => value);
+      for (const value of expected) expect(labels).toContain(value);
+      for (const value of excluded) expect(labels).not.toContain(value);
+    }
   });
   it('rejects failed or unsafe canvas serialization without exposing original errors', async () => {
     await expect(pngFromCanvas({ toBlob: () => { throw new Error('private browser error'); } } as unknown as HTMLCanvasElement)).rejects.toThrow('ShareUnavailable');

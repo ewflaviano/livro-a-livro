@@ -1,4 +1,6 @@
 import type { YearShare } from './projection';
+import { DEFAULT_LOCALE, formatNumber, pluralCategory, type Locale } from '../i18n/locale';
+import { message } from '../i18n/messages';
 
 export const SHARE_FORMATS = {
   story: { width: 1080, height: 1920 },
@@ -27,10 +29,10 @@ export function titleLines(title: string, measure: (text: string) => number, wid
 }
 
 /** Draw only text and local geometry; no image/URL input can taint this canvas. */
-export function renderYearShare(context: Context, share: YearShare, format: ShareFormat, theme: ShareTheme): void {
+export function renderYearShare(context: Context, share: YearShare, format: ShareFormat, theme: ShareTheme,
+  locale: Locale = DEFAULT_LOCALE): void {
   const { width, height } = SHARE_FORMATS[format];
   const story = format === 'story';
-  const number = new Intl.NumberFormat('pt-BR');
   const text = (value: string, x: number, y: number, size: number, color = theme.ink, editorial = false, maxWidth = 880) => {
     context.fillStyle = color;
     context.font = `${size}px ${editorial ? 'Georgia, serif' : 'system-ui, sans-serif'}`;
@@ -44,8 +46,13 @@ export function renderYearShare(context: Context, share: YearShare, format: Shar
   context.fillStyle = theme.accent; context.fillRect(510, top + 46, 60, 8);
   text(share.year, 540, top + 120, 88, theme.ink, true);
   const metricsY = top + 225;
-  const values = [number.format(share.books), share.pages === null ? '—' : number.format(share.pages), share.authors === null ? '—' : number.format(share.authors)];
-  const labels = ['livros lidos', 'páginas informadas', 'autores distintos'];
+  const values = [formatNumber(locale, share.books), share.pages === null ? '—' : formatNumber(locale, share.pages),
+    share.authors === null ? '—' : formatNumber(locale, share.authors)];
+  const labels = [
+    message(locale, pluralCategory(locale, share.books) === 'one' ? 'shareBookLabelOne' : 'shareBooksLabel'),
+    message(locale, share.pages !== null && pluralCategory(locale, share.pages) === 'one' ? 'sharePageLabelOne' : 'sharePagesLabel'),
+    message(locale, share.authors !== null && pluralCategory(locale, share.authors) === 'one' ? 'shareAuthorLabelOne' : 'shareAuthorsLabel'),
+  ];
   values.forEach((value, index) => {
     text(value, 240 + index * 300, metricsY, 46, theme.ink, false, 260);
     text(labels[index], 240 + index * 300, metricsY + 45, 23, theme.muted, false, 260);
@@ -67,8 +74,9 @@ export function renderYearShare(context: Context, share: YearShare, format: Shar
     lines.forEach((line, row) => text(line, x + coverWidth / 2,
       y + coverHeight / 2 + (row - (lines.length - 1) / 2) * leading, story ? 29 : 19, theme.ink, true, coverWidth - 36));
   });
-  if (share.remaining) text(`+ ${number.format(share.remaining)} livros`, 540, story ? 1485 : 916, 25, theme.muted);
-  text('Minha história em livros', 540, story ? 1610 : 948, 29, theme.ink, true);
+  if (share.remaining) text(message(locale, pluralCategory(locale, share.remaining) === 'one' ? 'shareMoreBookOne' : 'shareMoreBooks',
+    { count: formatNumber(locale, share.remaining) }), 540, story ? 1485 : 916, 25, theme.muted);
+  text(message(locale, 'shareTagline'), 540, story ? 1610 : 948, 29, theme.ink, true);
   text('livroalivro.app.br', 540, story ? 1660 : 980, 23, theme.muted);
 }
 

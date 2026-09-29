@@ -8,6 +8,8 @@ O Livro a Livro é uma PWA estática em React + TypeScript + Vite, com bibliotec
 
 O idioma da interface será `pt-BR` ou `en`, com catálogos locais e formatação por `Intl`, sem serviço de tradução. A preferência explícita fica somente na chave `ui-locale-v1` de `experimentState`, fora de `Book`, backups e snapshots do Drive. Sem preferência gravada, o primeiro idioma do navegador escolhe inglês apenas para `en`/`en-*`; os demais usam português. A inferência não é gravada. A escolha ainda não está exposta: a interface atual continua em português até a tradução e validação de todas as rotas.
 
+A prévia anual, sua descrição copiável e o texto desenhado no PNG recebem o idioma da interface. O título de cada livro é preservado literalmente; o renderer continua recebendo apenas a projeção permitida e não consulta serviços externos.
+
 Cada escrita da preferência compara um marcador local de sessão na mesma transação. O logout apaga a escolha, troca o marcador e avisa outras abas para relerem; uma escrita atrasada da sessão anterior falha. Conexão ao Drive e restauração de backup não invalidam a escolha. As mensagens entre abas carregam apenas invalidação. A escolha de manifesto antes da instalação, as páginas estáticas e o callback OAuth ainda precisam de validação própria antes de oferecer EN ao público.
 
 A tradução da SPA usa chaves tipadas nos dois catálogos e substituição textual de campos nomeados, renderizados pelo React como texto. A prévia EN de navegação, estante e busca é exercitada por testes; o contexto padrão de produção segue PT enquanto os demais fluxos recebem tradução. Os termos enviados à Open Library e os livros persistidos não são alterados quando a interface muda.
