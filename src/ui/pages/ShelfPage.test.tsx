@@ -287,6 +287,100 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getAllByRole('link').every(link => !/ARVORE|claudia/.test(link.getAttribute('href') ?? ''))).toBe(true);
   });
 
+  it('searches titles and authors across years without changing stored data or using the network', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      book('Farol de vidro', { status: 'read' }),
+      book('Cartas antigas', { authors: ['Fárol Monteiro'], shelfYear: 2025, status: 'reading' }),
+      book('Outro livro', { shelfYear: 2024 }),
+    ]);
+    const before = await repository.readBackupSnapshot();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'farol');
+    expect((screen.getByRole('radio', { name: 'Este ano' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByRole('heading', { name: 'Cartas antigas' })).toBeNull();
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    const list = within(screen.getByRole('list', { name: 'Livros encontrados em todos os anos' }));
+    expect(list.getAllByRole('listitem')).toHaveLength(2);
+    expect(list.getByText('Estante de 2025')).toBeTruthy();
+    expect(list.getByText('Estante de 2026')).toBeTruthy();
+    expect(screen.getByText('2 livros encontrados em todos os anos')).toBeTruthy();
+    expect(screen.queryByRole('definition', { name: '1 livro lido em 2026' })).toBeNull();
+    expect(await repository.readBackupSnapshot()).toEqual(before);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('filters, sorts and paginates the global result set, resetting the page when scope changes', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    await setup([...numberedBooks(30), ...numberedBooks(25, { status: 'reading' }, 2025)]);
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro');
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    const list = () => within(screen.getByRole('list', { name: 'Livros encontrados em todos os anos' }));
+    expect(list().getAllByRole('listitem')).toHaveLength(24);
+    expect(screen.getByText('Página 1 de 3')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    expect(screen.getByText('Página 2 de 3')).toBeTruthy();
+    await userEvent.click(list().getAllByRole('link')[0]);
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar para a estante' }));
+    expect(screen.getByText('Página 2 de 3')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+    expect(list().getAllByText('Estante de 2025')).toHaveLength(24);
+    await userEvent.click(screen.getByRole('button', { name: 'Ordenar por título' }));
+    expect(list().getAllByRole('heading')[0].textContent).toBe('Livro 01');
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Este ano' }));
+    expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+  });
+
+  it('finds another year from an empty year and restores the global search after opening a book', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    vi.stubGlobal('scrollY', 280);
+    const { repository } = await setup([book('Caminho das nuvens', { shelfYear: 2025 })]);
+    expect(screen.getByRole('heading', { name: 'Comece sua estante' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Filtrar por estado' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ver em lista' })).toBeNull();
+    const input = screen.getByRole('searchbox', { name: 'Buscar na estante' });
+    await userEvent.type(input, 'nuvens');
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    const link = screen.getByRole('link', { name: /Caminho das nuvens/ });
+    expect(link.getAttribute('href')).toMatch(/^\/livro\/[0-9a-f-]+$/);
+    await userEvent.click(link);
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar para a estante' }));
+    expect((screen.getByRole('radio', { name: 'Todos os anos' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('nuvens');
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 280);
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+    expect(screen.getByRole('heading', { name: 'Comece sua estante' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Onde buscar' })).toBeNull();
+    expect((await repository.readPreferences()).shelfYear).toBe(2026);
+  });
+
+  it('does not persist the global search scope after reopening the application', async () => {
+    const { name } = await setup([book('Livro de 2026'), book('Livro de 2025', { shelfYear: 2025 })]);
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro');
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    expect(screen.getByRole('list', { name: 'Livros encontrados em todos os anos' })).toBeTruthy();
+    cleanup();
+    const repository = await openLibraryRepository({ name, channelFactory: null });
+    const service = createShelfService(repository);
+    render(<LocalePreview locale="pt-BR"><MemoryRouter initialEntries={['/estante']}><AppRoutes openService={async () => service} /></MemoryRouter></LocalePreview>);
+    await screen.findByRole('searchbox', { name: 'Buscar na estante' });
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByRole('group', { name: 'Onde buscar' })).toBeNull();
+    expect(screen.getByRole('list', { name: 'Livros da estante de 2026' })).toBeTruthy();
+  });
+
+  it('labels the global search and each result year in English', async () => {
+    await setup([book('Paper lighthouse', { shelfYear: 2025 })], '/estante', 'en');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search your shelf' }), 'lighthouse');
+    await userEvent.click(screen.getByRole('radio', { name: 'All years' }));
+    expect(screen.getByRole('list', { name: 'Books found across all years' })).toBeTruthy();
+    expect(screen.getByText('2025 shelf')).toBeTruthy();
+    expect(screen.getByText('1 book found across all years')).toBeTruthy();
+  });
+
   it('updates after a local commit and restores imported preferences with the library', async () => {
     const { repository } = await setup();
     await act(async () => { await repository.commit({ kind: 'replace', books: [book('Restaurado', { status: 'read', shelfYear: 2025 })],

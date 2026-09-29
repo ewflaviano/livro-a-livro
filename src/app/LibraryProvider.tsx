@@ -14,6 +14,8 @@ type LibraryContext = {
   setShelfPage: (path: string, selection: string, page: number) => void;
   shelfQuery: string;
   setShelfQuery: (query: string) => void;
+  shelfSearchScope: 'year' | 'all';
+  setShelfSearchScope: (scope: 'year' | 'all') => void;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
 };
@@ -29,6 +31,11 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [shelfQuery, setShelfQuery] = useState('');
+  const [shelfSearchScope, setShelfSearchScope] = useState<'year' | 'all'>('year');
+  const updateShelfQuery = useCallback((query: string) => {
+    setShelfQuery(query);
+    if (!query.trim()) setShelfSearchScope('year');
+  }, []);
   const positions = useRef(new Map<string, number>());
   const [shelfPages, setShelfPages] = useState(() => new Map<string, { selection: string; page: number }>());
   const setShelfPage = useCallback((path: string, selection: string, page: number) => {
@@ -50,7 +57,8 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const state = useSyncExternalStore(service?.subscribe ?? subscribeNothing, service?.getSnapshot ?? loadingSnapshot);
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
-    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage, shelfQuery, setShelfQuery, books: service?.books ?? null, backup: service?.backup ?? null,
+    updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage,
+    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, books: service?.books ?? null, backup: service?.backup ?? null,
   }}>{children}</Context.Provider>;
 }
 
