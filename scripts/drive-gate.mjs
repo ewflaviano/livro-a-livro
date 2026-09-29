@@ -416,7 +416,7 @@ async function recovery(page) {
     coverMedia: library.coverMedia.map(item => ({ ...item, bytes: Array.from(Buffer.from(item.bytes, 'base64')) })).sort((a, b) => a.id.localeCompare(b.id)) };
 }
 function portableSnapshot({ preferences, ...library }) {
-  const { mode: _, ...portablePreferences } = preferences;
+  const { mode: _, sortOrder: _localSort, ...portablePreferences } = preferences;
   return { ...library, preferences: portablePreferences };
 }
 async function conflictGate() {
