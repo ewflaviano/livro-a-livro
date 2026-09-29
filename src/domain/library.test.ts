@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBook } from './book';
 import type { Book, NewBook } from './book';
-import { booksForYear, formatShelfYear, LIBRARY_LIMITS, parseLibrary, probableDuplicates, utf8ByteLength } from './library';
+import { booksForYear, formatShelfYear, LIBRARY_LIMITS, orderShelfBooks, parseLibrary, probableDuplicates, utf8ByteLength } from './library';
 import { statisticsForYear } from './statistics';
 
 const now = '2026-09-26T12:00:00.000Z';
@@ -31,6 +31,14 @@ describe('annual shelf', () => {
     expect(booksForYear(books, 2026).map((b) => b.id)).toEqual([3, 1, 2, 4].map((i) => book(i).id));
     expect(booksForYear(books, 2026, 'reading')).toEqual([books[0]]);
     expect(booksForYear(books, 2024)).toEqual([]);
+    expect(books).toEqual(original);
+  });
+  it('orders all titles with accents and numeric parts, breaking equivalent titles by ID', () => {
+    const books = [book(4, { title: 'Livro 10' }), book(2, { title: 'Árvore' }),
+      book(3, { title: 'Livro 2' }), book(1, { title: 'arvore' })];
+    const original = structuredClone(books);
+    expect(orderShelfBooks(books, 'title', 'pt-BR').map(item => item.id)).toEqual([1, 2, 3, 4].map(i => book(i).id));
+    expect(orderShelfBooks(books, 'recent', 'pt-BR').map(item => item.id)).toEqual([1, 2, 3, 4].map(i => book(i).id));
     expect(books).toEqual(original);
   });
 });

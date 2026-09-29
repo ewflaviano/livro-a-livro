@@ -97,19 +97,20 @@ describe('portable V1 backup', () => {
     expect((await b.repo.readAll()).books).toEqual([]);
     await b.service.confirmImport(preview);
     expect((await b.repo.readAll()).books).toEqual(fixture.books);
-    expect(await b.repo.readPreferences()).toEqual({ shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter, mode: 'grid', lastExport: null });
+    expect(await b.repo.readPreferences()).toEqual({ shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter, mode: 'grid', sortOrder: 'recent', lastExport: null });
     expect((await b.service.exportBackup(fixture.exportedAt)).text).toBe(exported.text);
     expect(exported.filename).toBe('livro-a-livro-2026-09-26.json');
     expect(await exported.blob.text()).toBe(exported.text);
     expect(parseBackupText(exported.text)).toMatchObject({ schemaVersion: 2, preferences: { shelfYear: 2025, filter: 'read' } });
     expect(exported.text).not.toContain('"mode"');
+    expect(exported.text).not.toContain('"sortOrder"');
   });
-  it('keeps current display mode when a V1 backup is confirmed after a mode change', async () => {
+  it('keeps current display preferences when a V1 backup is confirmed after a local change', async () => {
     const { repo, service } = await setup();
     const preview = await service.prepareImport(file());
-    await repo.updatePreferences({ mode: 'list' });
+    await repo.updatePreferences({ mode: 'list', sortOrder: 'title' });
     await service.confirmImport(preview);
-    expect(await repo.readPreferences()).toMatchObject({ mode: 'list', shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter });
+    expect(await repo.readPreferences()).toMatchObject({ mode: 'list', sortOrder: 'title', shelfYear: fixture.preferences.shelfYear, filter: fixture.preferences.filter });
   });
 
   it('serializes deterministically regardless of key and book input order', () => {

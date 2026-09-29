@@ -29,7 +29,7 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   let channel: RevisionChannel | undefined;
   let closed = false;
   let observed: LocalRevision | undefined;
-  let observedMode: 'grid' | 'list' | undefined;
+  let observedDisplay: { mode: 'grid' | 'list'; sortOrder: 'recent' | 'title' } | undefined;
   const listeners = new Set<(version: LocalRevision) => void>();
   const localPreferenceListeners = new Set<() => void>();
   const focusTarget = options.focusTarget === undefined
@@ -63,9 +63,9 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
       try { listener(versionOf(version)); } catch { /* Persistence is already confirmed. */ }
     }
   }
-  function notifyLocalPreferences(mode: 'grid' | 'list') {
-    if (closed || observedMode === mode) return;
-    observedMode = mode;
+  function notifyLocalPreferences(display: { mode: 'grid' | 'list'; sortOrder: 'recent' | 'title' }) {
+    if (closed || (observedDisplay?.mode === display.mode && observedDisplay.sortOrder === display.sortOrder)) return;
+    observedDisplay = display;
     for (const listener of localPreferenceListeners) {
       try { listener(); } catch { /* Persistence is already confirmed. */ }
     }
@@ -164,21 +164,22 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
         return preferences;
       });
       if (changed) { notify(changed); try { channel?.postMessage({ type: 'revision-changed' }); } catch { /* Advisory. */ } }
-      else if (validated.mode !== undefined) {
-        notifyLocalPreferences(result.mode);
+      else if (validated.mode !== undefined || validated.sortOrder !== undefined) {
+        notifyLocalPreferences({ mode: result.mode, sortOrder: result.sortOrder });
         try { channel?.postMessage({ type: 'local-preferences-changed' }); } catch { /* Focus will recheck. */ }
       }
-      if (changed) observedMode = result.mode;
+      if (changed) observedDisplay = { mode: result.mode, sortOrder: result.sortOrder };
       return result;
     },
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     subscribeLocalPreferences(listener) { localPreferenceListeners.add(listener); return () => { localPreferenceListeners.delete(listener); }; },
     async checkForChanges() {
-      const [revision, mode] = await transaction(['meta', 'preferences'], 'readonly', async tx => {
+      const [revision, display] = await transaction(['meta', 'preferences'], 'readonly', async tx => {
         const [meta, preferences] = await Promise.all([tx.objectStore('meta').get('library'), tx.objectStore('preferences').get('ui')]);
-        return [versionOf(parseMetadata(meta)), parseDomain(preferencesSchema, preferences, 'InvalidLibrary').mode] as const;
+        const { mode, sortOrder } = parseDomain(preferencesSchema, preferences, 'InvalidLibrary');
+        return [versionOf(parseMetadata(meta)), { mode, sortOrder }] as const;
       });
-      notify(revision); notifyLocalPreferences(mode);
+      notify(revision); notifyLocalPreferences(display);
     },
     close() {
       closed = true;
@@ -202,7 +203,8 @@ export async function openLibraryRepository(options: RepositoryOptions = {}): Pr
   try {
     // Validate the existing library once before exposing a writable repository.
     observed = (await repository.readAll()).version;
-    observedMode = (await repository.readPreferences()).mode;
+    const { mode, sortOrder } = await repository.readPreferences();
+    observedDisplay = { mode, sortOrder };
     const factory = options.channelFactory === undefined
       ? (typeof BroadcastChannel === 'undefined' ? null : (name: string) => new BroadcastChannel(name))
       : options.channelFactory;

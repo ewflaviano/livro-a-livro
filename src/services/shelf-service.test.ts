@@ -25,7 +25,7 @@ describe('shelf service consistency', () => {
     service.updatePreferences({ mode: 'grid' });
     service.updatePreferences({ filter: 'read' });
     await service.refresh();
-    expect(await repository.readPreferences()).toEqual({ lastExport, mode: 'grid', shelfYear: 2025, filter: 'read' });
+    expect(await repository.readPreferences()).toEqual({ lastExport, mode: 'grid', sortOrder: 'recent', shelfYear: 2025, filter: 'read' });
     expect(await repository.readRevision()).toEqual({ ...revision, revision: revision.revision + 2 });
     expect((await repository.readAll()).books).toEqual([]);
     expect(service.getSnapshot()).toMatchObject({ status: 'ready', preferenceError: false,

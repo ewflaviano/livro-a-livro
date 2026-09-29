@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import type { ReadingStatus } from '../../domain/book';
-import { booksForYear, formatShelfYear } from '../../domain/library';
+import { booksForYear, formatShelfYear, orderShelfBooks } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
 import { useLocale } from '../../i18n/context';
@@ -31,9 +31,10 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const yearBooks = state.status === 'ready' ? booksForYear(state.snapshot.books, year) : [];
   const filtered = filter === 'all' ? yearBooks : yearBooks.filter((book) => book.status === filter);
   const query = searchText(shelfQuery.trim());
-  const visible = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
+  const matches = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
+  const visible = orderShelfBooks(matches, state.status === 'ready' ? state.preferences.sortOrder : 'recent', locale);
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
-  const selection = JSON.stringify([year, filter, shelfQuery]);
+  const selection = JSON.stringify([year, filter, shelfQuery, state.status === 'ready' ? state.preferences.sortOrder : 'recent']);
   const savedPage = shelfPages.get(location.pathname);
   const page = savedPage?.selection === selection ? Math.min(savedPage.page, totalPages) : 1;
   const pageBooks = visible.slice((page - 1) * pageSize, page * pageSize);
@@ -94,6 +95,12 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
               placeholder={t('searchBookOrAuthor')} onChange={event => setShelfQuery(event.target.value)} /></label>
           {shelfQuery && <button className="shelf-search-clear" aria-label={t('clearSearch')} onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
         </div>
+        <label className="shelf-sort">{t('sortBy')}
+          <select value={preferences.sortOrder} onChange={(event) => updatePreferences({ sortOrder: event.target.value === 'title' ? 'title' : 'recent' })}>
+            <option value="recent">{t('sortRecent')}</option>
+            <option value="title">{t('sortTitle')}</option>
+          </select>
+        </label>
         <button className="shelf-mode" aria-label={preferences.mode === 'grid' ? t('listView') : t('gridView')}
           title={preferences.mode === 'grid' ? t('listView') : t('gridView')}
           onClick={() => updatePreferences({ mode: preferences.mode === 'grid' ? 'list' : 'grid' })}>

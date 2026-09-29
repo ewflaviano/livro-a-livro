@@ -59,6 +59,14 @@ export function booksForYear(books: readonly Book[], year: number, status?: Read
       (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
+export function orderShelfBooks(books: readonly Book[], order: 'recent' | 'title', locale: string): Book[] {
+  if (order === 'recent') return [...books].sort((left, right) => compareInstants(right.createdAt, left.createdAt) ||
+    (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const collator = new Intl.Collator(locale, { sensitivity: 'base', numeric: true });
+  return [...books].sort((left, right) => collator.compare(left.title, right.title) ||
+    (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+
 export type DuplicateReason = 'title_authors' | 'edition' | 'isbn';
 export type DuplicateWarning = { bookId: string; reasons: DuplicateReason[] };
 

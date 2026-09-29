@@ -10,7 +10,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
-| Estante anual, Grade/Lista, filtros e estatísticas | Integrados à interface e ao IndexedDB |
+| Estante anual, Grade/Lista, filtros, ordenação e estatísticas | Integrados à interface e ao IndexedDB |
 | Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
 | Busca Open Library | Explícita, com capa pequena no resultado e dados da edição carregados ao escolher; revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
@@ -86,6 +86,6 @@ Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo
 
 ### Navegação e busca local
 
-Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações, Instalar e Apoiar; no desktop, a lateral traz Estante, Seus dados e Configurações, e Adicionar livro fica junto ao título da estante. Lendo e Quero ler são filtros da estante. O campo de busca local filtra título e autoria sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. Grade mobile tem duas colunas. A ação de compartilhar ano foi retirada da estante enquanto se decide um lugar adequado.
+Em celular e tablet (abaixo de 1024 px), use Estante, Adicionar e Mais na barra inferior. Mais reúne Seus dados, Configurações, Instalar e Apoiar; no desktop, a lateral traz Estante, Seus dados e Configurações, e Adicionar livro fica junto ao título da estante. Lendo e Quero ler são filtros da estante. O campo de busca local filtra título e autoria sem conexão, preservando ano/filtro/modo e o contexto ao voltar de um livro. A consulta fica somente na memória da sessão. A estante pode ser ordenada por adição mais recente (padrão) ou título A–Z; a escolha fica apenas neste dispositivo e não entra no backup/Drive. Grade mobile tem duas colunas. A ação de compartilhar ano foi retirada da estante enquanto se decide um lugar adequado.
 
 Configurações usa as mesmas preferências da estante. Em falha, informa que a escolha vale apenas na sessão e oferece tentar salvar novamente. Instalar mostra instruções por plataforma e botão somente quando o navegador oferece o evento nativo; aceitar o pedido ainda não confirma a conclusão. A primeira preparação offline não aparece como atualização. Atualizar exige uma versão aguardando, ausência de rascunho/operação e nenhuma outra aba aberta.

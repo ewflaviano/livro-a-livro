@@ -24,11 +24,13 @@ export type LibraryMetadata = z.infer<typeof metadataSchema>;
 export const preferencesSchema = z.strictObject({
   shelfYear: shelfYearSchema.nullable(),
   mode: z.enum(['grid', 'list']),
+  // Older databases have no sort order; parsing supplies the original view.
+  sortOrder: z.enum(['recent', 'title']).default('recent'),
   filter: z.union([readingStatusSchema, z.literal('all')]),
   lastExport: z.strictObject({ startedAt: instantSchema, version: revisionSchema }).nullable(),
 });
 export const DEFAULT_PREFERENCES: LibraryPreferences = {
-  shelfYear: null, mode: 'grid', filter: 'all', lastExport: null,
+  shelfYear: null, mode: 'grid', sortOrder: 'recent', filter: 'all', lastExport: null,
 };
 
 export function parseMetadata(input: unknown): LibraryMetadata {
