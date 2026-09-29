@@ -4,6 +4,7 @@ import { useLibrary } from '../../app/LibraryProvider';
 import { bookCoverUrl } from '../../app/composition';
 import type { Book } from '../../domain/book';
 import type { CoverMedia } from '../../media/cover';
+import { useLocale } from '../../i18n/context';
 
 const subscribeOnline = (listener: () => void) => {
   window.addEventListener('online', listener); window.addEventListener('offline', listener);
@@ -26,6 +27,7 @@ function CoverImage({ cover, title, className, remoteUrl, readLocal }: {
   cover: Book['cover']; title: string; className: string; remoteUrl: string | null;
   readLocal?: (id: string) => Promise<CoverMedia | null>;
 }) {
+  const { t } = useLocale();
   const [localUrl, setLocalUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const mediaId = cover?.provider === 'local' ? cover.mediaId : null;
@@ -43,6 +45,6 @@ function CoverImage({ cover, title, className, remoteUrl, readLocal }: {
   return <div className={`book-cover-frame ${className}`}>
     {source && !failed ? <img className="book-cover-image" src={source} alt="" loading="lazy" decoding="async"
       crossOrigin={mediaId ? undefined : 'anonymous'} referrerPolicy="no-referrer" onError={() => setFailed(true)} /> :
-      <div className="book-cover" aria-hidden="true"><BookOpen /><span>Sem capa · {title}</span></div>}
+      <div className="book-cover" aria-hidden="true"><BookOpen /><span>{t('noCover', { title })}</span></div>}
   </div>;
 }

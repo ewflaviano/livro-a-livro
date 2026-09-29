@@ -7,14 +7,16 @@ import type { ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
+import { useLocale } from '../../i18n/context';
+import { formatNumber, pluralCategory } from '../../i18n/locale';
 
-const labels = { read: 'Lidos', reading: 'Lendo', 'want-to-read': 'Quero ler', all: 'Todos' };
-const statusLabels = { read: 'Lido', reading: 'Lendo', 'want-to-read': 'Quero ler' };
 const searchText = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR');
-const number = new Intl.NumberFormat('pt-BR');
 const pageSize = 24;
 
 export function ShelfPage({ status }: { status?: ReadingStatus }) {
+  const { t, locale } = useLocale();
+  const labels = { read: t('readPlural'), reading: t('reading'), 'want-to-read': t('wantToRead'), all: t('all') };
+  const statusLabels = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
   const { state, retry, updatePreferences, positions, shelfPages, setShelfPage, shelfQuery, setShelfQuery } = useLibrary();
   const location = useLocation();
   const navigate = useNavigate();
@@ -22,7 +24,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const searchInput = useRef<HTMLInputElement>(null);
   const collection = useRef<HTMLOListElement>(null);
   const pageNavigation = useRef(false);
-  const title = status ? labels[status] : 'Minha estante';
+  const title = status ? labels[status] : t('myShelf');
   const currentYear = new Date().getFullYear();
   const year = state.status === 'ready' ? state.preferences.shelfYear ?? currentYear : currentYear;
   const filter = status ?? (state.status === 'ready' ? state.preferences.filter : 'all');
@@ -35,7 +37,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const savedPage = shelfPages.get(location.pathname);
   const page = savedPage?.selection === selection ? Math.min(savedPage.page, totalPages) : 1;
   const pageBooks = visible.slice((page - 1) * pageSize, page * pageSize);
-  useEffect(() => { document.title = `${title} · Livro a Livro`; }, [title]);
+  useEffect(() => { document.title = `${title} · ${t('appName')}`; }, [title, t]);
   useEffect(() => {
     if (state.status !== 'ready') return;
     if (savedPage?.selection !== selection || savedPage.page !== page) setShelfPage(location.pathname, selection, page);
@@ -72,64 +74,64 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
 
   return <section className="shelf-page" aria-labelledby="shelf-title">
     <div className="shelf-heading">
-      <h1 id="shelf-title">{status ? labels[status] : 'Estante'}</h1>
+      <h1 id="shelf-title">{status ? labels[status] : t('shelf')}</h1>
       <div className="shelf-heading-actions">
-        <label className="year-field">Ano da estante
+        <label className="year-field">{t('shelfYear')}
           <select value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
-            <option value="current">Ano atual (automático)</option>
+            <option value="current">{t('currentYearAutomatic')}</option>
             {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
           </select>
         </label>
         {yearBooks.length > 0 && <Link className="button button-primary shelf-add" to="/adicionar" state={{ returnTo: location.pathname }}
-          onClick={() => positions.set(location.pathname, window.scrollY)}><Plus aria-hidden="true" />Adicionar livro</Link>}
+          onClick={() => positions.set(location.pathname, window.scrollY)}><Plus aria-hidden="true" />{t('addBook')}</Link>}
       </div>
     </div>
     {yearBooks.length > 0 && <>
       <div className="shelf-toolbar">
         <div className="shelf-search">
-          <label className="shelf-search-field"><Search aria-hidden="true" /><span className="visually-hidden">Buscar na estante</span>
+          <label className="shelf-search-field"><Search aria-hidden="true" /><span className="visually-hidden">{t('searchShelf')}</span>
             <input ref={searchInput} type="search" value={shelfQuery} maxLength={200}
-              placeholder="Buscar livro ou autor" onChange={event => setShelfQuery(event.target.value)} /></label>
-          {shelfQuery && <button className="shelf-search-clear" aria-label="Limpar busca" onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
+              placeholder={t('searchBookOrAuthor')} onChange={event => setShelfQuery(event.target.value)} /></label>
+          {shelfQuery && <button className="shelf-search-clear" aria-label={t('clearSearch')} onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
         </div>
-        <button className="shelf-mode" aria-label={preferences.mode === 'grid' ? 'Ver em lista' : 'Ver em grade'}
-          title={preferences.mode === 'grid' ? 'Ver em lista' : 'Ver em grade'}
+        <button className="shelf-mode" aria-label={preferences.mode === 'grid' ? t('listView') : t('gridView')}
+          title={preferences.mode === 'grid' ? t('listView') : t('gridView')}
           onClick={() => updatePreferences({ mode: preferences.mode === 'grid' ? 'list' : 'grid' })}>
           {preferences.mode === 'grid' ? <List aria-hidden="true" /> : <Grid2X2 aria-hidden="true" />}
         </button>
       </div>
-      <div className="segmented-control shelf-filters" role="group" aria-label="Filtrar por estado">
+      <div className="segmented-control shelf-filters" role="group" aria-label={t('filterByStatus')}>
         {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
           <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{labels[value]}</button>)}
       </div>
     </>}
-    {state.preferenceError && <div role="alert"><p>Não foi possível guardar estas preferências. Elas valem nesta sessão, mas podem se perder ao reabrir o aplicativo. Seus livros continuam salvos.</p>
-      <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>Tentar salvar preferências</button></div>}
+    {state.preferenceError && <div role="alert"><p>{t('preferenceSaveError')}</p>
+      <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>{t('retrySavePreferences')}</button></div>}
     {yearBooks.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
-      <div className="notice-panel" role="status"><h2>Nenhum livro encontrado.</h2><p>Tente outro título ou autor. A busca considera o ano e o filtro selecionados.</p></div> : visible.length === 0 ?
-      <div className="notice-panel"><h2>Nenhum livro em {labels[filter]} nesta estante.</h2>
-        <button className="button button-secondary" onClick={() => selectFilter('all')}>Limpar filtro</button></div> :
-      <><ol ref={collection} className={`book-collection book-collection--${preferences.mode}`} aria-label={`Livros da estante de ${yearText}`} start={(page - 1) * pageSize + 1}>
+      <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t('tryAnotherBook')}</p></div> : visible.length === 0 ?
+      <div className="notice-panel"><h2>{t('noBooksInFilter', { filter: labels[filter] })}</h2>
+        <button className="button button-secondary" onClick={() => selectFilter('all')}>{t('clearFilter')}</button></div> :
+      <><ol ref={collection} className={`book-collection book-collection--${preferences.mode}`} aria-label={t('shelfBooksYear', { year: yearText })} start={(page - 1) * pageSize + 1}>
         {pageBooks.map((book) => <li key={book.id}>
           <Link className="book-entry" to={`/livro/${book.id}`} state={{ returnTo: location.pathname }}
             onClick={() => positions.set(location.pathname, window.scrollY)}>
             <BookCover cover={book.cover} title={book.title} />
-            <div className="book-information"><h2>{book.title}</h2><p>{book.authors.length ? book.authors.join(', ') : 'Autoria não informada'}</p>
+            <div className="book-information"><h2>{book.title}</h2><p>{book.authors.length ? book.authors.join(', ') : t('authorUnknown')}</p>
               <span className={`reading-status reading-status--${book.status}`}>{statusLabels[book.status]}</span>
-              {preferences.mode === 'list' && book.rating !== null && <span className="book-rating" aria-label={`Avaliação: ${book.rating} de 5 estrelas`}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span>}
+              {preferences.mode === 'list' && book.rating !== null && <span className="book-rating" aria-label={t('ratingOutOfFive', { rating: book.rating })}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span>}
             </div>
           </Link>
         </li>)}
       </ol>
-      {totalPages > 1 && <nav className="shelf-pagination" aria-label="Páginas da estante">
-        <button className="button button-secondary" disabled={page === 1} onClick={() => changePage(page - 1)}>Anterior</button>
-        <span aria-live="polite">Página {page} de {totalPages}</span>
-        <button className="button button-secondary" disabled={page === totalPages} onClick={() => changePage(page + 1)}>Próxima</button>
+      {totalPages > 1 && <nav className="shelf-pagination" aria-label={t('shelfPages')}>
+        <button className="button button-secondary" disabled={page === 1} onClick={() => changePage(page - 1)}>{t('previous')}</button>
+        <span aria-live="polite">{t('pageOf', { page, total: totalPages })}</span>
+        <button className="button button-secondary" disabled={page === totalPages} onClick={() => changePage(page + 1)}>{t('next')}</button>
       </nav>}</>}
-    {yearBooks.length > 0 && <dl className="shelf-metrics" aria-label={`Livros lidos em ${yearText}`}>
-      <div><dt>Lidos</dt><dd aria-label={`${number.format(metrics.books)} livros lidos em ${yearText}`}>{number.format(metrics.books)}</dd></div>
-      <div><dt>Páginas</dt><dd aria-label={metrics.pages === null ? 'Páginas não informadas' : `${number.format(metrics.pages)} páginas informadas em livros lidos`}>{metrics.pages === null ? '—' : number.format(metrics.pages)}</dd></div>
-      <div><dt>Autores</dt><dd aria-label={metrics.authors === null ? 'Autoria não informada' : `${number.format(metrics.authors)} autores distintos em livros lidos`}>{metrics.authors === null ? '—' : number.format(metrics.authors)}</dd></div>
+    {yearBooks.length > 0 && <dl className="shelf-metrics" aria-label={t('booksReadYear', { year: yearText })}>
+      <div><dt>{t('readPlural')}</dt><dd aria-label={t(pluralCategory(locale, metrics.books) === 'one' ? 'bookReadCountYearOne' : 'booksReadCountYear', { count: formatNumber(locale, metrics.books), year: yearText })}>{formatNumber(locale, metrics.books)}</dd></div>
+      <div><dt>{t('pages')}</dt><dd aria-label={metrics.pages === null ? t('pagesUnknown') : t(pluralCategory(locale, metrics.pages) === 'one' ? 'pageReadCountOne' : 'pagesReadCount', { count: formatNumber(locale, metrics.pages) })}>{metrics.pages === null ? '—' : formatNumber(locale, metrics.pages)}</dd></div>
+      <div><dt>{t('authors')}</dt><dd aria-label={metrics.authors === null ? t('authorUnknown') : t(pluralCategory(locale, metrics.authors) === 'one' ? 'authorReadCountOne' : 'authorsReadCount', { count: formatNumber(locale, metrics.authors) })}>{metrics.authors === null ? '—' : formatNumber(locale, metrics.authors)}</dd></div>
     </dl>}
   </section>;
 }

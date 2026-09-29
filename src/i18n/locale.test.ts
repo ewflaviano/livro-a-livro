@@ -18,6 +18,7 @@ describe('local language selection', () => {
     expect(formatDate('en', date, { timeZone: 'UTC', month: 'long' })).toBe('September');
     expect(pluralCategory('en', 1)).toBe('one');
     expect(pluralCategory('en', 2)).toBe('other');
+    expect(pluralCategory('pt-BR', 0)).toBe('other');
     expect(message('en', 'settings')).toBe('Settings');
   });
 });

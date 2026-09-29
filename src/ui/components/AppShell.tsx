@@ -6,17 +6,19 @@ import { useLibrary } from '../../app/LibraryProvider';
 import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
 import { PwaStatus } from './PwaStatus';
 import { PwaUpdateBanner } from './PwaUpdateBanner';
+import { useLocale } from '../../i18n/context';
 
 const navigation = [
-  { to: '/estante', label: 'Estante', icon: Library },
-  { to: '/dados', label: 'Seus dados', icon: ShieldCheck },
-  { to: '/configuracoes', label: 'Configurações', icon: Settings },
-];
+  { to: '/estante', label: 'shelf', icon: Library },
+  { to: '/dados', label: 'yourData', icon: ShieldCheck },
+  { to: '/configuracoes', label: 'settings', icon: Settings },
+] as const;
 
 export function AppShell() {
   return <GlobalSyncControls><Shell /></GlobalSyncControls>;
 }
 function Shell() {
+  const { t } = useLocale();
   const location = useLocation();
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
@@ -35,9 +37,9 @@ function Shell() {
       <a className="skip-link" href="#conteudo" onClick={(event) => {
         event.preventDefault();
         main.current?.focus();
-      }}>Pular para o conteúdo</a>
+      }}>{t('skipToContent')}</a>
       <header className="app-header">
-        <Link className="brand" to="/estante" aria-label="Livro a Livro — Estante">
+        <Link className="brand" to="/estante" aria-label={`${t('appName')} — ${t('shelf')}`}>
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span>Livro a Livro</span>
         </Link>
@@ -46,32 +48,32 @@ function Shell() {
       <PwaUpdateBanner />
       <AnalyticsBanner />
       <GlobalSyncAttention />
-      {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="local-test-notice">Teste local · Google e Drive simulados · use dados descartáveis</p>}
+      {import.meta.env.DEV && import.meta.env.VITE_LOCAL_MODE === 'true' && <p className="local-test-notice">{t('localTestNotice')}</p>}
       <div className="app-layout">
         <aside className="sidebar">
-          <nav aria-label="Navegação principal">
+          <nav aria-label={t('mainNavigation')}>
             {navigation.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' is-active' : ''}`}>
-                <Icon aria-hidden="true" /><span>{label}</span>
+                <Icon aria-hidden="true" /><span>{t(label)}</span>
               </NavLink>
             ))}
           </nav>
         </aside>
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
-      <nav className="bottom-navigation" aria-label="Navegação mobile">
+      <nav className="bottom-navigation" aria-label={t('mobileNavigation')}>
         <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? 'page' : undefined}>
-          <Library aria-hidden="true" /><span>Estante</span>
+          <Library aria-hidden="true" /><span>{t('shelf')}</span>
         </Link>
         <NavLink to="/adicionar" state={{ returnTo }} onClick={() => positions.set(returnTo, window.scrollY)}>
-          <Plus aria-hidden="true" /><span>Adicionar</span>
+          <Plus aria-hidden="true" /><span>{t('add')}</span>
         </NavLink>
         <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/instalar', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
-          <MoreHorizontal aria-hidden="true" /><span>Mais</span>
+          <MoreHorizontal aria-hidden="true" /><span>{t('more')}</span>
         </Link>
       </nav>
       {location.pathname !== '/configuracoes' && <PwaStatus />}
-      <footer className="app-footer"><span>Sua história em livros. Privada, por princípio.</span><div className="footer-links"><a href="/privacidade.html">Privacidade</a><Link to="/apoiar">Apoiar o projeto</Link></div></footer>
+      <footer className="app-footer"><span>{t('footerTagline')}</span><div className="footer-links"><a href="/privacidade.html">{t('privacy')}</a><Link to="/apoiar">{t('supportProject')}</Link></div></footer>
     </>
   );
 }

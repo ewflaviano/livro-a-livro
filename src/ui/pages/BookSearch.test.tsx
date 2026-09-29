@@ -8,6 +8,8 @@ import { openDatabase } from '../../adapters/indexeddb/database';
 import { openLibraryRepository } from '../../adapters/indexeddb/library-repository';
 import { createShelfService } from '../../services/shelf-service';
 import { AppRoutes } from '../../app/router';
+import { LocalePreview } from '../../i18n/context';
+import type { Locale } from '../../i18n/locale';
 
 const payload = { numFound: 1, docs: [{ key: '/works/OL12W', title: 'Livro encontrado', author_name: ['Autora'], cover_i: 123, first_publish_year: 1953,
   editions: { docs: [{ key: '/books/OL34M' }] } }] };
@@ -19,14 +21,23 @@ beforeEach(async () => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-async function setup() {
+async function setup(locale: Locale = 'pt-BR') {
   const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
   const service = createShelfService(repository);
-  render(<MemoryRouter initialEntries={['/adicionar']}><AppRoutes openService={async () => service} /></MemoryRouter>);
-  await screen.findByRole('textbox', { name: 'Título, autor ou ISBN' });
+  render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/adicionar']}><AppRoutes openService={async () => service} /></MemoryRouter></LocalePreview>);
+  await screen.findByRole('textbox', { name: locale === 'en' ? 'Title, author or ISBN' : 'Título, autor ou ISBN' });
   return repository;
 }
 describe('optional book search UI', () => {
+  it('previews English search without changing the Portuguese search request or private title', async () => {
+    const repository = await setup('en');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title, author or ISBN' }), 'Livro');
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('button', { name: 'Select Livro encontrado (1953)' })).toBeTruthy();
+    expect(screen.getByText('1 result')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Livro encontrado' })).toBeTruthy();
+    expect((await repository.readAll()).books).toHaveLength(0);
+  });
   it('opens a Google Books search only by an explicit button without exposing its query to link tracking', async () => {
     const repository = await setup();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
