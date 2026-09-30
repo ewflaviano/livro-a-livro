@@ -309,6 +309,32 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('finds a saved ISBN with or without separators only in the selected scope and filter', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      book('Volume sem código', { status: 'reading' }),
+      book('Edição de teste', { isbn: '9780000000002', shelfYear: 2025, status: 'read' }),
+    ]);
+    const before = await repository.readBackupSnapshot();
+    const input = screen.getByRole('searchbox', { name: 'Buscar na estante' });
+    expect(input.getAttribute('placeholder')).toBe('Buscar livro, autor ou ISBN');
+    await userEvent.type(input, '978-0-00-000000-2');
+    expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    expect(screen.getByRole('heading', { name: 'Edição de teste' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Todos' }));
+    await userEvent.clear(input); await userEvent.type(input, '9780000000002');
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    expect(screen.getByRole('heading', { name: 'Edição de teste' })).toBeTruthy();
+    await userEvent.clear(input); await userEvent.type(input, 'Volume');
+    expect(screen.getByRole('heading', { name: 'Volume sem código' })).toBeTruthy();
+    expect((await repository.readBackupSnapshot()).books).toEqual(before.books);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('link').every(link => !/9780000000002/.test(link.getAttribute('href') ?? ''))).toBe(true);
+  });
+
   it('filters, sorts and paginates the global result set, resetting the page when scope changes', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     await setup([...numberedBooks(30), ...numberedBooks(25, { status: 'reading' }, 2025)]);

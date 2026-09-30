@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowDownAZ, Clock3, Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
-import type { ReadingStatus } from '../../domain/book';
+import { normalizeIsbn, type ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear, orderShelfBooks } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
@@ -31,10 +31,12 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const filter = status ?? (state.status === 'ready' ? state.preferences.filter : 'all');
   const yearBooks = state.status === 'ready' ? booksForYear(state.snapshot.books, year) : [];
   const query = searchText(shelfQuery.trim());
+  const isbnQuery = normalizeIsbn(shelfQuery.trim());
   const globalSearch = !!query && shelfSearchScope === 'all';
   const booksInScope = globalSearch && state.status === 'ready' ? state.snapshot.books : yearBooks;
   const filtered = filter === 'all' ? booksInScope : booksInScope.filter((book) => book.status === filter);
-  const matches = query ? filtered.filter(book => searchText([book.title, ...book.authors].join(' ')).includes(query)) : filtered;
+  const matches = query ? filtered.filter(book =>
+    searchText([book.title, ...book.authors].join(' ')).includes(query) || book.isbn === isbnQuery) : filtered;
   const visible = orderShelfBooks(matches, state.status === 'ready' ? state.preferences.sortOrder : 'recent', locale);
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
   const selection = JSON.stringify([year, filter, shelfQuery, globalSearch, state.status === 'ready' ? state.preferences.sortOrder : 'recent']);
