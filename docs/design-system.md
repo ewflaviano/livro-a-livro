@@ -292,6 +292,10 @@ A seção vem antes de Google Drive e privacidade. Exibe destino local, conteúd
 
 Cancelar diálogo retorna ao acionador; cancelar importação, concluir ou recusar restauração retorna ao seletor. Preparação/substituição têm estado anunciado e confirmação fica indisponível durante o commit. Exportação anuncia “Download iniciado; confira se ele foi salvo”, sem afirmar backup concluído. Formato, versão, excesso, quota e conflito têm mensagens distintas. A nota privada acompanha o JSON/Drive quando a pessoa escolhe essas ações, e permanece excluída da imagem anual.
 
+### Exportar catálogo — issue #130
+
+Em Seus dados, depois do backup local e antes do Drive, um painel discreto oferece **Baixar CSV** e **Baixar Markdown**. O texto informa os campos de cada formato e que os arquivos revelam hábitos de leitura; o envio a um agente externo é decisão da pessoa. A nota abaixo distingue os arquivos de consulta do backup JSON restaurável. As duas ações têm alvo mínimo de 44 px, foco visível, estados de preparação, erro de leitura, erro de download e confirmação apenas do início do download. CSV e Markdown nunca abrem um fluxo de importação nem um envio automático. Em 320 px, os botões podem quebrar de linha sem perder rótulos. A interface e o conteúdo gerado acompanham PT/EN.
+
 ### Capas na biblioteca — issue #42
 
 Revisão da busca, estante em Grade/Lista e detalhe compartilham a mesma moldura 2:3. Usar `object-fit: contain`; nenhuma parte da imagem é cortada para preencher o espaço. Capas enviadas continuam disponíveis offline. Referências Open Library usam conexão, com aviso na estante/detalhe e fallback tipográfico em erro, ausência ou offline.

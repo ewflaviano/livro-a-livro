@@ -1,6 +1,7 @@
 import { MergePreview } from '../components/MergePreview';
 import type { ResolutionPreview } from '../../sync/merge';
 import { BackupPanel } from '../components/BackupPanel';
+import { CatalogPanel } from '../components/CatalogPanel';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSync } from '../../app/SyncProvider';
@@ -81,6 +82,7 @@ export function DataPage() {
   return <section ref={content} className="page-content"><h1 ref={pageHeading} tabIndex={-1}>{t('yourData')}</h1>
     {local && <p className="notice-panel" role="status">{t('localTestData')}</p>}
     <BackupPanel />
+    <CatalogPanel />
     <h2 ref={driveHeading} className="sync-resolution-heading" tabIndex={-1}>{t('optionalGoogleDrive')}</h2>
     {state.login?.status === 'unavailable' && <p>{t('loginCheckFailed')} <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>{t('verifyConnection')}</button></p>}
     {state.logoutUnconfirmed && <p role="alert">{t('logoutUnconfirmed')}</p>}

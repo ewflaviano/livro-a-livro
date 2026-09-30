@@ -15,6 +15,7 @@ const sync = vi.hoisted(() => ({ state: { status: 'conflict', localCount: 0, rem
 vi.mock('../../app/SyncProvider', () => ({ useSync: () => sync }));
 vi.mock('../../app/LibraryProvider', () => ({ useLibrary: () => ({ positions: new Map() }) }));
 vi.mock('../components/BackupPanel', () => ({ BackupPanel: () => <section><h2>Backup local</h2></section> }));
+vi.mock('../components/CatalogPanel', () => ({ CatalogPanel: () => null }));
 vi.mock('../../analytics/AnalyticsProvider', () => ({ useAnalytics: () => ({ choice: null, loading: false, error: false, review: vi.fn() }) }));
 vi.mock('../../experiments/store', () => ({ openExperimentStore: async () => ({ read: async () => ({ experimentsConsent: false, telemetryConsent: false }), close() {} }) }));
 const data: LibraryExport = { format: 'livro-a-livro', schemaVersion: 1, exportedAt: '2026-09-26T12:00:00Z', books: [], coverMedia: [], preferences: { shelfYear: null, mode: 'grid', filter: 'all' } };
