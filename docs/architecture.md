@@ -350,6 +350,8 @@ Submeter consulta → cache/limite → fetch abortável → validar resposta →
 
 Exportar: snapshot consistente → validação → serialização determinística → Blob JSON → download iniciado. Importar: arquivo local → limite → parse/validação em Worker → migração do formato → resumo imutável → exportação opcional da biblioteca atual → confirmação → commit de substituição condicionado à revisão → reconsulta. Detalhes e recuperação estão abaixo.
 
+**Catálogo CSV/Markdown (issue #130):** dois downloads de leitura, separados do backup. O serviço lê `readAll()` uma vez por ação e projeta somente ID interno para desempate de ordenação, título, autoria, ano da estante, estado, páginas e ISBN; o ID não sai no arquivo. CSV usa título, autoria, ano, estado, páginas e ISBN, com células citadas, escapes e neutralização de prefixos de fórmula. Markdown usa título, autoria e ano em grupos por estado, com campos escapados como texto. Notas, avaliações, capas, datas técnicas e preferências não entram na projeção. Nenhum formato é restaurável; não há escrita local, tráfego de rede, integração com LLM, mudança no backup/Drive ou garantia de que o navegador concluiu o salvamento após iniciar o download.
+
 ## 7. Backup JSON, migrações e recuperação
 
 ### Contrato portátil V2 (leitura V1 preservada)

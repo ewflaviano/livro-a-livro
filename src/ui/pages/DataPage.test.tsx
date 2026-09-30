@@ -16,7 +16,7 @@ import { downloadLibrary } from './DataPage';
 import { getPwaState } from '../../pwa/register';
 import fixture from '../../../test/fixtures/backups/v1.json';
 import { encodedCover, syntheticCover, stubImageDecoder } from '../../../test/fixtures/covers/helpers';
-import { parseBook } from '../../domain/book';
+import { createBook, parseBook } from '../../domain/book';
 import { DomainError } from '../../domain/errors';
 import { LIBRARY_LIMITS } from '../../domain/library';
 import { LocalePreview } from '../../i18n/context';
@@ -217,5 +217,51 @@ describe('independent local backup interface', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Fazer backup' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível iniciar a exportação');
     expect((await repo.readPreferences()).lastExport).toBeNull();
+  });
+});
+
+describe('local catalogue downloads', () => {
+  it('downloads CSV and Markdown from two years offline without modifying the library', async () => {
+    const { repo } = await setup(true);
+    const second = createBook({ title: 'Farol de papel', authors: ['Autora Exemplo'], shelfYear: 2024, status: 'reading',
+      note: 'NOTA SINTÉTICA PRIVADA', rating: 4 }, { id: crypto.randomUUID(), now: '2026-09-30T12:00:00.000Z', shelfYear: 2024 });
+    await repo.commit({ kind: 'put', book: second }, await repo.readRevision());
+    const before = await repo.readBackupSnapshot();
+    const commit = vi.spyOn(repo, 'commit'); const preferences = vi.spyOn(repo, 'updatePreferences');
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar CSV' }));
+    expect(await screen.findByText(/Download do catálogo iniciado/)).toBeTruthy();
+    const csv = await downloaded[0].text();
+    expect(csv).toContain('"Título","Autoria","Ano da estante","Estado","Páginas","ISBN"');
+    expect(csv).toContain('"Farol de papel","Autora Exemplo","2024","Lendo"');
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar Markdown' }));
+    const markdown = await downloaded[1].text();
+    expect(markdown).toContain('## Lidos');
+    expect(markdown).toContain('## Lendo\n\n- Farol de papel — Autora Exemplo (Ano da estante: 2024)');
+    expect(markdown).toContain('## Quero ler');
+    expect(markdown).not.toContain('NOTA SINTÉTICA PRIVADA');
+    expect(csv).not.toContain('NOTA SINTÉTICA PRIVADA');
+    expect(commit).not.toHaveBeenCalled(); expect(preferences).not.toHaveBeenCalled();
+    expect(await repo.readBackupSnapshot()).toEqual(before);
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(2);
+  });
+
+  it('localizes the export and explains that an empty file is not a backup', async () => {
+    await setup(false, 'en');
+    expect(screen.getByText(/CSV and Markdown cannot be restored here/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    expect(await screen.findByText(/The library is empty/)).toBeTruthy();
+    expect(await downloaded[0].text()).toContain('"Title","Authors","Shelf year","Status","Pages","ISBN"');
+  });
+
+  it('distinguishes a read failure from a download failure', async () => {
+    const { repo } = await setup();
+    vi.spyOn(repo, 'readAll').mockRejectedValueOnce(new Error('synthetic'));
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar CSV' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível ler a biblioteca');
+    expect(downloaded).toHaveLength(0);
+    vi.mocked(HTMLAnchorElement.prototype.click).mockImplementationOnce(() => { throw new Error('synthetic'); });
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar Markdown' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível iniciar o download');
+    expect(screen.queryByText(/Download do catálogo iniciado/)).toBeNull();
   });
 });

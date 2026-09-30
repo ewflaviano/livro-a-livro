@@ -18,6 +18,7 @@ type LibraryContext = {
   setShelfSearchScope: (scope: 'year' | 'all') => void;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
+  catalog: ShelfService['catalog'] | null;
 };
 const Context = createContext<LibraryContext | null>(null);
 const loading: ShelfState = { status: 'loading' };
@@ -58,7 +59,8 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
     updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage,
-    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, books: service?.books ?? null, backup: service?.backup ?? null,
+    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, books: service?.books ?? null,
+    backup: service?.backup ?? null, catalog: service?.catalog ?? null,
   }}>{children}</Context.Provider>;
 }
 

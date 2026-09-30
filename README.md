@@ -16,6 +16,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
 | Capas enviadas | Cadastro, estante e detalhe, inclusive offline; livro e capa gravados juntos, com limites portáveis |
 | Backup JSON | Backup local em Seus dados, offline e sem Drive: exportação, prévia, confirmação e restauração atômica com capas |
+| Catálogo CSV/Markdown | Downloads locais em Seus dados, offline e sem Drive: CSV para planilha e Markdown agrupado por estado de leitura; não restauráveis |
 | Imagem anual | Gerador local existente; acesso pela estante removido enquanto a posição da ação é revista |
 | PWA | App shell offline, atualização protegida e ajuda Instalar em Mais/Configurações; instalação não é backup |
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
@@ -83,6 +84,10 @@ As issues #37/#39 corrigem integridade e portabilidade para novos estados aceito
 Em **Seus dados → Backup local**, use **Exportar JSON**. O aplicativo informa o início do download; confira se o arquivo foi salvo. Ele contém todos os anos, notas, avaliações, preferências e capas locais. Instalar a PWA não cria uma cópia desses dados.
 
 Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo e da biblioteca atual, exporte a atual se quiser guardá-la e confirme a substituição integral. Até a confirmação, cancelar não altera nada. Arquivo inválido, versão incompatível, falta de espaço ou prévia vencida preservam a biblioteca. O fluxo funciona sem rede depois de o aplicativo e seus recursos estarem disponíveis no dispositivo.
+
+### Baixar catálogo para consulta
+
+Em **Seus dados → Exportar catálogo**, baixe um CSV de todos os anos para planilha ou um Markdown agrupado em Lidos, Lendo e Quero ler. O CSV contém título, autoria, ano da estante, estado, páginas e ISBN. O Markdown contém título, autoria, ano da estante e estado. Nenhum dos dois inclui notas, avaliações ou capas. Os arquivos são gerados somente neste dispositivo e podem ser baixados offline; o aplicativo não os envia a serviços externos. Antes de compartilhar o Markdown com um agente de IA escolhido por você, confira seu conteúdo e as regras de privacidade desse serviço. CSV e Markdown não podem ser restaurados aqui: **Exportar JSON** continua sendo a cópia completa para recuperação.
 
 ### Navegação e busca local
 

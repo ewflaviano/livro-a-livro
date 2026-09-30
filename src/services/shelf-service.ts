@@ -2,6 +2,7 @@ import type { BackupParser } from '../backup/worker-parser';
 import { createBackupService, type ImportPreview } from './backup-service';
 import type { LibraryRepository, PortablePreferences, Snapshot } from '../ports/library-repository';
 import { createLibraryService } from './library-service';
+import { createCatalogService } from './catalog-service';
 
 export type ShelfState =
   | { status: 'loading' }
@@ -48,6 +49,7 @@ export function createShelfService(repository: LibraryRepository, parser?: Backu
   const unsubscribeLocalPreferences = repository.subscribeLocalPreferences(() => { void refresh(); });
   return {
     books: createLibraryService(repository),
+    catalog: createCatalogService(repository),
     backup: { ...backup, async confirmImport(preview: ImportPreview) {
       const priorEdit = preferenceEdit;
       await preferenceQueue;
