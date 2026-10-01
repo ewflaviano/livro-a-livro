@@ -66,11 +66,13 @@ function BookDetail({ id }: { id: string }) {
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [completion, setCompletion] = useState<{ book: Book; version: LocalRevision } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
   const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
   const editButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (busy || removing) return blockPwaUpdate(); }, [busy, removing]);
+  const completingWrite = useRef(false);
+  useEffect(() => { if (busy || removing || completion) return blockPwaUpdate(); }, [busy, removing, completion]);
   const navigate = useNavigate();
   const returnTo = useReturnTo();
   const observed = state.status === 'ready' ? state.snapshot.version : null;
@@ -93,6 +95,18 @@ function BookDetail({ id }: { id: string }) {
       failure instanceof DomainError && failure.code === 'QuotaExceeded' ? 'removeBookQuota' : 'removeBookGeneric'); setRemoving(false); }
     finally { setBusy(false); }
   }
+  async function completeReading() {
+    if (!books || !completion || completingWrite.current) return;
+    completingWrite.current = true; setBusy(true); setError(null);
+    try {
+      const result = await books.completeReading(completion.book.id, completion.version);
+      setLoaded(result); setSaved(true); setCompletion(null);
+    } catch (failure) {
+      setError(failure instanceof DomainError && failure.code === 'StaleRevision' ? 'completeBookStale' :
+        failure instanceof DomainError && failure.code === 'QuotaExceeded' ? 'completeBookQuota' : 'completeBookGeneric');
+      setCompletion(null);
+    } finally { completingWrite.current = false; setBusy(false); }
+  }
   const book = loaded?.book;
   return <section className="page-content"><BackLink returnTo={returnTo} />
     {!loaded || loadError ? <><h1>{t('book')}</h1><LibraryState state={loadError || state.status === 'error' ? 'error' : 'loading'} onRetry={() => { if (!books) retry(); else setAttempt((value) => value + 1); }} /></> :
@@ -100,7 +114,12 @@ function BookDetail({ id }: { id: string }) {
         <div className="book-detail-heading"><BookCover cover={book.cover} title={book.title} />
           <div><p className="eyebrow">{t('shelfOfYear', { year: formatShelfYear(book.shelfYear) })}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || t('authorUnknown')}</p>
             <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span>
-            {!editing && <div className="book-detail-actions"><button ref={editButton} className="button button-primary" onClick={() => { setEditing(true); setSaved(false); setError(null); }}>{t('editBook')}</button>
+            {!editing && <div className={`book-detail-actions${book.status === 'reading' ? ' book-detail-actions--reading' : ''}`}>
+              {book.status === 'reading' && <button className="button button-primary" disabled={busy} onClick={() => {
+                setCompletion({ book, version: loaded.version }); setSaved(false); setError(null);
+              }}>{t('markAsRead')}</button>}
+              <button ref={editButton} className={`button button-${book.status === 'reading' ? 'secondary' : 'primary'}`} disabled={busy}
+                onClick={() => { setEditing(true); setSaved(false); setError(null); }}>{t('editBook')}</button>
               <details className="book-options"><summary className="button button-secondary" onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
@@ -124,8 +143,15 @@ function BookDetail({ id }: { id: string }) {
             {book.rating && <div><dt>{t('myRating')}</dt><dd><span className="book-rating" aria-label={t('ratingOutOfFive', { rating: book.rating })}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span></dd></div>}
           </dl>}
           {book.note?.trim() && <><h2>{t('notes')}</h2><p className="private-note">{book.note}</p></>}
-          {error && <p role="alert" className="form-error">{t(error)}</p>}
+          {error && <div role="alert" className="form-error"><p>{t(error)}</p>
+            {error === 'completeBookStale' && <button className="button button-secondary" onClick={reload}>{t('reloadSaved')}</button>}
+          </div>}
         </>}
+        {completion && <ConfirmDialog title={t('completeBookQuestion', { title: completion.book.title, year: formatShelfYear(completion.book.shelfYear) })}
+          confirmLabel={t('markAsRead')} variant="primary" busy={busy} returnFocus={editButton}
+          onCancel={() => setCompletion(null)} onConfirm={() => void completeReading()}>
+          <p>{t('completeBookExplanation')}</p>
+        </ConfirmDialog>}
         {removing && <ConfirmDialog title={t('removeBookQuestion', { title: book.title })} confirmLabel={t('deleteBook')} busy={busy} onCancel={() => setRemoving(false)} onConfirm={() => void remove()}>
           <p>{t('removeBookExplanation')}</p>
         </ConfirmDialog>}

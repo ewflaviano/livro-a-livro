@@ -16,6 +16,40 @@ async function setup() {
   return { repository, service };
 }
 describe('library editing service', () => {
+  it('completes a reading with one local status change, preserving private fields and shared media', async () => {
+    const { repository, service } = await setup();
+    const media = syntheticCover();
+    const original = createBook({ title: 'Livro sintético', authors: ['Autora fictícia'], status: 'reading',
+      shelfYear: 2026, startedOn: '2025-12-20', pageCount: 224, rating: 4, note: 'Nota de teste',
+      cover: { provider: 'local', mediaId: media.id } },
+    { id: crypto.randomUUID(), now: '2025-01-01T00:00:00Z', shelfYear: 2026 });
+    const version = await repository.commit({ kind: 'put', book: original, coverMedia: media }, await service.readRevision());
+    const duplicate = createBook({ title: original.title, authors: original.authors, status: 'reading' },
+      { id: crypto.randomUUID(), now: '2025-01-01T00:00:00Z', shelfYear: 2026 });
+    const current = await repository.commit({ kind: 'put', book: duplicate }, version);
+    const result = await service.completeReading(original.id, current);
+    expect(result.book).toEqual({ ...original, status: 'read', updatedAt: '2026-09-26T12:00:00.000Z' });
+    expect((await repository.readBook(original.id)).book).toEqual(result.book);
+    expect((await repository.readBook(duplicate.id)).book).toEqual(duplicate);
+    expect((await repository.readBackupSnapshot()).books).toContainEqual(result.book);
+    expect(await (await repository.readCover(media.id))!.bytes.arrayBuffer()).toEqual(await media.bytes.arrayBuffer());
+  });
+
+  it('rejects stale, non-reading and failed commits without changing the book, then permits retry', async () => {
+    const { repository, service } = await setup();
+    const original = createBook({ title: 'Livro sintético', status: 'reading' },
+      { id: crypto.randomUUID(), now: '2025-01-01T00:00:00Z', shelfYear: 2026 });
+    const stale = await service.readRevision();
+    const current = await repository.commit({ kind: 'put', book: original }, stale);
+    await expect(service.completeReading(original.id, stale)).rejects.toMatchObject({ code: 'StaleRevision' });
+    vi.spyOn(repository, 'commit').mockRejectedValueOnce(new DomainError('QuotaExceeded'));
+    await expect(service.completeReading(original.id, current)).rejects.toMatchObject({ code: 'QuotaExceeded' });
+    expect((await repository.readBook(original.id)).book).toEqual(original);
+    const result = await service.completeReading(original.id, current);
+    await expect(service.completeReading(original.id, result.version)).rejects.toMatchObject({ code: 'StaleRevision' });
+    expect((await repository.readBook(original.id)).book).toEqual(result.book);
+  });
+
   it('keeps prepared bytes in the draft through duplicates and stale failures, then saves atomically', async () => {
     const { repository, service } = await setup();
     const draft = { title: 'Duplicado' };
