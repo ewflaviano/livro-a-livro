@@ -123,7 +123,9 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
           <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{labels[value]}</button>)}
       </div>}
-      {globalSearch && visible.length > 0 && <p className="shelf-search-results">{t(visible.length === 1 ? 'allYearsResultOne' : 'allYearsResults',
+      {!!query && visible.length > 0 && <p className="shelf-search-results">{t(globalSearch
+        ? visible.length === 1 ? 'allYearsResultOne' : 'allYearsResults'
+        : visible.length === 1 ? 'yearResultOne' : 'yearResults',
         { count: formatNumber(locale, visible.length) })}</p>}
     </>}
     {state.preferenceError && <div role="alert"><p>{t('preferenceSaveError')}</p>
