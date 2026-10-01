@@ -97,6 +97,7 @@ describe('manual books and private detail', () => {
 
   it('previews English form and detail while preserving the original book title and note', async () => {
     const { repository } = await setup([], '/adicionar', 'en');
+    expect((screen.getByRole('radio', { name: 'Read' }) as HTMLInputElement).checked).toBe(true);
     await userEvent.type(screen.getByRole('textbox', { name: 'Title (required)' }), 'Árvore de papel');
     await userEvent.click(screen.getByText('More details (optional)'));
     await userEvent.type(screen.getByRole('textbox', { name: 'Notes' }), 'Nota privada');
@@ -120,6 +121,8 @@ describe('manual books and private detail', () => {
     expect(screen.queryByRole('heading', { name: 'Observações' })).toBeNull();
     expect(screen.queryByRole('term', { name: 'Páginas' })).toBeNull();
     expect(screen.getByText('Opções do livro').closest('details')?.open).toBe(false);
+    await userEvent.click(edit);
+    expect((screen.getByRole('radio', { name: 'Quero ler' }) as HTMLInputElement).checked).toBe(true);
   });
 
   it('keeps every populated optional detail visible', async () => {
@@ -199,6 +202,7 @@ describe('manual books and private detail', () => {
   it('adds quickly with only a title and returns to the shelf', async () => {
     const { repository } = await setup();
     await screen.findByRole('textbox', { name: 'Título (obrigatório)' });
+    expect((screen.getByRole('radio', { name: 'Lido' }) as HTMLInputElement).checked).toBe(true);
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByText('Informe um título com até 500 caracteres.')).toBeTruthy();
     expect(document.activeElement).toBe(titleField());
@@ -206,7 +210,16 @@ describe('manual books and private detail', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     expect(await screen.findByRole('heading', { name: 'Leitura manual' })).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'Estante', level: 1 })).toBeTruthy();
-    expect((await repository.readAll()).books[0]).toMatchObject({ title: 'Leitura manual', status: 'want-to-read', shelfYear: 2026, authors: [], finishedOn: null });
+    expect((await repository.readAll()).books[0]).toMatchObject({ title: 'Leitura manual', status: 'read', shelfYear: 2026, authors: [], finishedOn: null, rating: null });
+  });
+  it('respects an explicit Quero ler choice in a new manual record', async () => {
+    const { repository } = await setup();
+    await screen.findByRole('textbox', { name: 'Título (obrigatório)' });
+    await userEvent.click(screen.getByRole('radio', { name: 'Quero ler' }));
+    await userEvent.type(titleField(), 'Livro para depois');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
+    await screen.findByRole('heading', { name: 'Estante', level: 1 });
+    expect((await repository.readAll()).books[0].status).toBe('want-to-read');
   });
   it('preserves existing dates and confirms before removing incompatible dates', async () => {
     const original = synthetic({ status: 'read', startedOn: '2025-12-31', finishedOn: '2026-03-12' });
