@@ -59,6 +59,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect((screen.getByRole('button', { name: 'Próxima' }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro 01');
     expect(collection().getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('1 livro encontrado neste ano')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Livro 01' })).toBeTruthy();
     expect(screen.queryByRole('navigation', { name: 'Páginas da estante' })).toBeNull();
     expect(screen.getByRole('definition', { name: '50 livros lidos em 2026' })).toBeTruthy();
@@ -360,6 +361,34 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByText('Página 1 de 2')).toBeTruthy();
   });
 
+  it('counts the complete local search after scope, year and status changes without network or book changes', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      ...numberedBooks(30),
+      book('Livro de teste', { shelfYear: 2025, status: 'reading' }),
+    ]);
+    const before = await repository.readBackupSnapshot();
+    expect(screen.queryByText(/livros encontrados neste ano/)).toBeNull();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'Livro');
+    expect(screen.getByText('30 livros encontrados neste ano')).toBeTruthy();
+    expect(await repository.readRevision()).toEqual(before.version);
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+    expect(screen.getByText('30 livros encontrados neste ano')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    expect(screen.queryByText(/livros encontrados neste ano/)).toBeNull();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Ano da estante' }), '2025');
+    expect(screen.getByText('1 livro encontrado neste ano')).toBeTruthy();
+    await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
+    expect(screen.getByText('1 livro encontrado em todos os anos')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Todos' }));
+    expect(screen.getByText('31 livros encontrados em todos os anos')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+    expect(screen.queryByText(/livros? encontrado/)).toBeNull();
+    expect((await repository.readBackupSnapshot()).books).toEqual(before.books);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('finds another year from an empty year and restores the global search after opening a book', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     vi.stubGlobal('scrollY', 280);
@@ -405,6 +434,9 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getByRole('list', { name: 'Books found across all years' })).toBeTruthy();
     expect(screen.getByText('2025 shelf')).toBeTruthy();
     expect(screen.getByText('1 book found across all years')).toBeTruthy();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Shelf year' }), '2025');
+    await userEvent.click(screen.getByRole('radio', { name: 'This year' }));
+    expect(screen.getByText('1 book found this year')).toBeTruthy();
   });
 
   it('updates after a local commit and restores imported preferences with the library', async () => {
