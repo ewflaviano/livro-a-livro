@@ -182,6 +182,8 @@ Cadastro mínimo: título obrigatório; autor opcional (“Autoria não informad
 
 Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estado e ação **Editar livro** junto ao cabeçalho. Páginas, ano de publicação, ISBN, avaliação e Observações aparecem no detalhe somente quando informados; o formulário de edição oferece todos os campos. **Remover livro** fica em Opções do livro e continua exigindo confirmação. Desktop pode usar capa à esquerda e conteúdo à direita; mobile empilha. Observações têm largura de leitura confortável e crescem com o conteúdo.
 
+Quando o registro está em **Lendo**, **Marcar como lido** é a ação principal e **Editar livro** permanece secundária. A confirmação cita título e ano, começa com foco em Cancelar e explica que a ação não preenche data de término. Depois do commit local, o estado e as estatísticas da estante mudam; título, ano, capa, datas, nota e avaliação permanecem. Erro de espaço ou concorrência não muda o registro, e conflito pede recarregar a versão salva. Nos outros estados, Editar livro continua como ação principal.
+
 Datas legadas permanecem no registro e no backup, embora não apareçam no fluxo atual. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Observações e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
 
 ## 11. Estatísticas mínimas

@@ -31,6 +31,13 @@ export function createLibraryService(repository: LibraryRepository, dependencies
       const version = await repository.commit({ kind: 'put', book, coverMedia: input.coverMedia }, input.expected);
       return { kind: 'saved', book, version };
     },
+    async completeReading(id: string, expected: LocalRevision): Promise<{ book: Book; version: LocalRevision }> {
+      const snapshot = await repository.readBook(id);
+      if (!sameRevision(snapshot.version, expected) || snapshot.book?.status !== 'reading') throw new DomainError('StaleRevision');
+      const book = updateBook(snapshot.book, { status: 'read' }, dependencies.now());
+      const version = await repository.commit({ kind: 'put', book }, expected);
+      return { book, version };
+    },
     remove: (id: string, expected: LocalRevision) => repository.commit({ kind: 'delete', id }, expected),
   };
 }

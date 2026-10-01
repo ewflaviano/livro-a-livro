@@ -6,12 +6,12 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 ## Estado atual
 
-**Revisado em 29 set 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 1 out 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
 | Estante anual, busca local entre anos, Grade/Lista, filtros, ordenação e estatísticas | Integrados à interface; livros e preferências portáveis no IndexedDB, alcance da busca só na sessão |
-| Cadastro manual, edição, exclusão, notas e avaliações | Integrados; salvamento confirma somente depois do commit local |
+| Cadastro manual, edição, exclusão, notas e avaliações | Integrados; livro em Lendo pode ser marcado como Lido no detalhe, com confirmação e commit local |
 | Busca Open Library | Explícita, com capa pequena no resultado e dados da edição carregados ao escolher; revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
 | Capas enviadas | Cadastro, estante e detalhe, inclusive offline; livro e capa gravados juntos, com limites portáveis |

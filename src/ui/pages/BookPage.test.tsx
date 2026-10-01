@@ -44,6 +44,57 @@ const coverFile = (mime: 'image/png' | 'image/jpeg' = 'image/png') => {
 };
 
 describe('manual books and private detail', () => {
+  it.each([
+    { locale: 'pt-BR' as const, action: 'Marcar como lido', cancel: 'Cancelar', saved: 'Livro salvo neste dispositivo.' },
+    { locale: 'en' as const, action: 'Mark as read', cancel: 'Cancel', saved: 'Book saved on this device.' },
+  ])('confirms a reading completion in $locale and updates the annual shelf', async ({ locale, action, cancel, saved }) => {
+    const original = synthetic({ status: 'reading', authors: ['Autora fictícia'], pageCount: 224, note: 'Nota de teste', startedOn: '2025-12-20' });
+    const { repository } = await setup([original], `/livro/${original.id}`, locale);
+    const mark = await screen.findByRole('button', { name: action });
+    await userEvent.click(mark);
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.textContent).toContain(original.title);
+    expect(dialog.textContent).toContain('2026');
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: cancel }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.activeElement).toBe(mark);
+    expect((await repository.readBook(original.id)).book).toEqual(original);
+    await userEvent.click(mark);
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: action }));
+    expect(await screen.findByText(saved)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: action })).toBeNull();
+    expect((await repository.readBook(original.id)).book).toMatchObject({ status: 'read', note: original.note, startedOn: original.startedOn, pageCount: 224 });
+    await userEvent.click(screen.getByRole('link', { name: locale === 'en' ? 'Back to shelf' : 'Voltar para a estante' }));
+    expect(await screen.findByRole('link', { name: /Livro de teste/ })).toBeTruthy();
+    expect(screen.getByLabelText(locale === 'en' ? '1 book read in 2026' : '1 livro lido em 2026')).toBeTruthy();
+  });
+
+  it('leaves the book intact on a quota error and lets the person retry', async () => {
+    const original = synthetic({ status: 'reading' });
+    const { repository } = await setup([original], `/livro/${original.id}`);
+    vi.spyOn(repository, 'commit').mockRejectedValueOnce(new DomainError('QuotaExceeded'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Marcar como lido' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Marcar como lido' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('sem espaço');
+    expect((await repository.readBook(original.id)).book).toEqual(original);
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar como lido' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Marcar como lido' }));
+    expect(await screen.findByText('Livro salvo neste dispositivo.')).toBeTruthy();
+  });
+
+  it('requires a reload when the book changes after opening the completion dialog', async () => {
+    const original = synthetic({ status: 'reading' });
+    const { repository } = await setup([original], `/livro/${original.id}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Marcar como lido' }));
+    await act(async () => { await repository.commit({ kind: 'put', book: { ...original, note: 'Outra aba' } }, await repository.readRevision()); });
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Marcar como lido' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('A biblioteca mudou');
+    expect((await repository.readBook(original.id)).book).toMatchObject({ status: 'reading', note: 'Outra aba' });
+    await userEvent.click(screen.getByRole('button', { name: 'Recarregar versão salva' }));
+    expect(await screen.findByText('Outra aba')).toBeTruthy();
+  });
+
   it('previews English form and detail while preserving the original book title and note', async () => {
     const { repository } = await setup([], '/adicionar', 'en');
     await userEvent.type(screen.getByRole('textbox', { name: 'Title (required)' }), 'Árvore de papel');
@@ -63,6 +114,7 @@ describe('manual books and private detail', () => {
     const edit = await screen.findByRole('button', { name: 'Editar livro' });
     expect(edit.closest('.book-detail-heading')).toBeTruthy();
     expect(screen.getByText('Quero ler')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Marcar como lido' })).toBeNull();
     expect(screen.queryByText('Não informadas')).toBeNull();
     expect(screen.queryByText('Sem avaliação')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Observações' })).toBeNull();
