@@ -68,6 +68,7 @@ describe('optional book search UI', () => {
     const title = await screen.findByRole('textbox', { name: 'Título (obrigatório)' }, { timeout: 3000 });
     expect(screen.getByRole('button', { name: 'Escolher outro livro' })).toBeTruthy();
     expect((title as HTMLInputElement).value).toBe('Livro encontrado');
+    expect((screen.getByRole('radio', { name: 'Lido' }) as HTMLInputElement).checked).toBe(true);
     await userEvent.click(screen.getByText('Mais detalhes (opcional)'));
     expect((screen.getByRole('spinbutton', { name: 'Ano de publicação' }) as HTMLInputElement).value).toBe('2002');
     expect((screen.getByRole('spinbutton', { name: 'Páginas' }) as HTMLInputElement).value).toBe('240');
@@ -82,7 +83,7 @@ describe('optional book search UI', () => {
     await screen.findByRole('heading', { name: 'Título revisado' });
     expect(document.querySelector('img')?.getAttribute('src')).toBe('https://covers.openlibrary.org/b/id/123-M.jpg?default=false');
     const saved = (await repository.readAll()).books[0];
-    expect(saved).toMatchObject({ title: 'Título revisado', note: 'Nota que fica local', publicationYear: 2002, pageCount: 240, isbn: '9780306406157',
+    expect(saved).toMatchObject({ title: 'Título revisado', status: 'read', note: 'Nota que fica local', publicationYear: 2002, pageCount: 240, isbn: '9780306406157',
       cover: { provider: 'open_library', coverId: 123 }, source: { provider: 'open_library', workId: 'OL12W', editionId: 'OL34M' } });
     expect(fetch).toHaveBeenCalledTimes(2);
     await screen.findByRole('heading', { name: /Estante/ }); expect(fetch).toHaveBeenCalledTimes(2);

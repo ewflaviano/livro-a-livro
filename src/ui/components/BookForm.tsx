@@ -26,7 +26,7 @@ export function storageErrorKey(error: unknown): MessageKey {
 
 function makeDraft(book: NewBook | undefined, year: number) {
   return { title: book?.title ?? '', authors: book?.authors?.join('\n') ?? '',
-    status: book?.status ?? 'want-to-read' as ReadingStatus, shelfYear: String(book?.shelfYear ?? year),
+    status: book?.status ?? 'read' as ReadingStatus, shelfYear: String(book?.shelfYear ?? year),
     pageCount: book?.pageCount?.toString() ?? '', isbn: book?.isbn ?? '',
     publicationYear: book?.publicationYear?.toString() ?? '', startedOn: book?.startedOn ?? '',
     finishedOn: book?.finishedOn ?? '', rating: book?.rating?.toString() ?? '', note: book?.note ?? '' };
