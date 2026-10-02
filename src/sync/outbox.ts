@@ -19,6 +19,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`lal-auth:${db.name}`);
   const revisionChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`${db.name}:revision`);
   const consentChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-a-livro-usage-consent');
+  const experimentsChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-experiments');
   let localeChannel: BroadcastChannel | null = null;
   try { if (typeof BroadcastChannel !== 'undefined') localeChannel = new BroadcastChannel(`${db.name}:ui-locale`); }
   catch { /* Locale invalidation is optional; focused tabs reread storage. */ }
@@ -57,6 +58,8 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       changed();
       try { revisionChannel?.postMessage({ type: 'revision-changed' }); } catch { /* Focus rechecks. */ }
       try { consentChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('livro-experiments-changed'));
+      try { experimentsChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
       try { localeChannel?.postMessage('changed'); } catch { /* Focus rechecks. */ }
     },
     async write(value: SyncRecord) { await db.put('syncState', syncStateSchema.parse(value), 'control'); },
@@ -166,7 +169,7 @@ export async function openSyncStore(options: DatabaseOptions = {}) {
       const value = await db.get('syncState', 'lease') as { owner: string; until: number } | undefined;
       if (value?.owner !== owner || value.until <= Date.now()) throw new SyncError('cancelled');
     },
-    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); localeChannel?.close(); listeners.clear(); connection.close(); },
+    close() { channel?.close(); revisionChannel?.close(); consentChannel?.close(); experimentsChannel?.close(); localeChannel?.close(); listeners.clear(); connection.close(); },
   };
 }
 export type SyncStore = Awaited<ReturnType<typeof openSyncStore>>;

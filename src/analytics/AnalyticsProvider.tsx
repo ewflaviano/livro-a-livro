@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { disableAnalytics, suspendAnalytics, enableAnalytics, recordPublicPage } from './ga4';
 import { openAnalyticsConsentStore, type AnalyticsChoice } from './consent';
 import { diagnosticsClient } from '../diagnostics/client';
+import { experimentTelemetry } from '../diagnostics/telemetry';
 
 type View = { choice: AnalyticsChoice; loading: boolean; saving: boolean; error: boolean; analyticsUnavailable: boolean; reviewing: boolean; reloadSuggested: boolean; reload: () => void;
   choose: (choice: Exclude<AnalyticsChoice, null>) => Promise<void>; retry: () => void; review: () => void; closeReview: () => void };
@@ -48,10 +49,11 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       if (previous === 'accepted' && next === 'rejected') { lastRecorded.current = null; disableAnalytics(); setAnalyticsUnavailable(false); readyRef.current = false; setTagReady(false); reopenAfterRevoke(); return; }
       if (revocationPending.current) return;
       diagnosticsClient.setEnabled(next === 'accepted');
+      if (next !== 'accepted') experimentTelemetry.setEnabled(false);
       await activate(next ?? null, ticket);
     } catch {
       if (ticket !== request.current || !active.current) return;
-      disableAnalytics(); diagnosticsClient.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true);
+      disableAnalytics(); diagnosticsClient.setEnabled(false); experimentTelemetry.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true);
     }
   }
   function openStore(): Promise<void> {
@@ -83,7 +85,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     recordPublicPage(location.pathname); lastRecorded.current = location.pathname;
   }, [location.pathname, tagReady, loading, error, choice]);
   async function choose(next: Exclude<AnalyticsChoice, null>) {
-    if (next === 'rejected') { revocationPending.current = true; disableAnalytics(); diagnosticsClient.setEnabled(false); setAnalyticsUnavailable(false); }
+    if (next === 'rejected') { revocationPending.current = true; disableAnalytics(); diagnosticsClient.setEnabled(false); experimentTelemetry.setEnabled(false); setAnalyticsUnavailable(false); }
     if (next === 'accepted' && revocationPending.current) return;
     if (savingRef.current) { if (next === 'rejected') queuedRejection.current = true; return; }
     if (!store.current) { setError(true); return; }

@@ -13,13 +13,18 @@ it('keeps both measurements off despite prior consent keys, then writes one choi
   await db.put('experimentState', { seed: 'a'.repeat(64), experimentsConsent: true, telemetryConsent: true, assignments: {} }, 'preferences');
   await db.put('experimentState', 'accepted', 'ga4-consent-v1');
   await db.put('experimentState', 'accepted', 'diagnostics-consent-v1');
+  await db.put('experimentState', 'accepted', 'usage-consent-v1');
   const second = await openAnalyticsConsentStore({ name, channelFactory: () => null }); stores.push(second);
   expect(await db.get('experimentState', 'ga4-consent-v1')).toBe('rejected');
   expect(await db.get('experimentState', 'diagnostics-consent-v1')).toBe('rejected');
+  expect(await db.get('experimentState', 'usage-consent-v1')).toBe('rejected');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean }).experimentsConsent).toBe(false);
   expect(await first.read()).toBeNull(); await first.write('accepted'); expect(await first.read()).toBe('accepted');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean; telemetryConsent: boolean })).toMatchObject({ experimentsConsent: true, telemetryConsent: true });
   expect(await db.get('experimentState', 'ga4-consent-v1')).toBe('rejected');
   expect(await db.get('experimentState', 'diagnostics-consent-v1')).toBe('rejected');
   expect(await second.read()).toBe('accepted'); await second.write('rejected'); expect(await first.read()).toBe('rejected');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean; telemetryConsent: boolean })).toMatchObject({ experimentsConsent: false, telemetryConsent: false });
 });
 it('broadcasts only invalidation, forcing another tab to reread IDB', async () => {
   const name = crypto.randomUUID(); names.push(name);

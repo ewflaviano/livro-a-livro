@@ -56,6 +56,7 @@ Resources:
                   - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-revocation'
                   - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-diagnostics'
                   - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-experiments'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:livro-a-livro-telemetry'
 Outputs:
   ArtifactBucketName: { Value: !Ref Artifacts }
   DeployRoleArn: { Value: !GetAtt DeployRole.Arn }

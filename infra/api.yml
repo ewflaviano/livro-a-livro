@@ -9,6 +9,7 @@ Parameters:
   RevocationCodeKey: { Type: String }
   DiagnosticsCodeKey: { Type: String }
   ExperimentsCodeKey: { Type: String }
+  TelemetryCodeKey: { Type: String }
 Resources:
   AuthTable:
     Type: AWS::DynamoDB::Table
@@ -44,6 +45,18 @@ Resources:
       KeySchema: [{ AttributeName: pk, KeyType: HASH }]
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+  TelemetryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: livro-a-livro-telemetry
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: pk, AttributeType: S }]
+      KeySchema: [{ AttributeName: pk, KeyType: HASH }]
+      TimeToLiveSpecification: { AttributeName: expiresAt, Enabled: true }
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: false }
   CredentialKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
@@ -68,6 +81,9 @@ Resources:
   ExperimentsLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /aws/lambda/livro-a-livro-experiments, RetentionInDays: 14 }
+  TelemetryLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/livro-a-livro-telemetry, RetentionInDays: 14 }
   DiagnosticsLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /aws/lambda/livro-a-livro-diagnostics, RetentionInDays: 14 }
@@ -159,6 +175,26 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt ExperimentsLogs.Arn
+  TelemetryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-aggregate-counters-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt TelemetryTable.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt TelemetryLogs.Arn
   DiagnosticsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -228,6 +264,20 @@ Resources:
       Environment:
         Variables: { EXPERIMENTS_TABLE_NAME: !Ref ExperimentsTable }
       LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref ExperimentsLogs }
+  TelemetryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: livro-a-livro-telemetry
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures: [x86_64]
+      MemorySize: 128
+      Timeout: 8
+      Role: !GetAtt TelemetryRole.Arn
+      Code: { S3Bucket: !Ref ArtifactBucket, S3Key: !Ref TelemetryCodeKey }
+      Environment:
+        Variables: { TELEMETRY_TABLE_NAME: !Ref TelemetryTable }
+      LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref TelemetryLogs }
   DiagnosticsFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -324,9 +374,29 @@ Resources:
       ApiId: !Ref HttpApi
       RouteKey: 'OPTIONS /v1/experiments/catalog'
       Target: !Sub 'integrations/${ExperimentsIntegration}'
+  TelemetryIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt TelemetryFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 9000
+  TelemetryPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /v1/telemetry/batches'
+      Target: !Sub 'integrations/${TelemetryIntegration}'
+  TelemetryOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'OPTIONS /v1/telemetry/batches'
+      Target: !Sub 'integrations/${TelemetryIntegration}'
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
-    DependsOn: [DiagnosticsPostRoute, DiagnosticsOptionsRoute, ExperimentsGetRoute, ExperimentsOptionsRoute]
+    DependsOn: [DiagnosticsPostRoute, DiagnosticsOptionsRoute, ExperimentsGetRoute, ExperimentsOptionsRoute, TelemetryPostRoute, TelemetryOptionsRoute]
     Properties:
       ApiId: !Ref HttpApi
       StageName: '$default'
@@ -334,6 +404,8 @@ Resources:
       DefaultRouteSettings: { ThrottlingBurstLimit: 5, ThrottlingRateLimit: 2 }
       RouteSettings:
         'GET /v1/experiments/catalog': { ThrottlingBurstLimit: 20, ThrottlingRateLimit: 10 }
+        'POST /v1/telemetry/batches': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
+        'OPTIONS /v1/telemetry/batches': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
         'POST /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
         'OPTIONS /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
       # No request/access logs: URL queries and auth headers must not be recorded.
@@ -358,6 +430,26 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/v1/experiments/catalog'
+  TelemetryPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TelemetryFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/v1/telemetry/batches'
+  TelemetryFunctionFailures:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Experiment counter ingestion failed; do not log request payloads.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref TelemetryFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
   AuthFunctionFailures:
     Type: AWS::CloudWatch::Alarm
     Properties:

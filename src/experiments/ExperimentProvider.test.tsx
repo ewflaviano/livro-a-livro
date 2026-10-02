@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ExperimentProvider, useExperiment } from './ExperimentProvider';
 import { openExperimentStore } from './store';
+import { openAnalyticsConsentStore } from '../analytics/consent';
 
 const catalog = () => ({
   catalogRevision: 1,
@@ -23,10 +24,13 @@ it('does not request a catalog before consent and drops an active variant when c
     render(<ExperimentProvider baseUrl="https://api.example.test"><Variant /></ExperimentProvider>);
     expect(screen.getByText('control')).toBeTruthy();
     await waitFor(() => expect(fetcher).not.toHaveBeenCalled());
-    await store.patch({ experimentsConsent: true });
+    const consent = await openAnalyticsConsentStore();
+    await consent.write('accepted');
+    consent.close();
     await waitFor(() => expect(screen.getByText('compact')).toBeTruthy());
     expect(fetcher).toHaveBeenCalledWith('https://api.example.test/v1/experiments/catalog', expect.objectContaining({ credentials: 'omit' }));
-    await store.patch({ experimentsConsent: false });
+    const revocation = await openAnalyticsConsentStore();
+    await revocation.write('rejected'); revocation.close();
     await waitFor(() => expect(screen.getByText('control')).toBeTruthy());
   } finally { store.close(); }
 });
