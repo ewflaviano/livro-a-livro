@@ -6,6 +6,8 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 
 O projeto é público e gratuito. O código e a documentação original estão sob a [licença MIT](LICENSE). Para colaborar, comece pelo [guia de contribuição](CONTRIBUTING.md) e pelas [issues](https://github.com/ewflaviano/livro-a-livro/issues). Relate falhas que possam expor dados em privado, conforme a [política de segurança](SECURITY.md). A branch `main` recebe mudanças apenas por pull request com checks aprovados; PRs não publicam na AWS, e a publicação ocorre após o merge.
 
+A [apresentação pública do aplicativo](https://livroalivro.app.br/sobre.html) explica os recursos, o uso offline e o backup para quem está conhecendo o projeto. A [versão em inglês](https://livroalivro.app.br/about.html) também está disponível.
+
 ## Estado atual
 
 **Revisado em 2 out 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.

@@ -1,0 +1,52 @@
+@import '../../../docs/tokens.css';
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--color-canvas); color: var(--color-text); font: 1rem/1.6 var(--font-ui); }
+a { color: var(--color-link); text-underline-offset: .2em; }
+a:hover { color: var(--color-link-hover); }
+a:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 4px; }
+.site-header, main, footer { width: min(100% - 3rem, 72rem); margin-inline: auto; }
+.site-header { min-height: 5.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; border-bottom: 1px solid var(--color-border); }
+.wordmark { color: var(--color-text); font: 1.6rem var(--font-editorial); text-decoration: none; white-space: nowrap; }
+nav { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.5rem; }
+nav a { font-size: .875rem; }
+h1, h2, h3, p { margin-top: 0; }
+h1, h2, h3 { font-family: var(--font-editorial); font-weight: 400; line-height: 1.15; letter-spacing: var(--tracking-title); }
+h1 { max-width: 12ch; font-size: var(--text-display); }
+h2 { max-width: 20ch; font-size: var(--text-h2); }
+h3 { font-size: var(--text-h3); }
+.eyebrow { color: var(--color-action); font-size: .75rem; font-weight: 700; letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(15rem, .7fr); gap: 3rem; align-items: center; min-height: 34rem; padding-block: 5rem; }
+.lead { max-width: 40rem; color: var(--color-text-secondary); font-size: var(--text-lead); }
+.hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.5rem; margin-block: 2rem 1.5rem; }
+.button { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: .65rem 1.25rem; border-radius: .375rem; background: var(--color-action); color: var(--color-text-on-action); font-weight: 600; text-decoration: none; }
+.button:hover { background: var(--color-action-hover); color: var(--color-text-on-action); }
+.text-link { font-weight: 600; }
+.hero-note { color: var(--color-text-secondary); font-size: .875rem; }
+.book-stack { display: grid; gap: .75rem; transform: rotate(-4deg); }
+.book-stack span { display: flex; min-height: 5.5rem; align-items: center; padding-inline: 2rem; border-left: .5rem solid var(--color-action); border-radius: .2rem .5rem .5rem .2rem; background: var(--color-surface); box-shadow: 0 .4rem 1rem rgb(41 35 45 / 8%); font: 1.4rem var(--font-editorial); }
+.book-stack span:nth-child(2) { margin-inline-start: 1rem; border-color: var(--color-accent); }
+.book-stack span:nth-child(3) { margin-inline-start: .4rem; border-color: var(--color-success); }
+.features { padding-block: 4.5rem 5.5rem; border-top: 1px solid var(--color-border); }
+.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; margin-top: 2rem; }
+.feature-grid article { padding-top: 1.5rem; border-top: 2px solid var(--color-action); }
+.feature-grid p { max-width: 38ch; color: var(--color-text-secondary); }
+.open-source { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 3rem; align-items: end; padding: 3rem; border-radius: .75rem; background: var(--color-surface-brand); }
+.open-source p { max-width: 45ch; }
+.open-source .open-note { margin-bottom: 0; color: var(--color-text-secondary); }
+footer { display: flex; justify-content: space-between; gap: 1rem; padding-block: 3rem; font-size: .875rem; }
+@media (max-width: 50rem) {
+  .hero { grid-template-columns: 1fr; min-height: 0; padding-block: 4rem; }
+  .book-stack { max-width: 25rem; transform: none; }
+  .feature-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .open-source { grid-template-columns: 1fr; gap: 1rem; }
+}
+@media (max-width: 36rem) {
+  .site-header, main, footer { width: min(100% - 2rem, 72rem); }
+  .site-header { align-items: flex-start; flex-direction: column; justify-content: center; gap: .4rem; padding-block: 1rem; }
+  .hero { gap: 1.5rem; padding-block: 3rem; }
+  .features { padding-block: 3rem; }
+  .open-source { padding: 1.5rem; }
+  footer { flex-direction: column; }
+}
