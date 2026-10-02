@@ -16,6 +16,12 @@ for (const host of ['www.livroalivro.app.br', 'livroalivro.com.br', 'www.livroal
   assert.equal(parsed.pathname, '/privacidade.html');
   assert.deepEqual(parsed.searchParams.getAll('id'), ['1', '2']);
 }
+const grouped = handler({ request: request('livroalivro.com.br', '/test', {
+  a: { multiValue: [{ value: '1' }, { value: '3' }] }, b: { value: '2' },
+}) });
+const groupedQuery = new URL(grouped.headers.location.value).searchParams;
+assert.deepEqual(groupedQuery.getAll('a'), ['1', '3']);
+assert.equal(groupedQuery.get('b'), '2');
 assert.equal(handler({ request: request('livroalivro.app.br') }).uri, '/livro');
 assert.equal(handler({ request: request('d36pvibsr6v8wx.cloudfront.net') }).uri, '/livro');
 for (const logical of ['WwwSiteAlias', 'RedirectApexAlias', 'RedirectWwwAlias']) {
