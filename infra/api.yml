@@ -8,6 +8,7 @@ Parameters:
   AuthCodeKey: { Type: String }
   RevocationCodeKey: { Type: String }
   DiagnosticsCodeKey: { Type: String }
+  ExperimentsCodeKey: { Type: String }
 Resources:
   AuthTable:
     Type: AWS::DynamoDB::Table
@@ -32,6 +33,17 @@ Resources:
       # Credentials are revocable. Historical credential backups are intentionally not enabled.
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: false }
       DeletionProtectionEnabled: true
+  ExperimentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: livro-a-livro-experiments
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: pk, AttributeType: S }]
+      KeySchema: [{ AttributeName: pk, KeyType: HASH }]
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
   CredentialKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
@@ -53,6 +65,9 @@ Resources:
   RevocationLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /aws/lambda/livro-a-livro-revocation, RetentionInDays: 14 }
+  ExperimentsLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: /aws/lambda/livro-a-livro-experiments, RetentionInDays: 14 }
   DiagnosticsLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /aws/lambda/livro-a-livro-diagnostics, RetentionInDays: 14 }
@@ -124,6 +139,26 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt RevocationLogs.Arn
+  ExperimentsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-experiments-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt ExperimentsTable.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ExperimentsLogs.Arn
   DiagnosticsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -179,6 +214,20 @@ Resources:
           APP_ENVIRONMENT: production
       # Worker writes only fixed EMF counters. No request, identifier or SDK debug output.
       LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref RevocationLogs }
+  ExperimentsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: livro-a-livro-experiments
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures: [x86_64]
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt ExperimentsRole.Arn
+      Code: { S3Bucket: !Ref ArtifactBucket, S3Key: !Ref ExperimentsCodeKey }
+      Environment:
+        Variables: { EXPERIMENTS_TABLE_NAME: !Ref ExperimentsTable }
+      LoggingConfig: { LogFormat: JSON, ApplicationLogLevel: INFO, SystemLogLevel: WARN, LogGroup: !Ref ExperimentsLogs }
   DiagnosticsFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -255,15 +304,36 @@ Resources:
       ApiId: !Ref HttpApi
       RouteKey: 'OPTIONS /v1/diagnostics/errors'
       Target: !Sub 'integrations/${DiagnosticsIntegration}'
+  ExperimentsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ExperimentsFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 4000
+  ExperimentsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /v1/experiments/catalog'
+      Target: !Sub 'integrations/${ExperimentsIntegration}'
+  ExperimentsOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'OPTIONS /v1/experiments/catalog'
+      Target: !Sub 'integrations/${ExperimentsIntegration}'
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
-    DependsOn: [DiagnosticsPostRoute, DiagnosticsOptionsRoute]
+    DependsOn: [DiagnosticsPostRoute, DiagnosticsOptionsRoute, ExperimentsGetRoute, ExperimentsOptionsRoute]
     Properties:
       ApiId: !Ref HttpApi
       StageName: '$default'
       AutoDeploy: true
       DefaultRouteSettings: { ThrottlingBurstLimit: 5, ThrottlingRateLimit: 2 }
       RouteSettings:
+        'GET /v1/experiments/catalog': { ThrottlingBurstLimit: 20, ThrottlingRateLimit: 10 }
         'POST /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
         'OPTIONS /v1/diagnostics/errors': { ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1 }
       # No request/access logs: URL queries and auth headers must not be recorded.
@@ -281,6 +351,13 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/v1/diagnostics/errors'
+  ExperimentsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExperimentsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/v1/experiments/catalog'
   AuthFunctionFailures:
     Type: AWS::CloudWatch::Alarm
     Properties:

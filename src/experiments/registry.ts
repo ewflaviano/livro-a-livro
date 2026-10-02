@@ -19,7 +19,7 @@ export type ExperimentVariant<K extends ExperimentKey = ExperimentKey> =
   (typeof experimentRegistry)[K]['variants'][number];
 
 export function isExperimentKey(value: unknown): value is ExperimentKey {
-  return typeof value === 'string' && value in experimentRegistry;
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(experimentRegistry, value);
 }
 
 export function isExperimentVariant<K extends ExperimentKey>(key: K, value: unknown): value is ExperimentVariant<K> {

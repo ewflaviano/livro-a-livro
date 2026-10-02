@@ -1,0 +1,23 @@
+name: Sugerir melhoria
+description: Compartilhe uma ideia para tornar o Livro a Livro mais útil.
+title: "[Melhoria] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Que necessidade esta ideia atende?
+      description: Conte a situação de uso, sem expor dados da sua biblioteca.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Como você imagina a solução?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Outras formas de resolver
+      description: Opcional.

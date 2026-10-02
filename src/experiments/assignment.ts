@@ -1,4 +1,5 @@
 import type { CatalogExperiment } from './catalog';
+import type { ExperimentKey, ExperimentVariant } from './registry';
 import type { ExperimentState } from './store';
 
 async function bucket(input: string): Promise<number> {
@@ -7,7 +8,17 @@ async function bucket(input: string): Promise<number> {
   return data.getUint32(0) % 10_000;
 }
 
-export type Assignment = { key: string; variant: string; assignmentVersion: number } | null;
+function compareBuilds(left: string, right: string): number {
+  const a = left.split('.').map(Number);
+  const b = right.split('.').map(Number);
+  if (a.length !== 3 || b.length !== 3 || [...a, ...b].some(part => !Number.isSafeInteger(part) || part < 0)) return Number.NaN;
+  for (let index = 0; index < 3; index++) {
+    if (a[index]! !== b[index]!) return a[index]! - b[index]!;
+  }
+  return 0;
+}
+
+export type Assignment = { key: ExperimentKey; variant: ExperimentVariant; assignmentVersion: number } | null;
 export async function assignExperiment(
   experiment: CatalogExperiment,
   state: ExperimentState,
@@ -19,13 +30,13 @@ export async function assignExperiment(
   if ((eligible.requiresDrive && !capabilities.driveConnected) ||
     (eligible.startsAt && now < new Date(eligible.startsAt)) ||
     (eligible.endsAt && now >= new Date(eligible.endsAt)) ||
-    (eligible.minBuild && capabilities.build < eligible.minBuild) ||
-    (eligible.maxBuild && capabilities.build > eligible.maxBuild)) return null;
+    (eligible.minBuild && !(compareBuilds(capabilities.build, eligible.minBuild) >= 0)) ||
+    (eligible.maxBuild && !(compareBuilds(capabilities.build, eligible.maxBuild) <= 0))) return null;
+  if (await bucket(`${experiment.key}|${experiment.assignmentVersion}|${state.seed}|rollout`) >= experiment.rolloutBasisPoints) return null;
   const saved = state.assignments[experiment.key];
   if (saved?.assignmentVersion === experiment.assignmentVersion && experiment.variants.some((item) => item.key === saved.variant)) {
-    return { key: experiment.key, variant: saved.variant, assignmentVersion: saved.assignmentVersion };
+    return { key: experiment.key, variant: saved.variant as ExperimentVariant, assignmentVersion: saved.assignmentVersion };
   }
-  if (await bucket(`${experiment.key}|${experiment.assignmentVersion}|${state.seed}|rollout`) >= experiment.rolloutBasisPoints) return null;
   const choice = await bucket(`${experiment.key}|${experiment.assignmentVersion}|${state.seed}|variant`);
   let cursor = 0;
   for (const variant of experiment.variants) {

@@ -10,6 +10,7 @@
     "local:api": "node scripts/local-api.mjs",
     "local:reset": "node scripts/local-reset.mjs",
     "test:domains": "node scripts/domain-gate.mjs",
+    "publish:experiment": "node scripts/publish-experiment.mjs",
     "test:local": "node --test scripts/local-api.check.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
