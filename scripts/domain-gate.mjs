@@ -22,6 +22,16 @@ const grouped = handler({ request: request('livroalivro.com.br', '/test', {
 const groupedQuery = new URL(grouped.headers.location.value).searchParams;
 assert.deepEqual(groupedQuery.getAll('a'), ['1', '3']);
 assert.equal(groupedQuery.get('b'), '2');
+const encoded = handler({ request: request('livroalivro.com.br', '/test', {
+  nome: { value: 'livro%20novo' }, sinal: { value: 'a%2Bb' }, espaco: { value: 'a+b' },
+  porcento: { value: '100%25' }, 't%C3%ADtulo': { value: 'fic%C3%A7%C3%A3o' },
+}) });
+const encodedQuery = new URL(encoded.headers.location.value).searchParams;
+assert.equal(encodedQuery.get('nome'), 'livro novo');
+assert.equal(encodedQuery.get('sinal'), 'a+b');
+assert.equal(encodedQuery.get('espaco'), 'a b');
+assert.equal(encodedQuery.get('porcento'), '100%');
+assert.equal(encodedQuery.get('título'), 'ficção');
 assert.equal(handler({ request: request('livroalivro.app.br') }).uri, '/livro');
 assert.equal(handler({ request: request('d36pvibsr6v8wx.cloudfront.net') }).uri, '/livro');
 for (const logical of ['WwwSiteAlias', 'RedirectApexAlias', 'RedirectWwwAlias']) {

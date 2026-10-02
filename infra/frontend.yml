@@ -66,12 +66,18 @@ Resources:
           var location = 'https://livroalivro.app.br' + request.uri;
           var query = request.querystring;
           var pairs = [];
+          function encodePart(raw) {
+            // CloudFront keeps percent escapes in query values; decode once to avoid %2520.
+            var formValue = raw.replace(/\+/g, '%20');
+            try { return encodeURIComponent(decodeURIComponent(formValue)); }
+            catch (error) { return encodeURIComponent(raw.replace(/\+/g, ' ')); }
+          }
           // CloudFront groups repeated parameter names; their original interleaving is unavailable.
           for (var name in query) {
             if (!Object.prototype.hasOwnProperty.call(query, name)) continue;
             var values = query[name].multiValue || [query[name]];
             for (var i = 0; i < values.length; i++) {
-              pairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(values[i].value || ''));
+              pairs.push(encodePart(name) + '=' + encodePart(values[i].value || ''));
             }
           }
           if (pairs.length) location += '?' + pairs.join('&');
