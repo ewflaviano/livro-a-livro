@@ -52,6 +52,7 @@ jobs:
       - run: node scripts/pwa-update-gate.mjs
       - run: node scripts/language-gate.mjs
       - run: node scripts/ga-consent-gate.mjs
+      - run: node scripts/domain-gate.mjs
 
   api:
     runs-on: ubuntu-latest
