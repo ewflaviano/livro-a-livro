@@ -131,7 +131,9 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
     {state.preferenceError && <div role="alert"><p>{t('preferenceSaveError')}</p>
       <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>{t('retrySavePreferences')}</button></div>}
     {snapshot.books.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
-      <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p></div> : yearBooks.length === 0 && !globalSearch ?
+      <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p>
+        {filter !== 'all' && <button className="button button-secondary" onClick={() => selectFilter('all')}>{t('clearFilter')}</button>}
+      </div> : yearBooks.length === 0 && !globalSearch ?
       <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 ?
       <div className="notice-panel"><h2>{t('noBooksInFilter', { filter: labels[filter] })}</h2>
         <button className="button button-secondary" onClick={() => selectFilter('all')}>{t('clearFilter')}</button></div> :
