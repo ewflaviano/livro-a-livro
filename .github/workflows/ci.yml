@@ -196,7 +196,7 @@ jobs:
         with: { name: api-release, path: release }
       - name: Verify tested Lambda artifacts without publishing
         run: |
-          for FUNCTION in auth revocation diagnostics experiments; do
+          for FUNCTION in auth revocation diagnostics experiments telemetry; do
             ZIP="release/$FUNCTION/bootstrap.zip"
             test -s "$ZIP"
             unzip -tq "$ZIP" >/dev/null
