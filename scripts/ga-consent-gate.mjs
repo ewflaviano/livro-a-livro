@@ -11,6 +11,8 @@ try {
   const context = await browser.newContext({ locale: 'pt-BR', serviceWorkers: 'block', viewport: { width: 320, height: 844 } });
   const page = await context.newPage();
   const requests = [];
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
   page.on('request', request => { if (/googletagmanager\.com|google-analytics\.com/.test(request.url())) requests.push(request.url()); });
   await page.route('https://www.googletagmanager.com/gtag/js?**', route => route.fulfill({ contentType: 'text/javascript', body: `
     const queue = window.dataLayer; const original = queue.push.bind(queue);
@@ -29,7 +31,18 @@ try {
   await page.goto(`${origin}/#/configuracoes`);
   await page.getByRole('button', { name: 'Revisar escolha de uso do aplicativo' }).click();
   await page.getByRole('button', { name: 'Aceitar' }).click();
-  await page.waitForFunction(() => window.dataLayer?.some(row => row[0] === 'event'));
+  try {
+    await page.waitForFunction(() => window.dataLayer?.some(row => row[0] === 'event'));
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      commands: window.dataLayer?.map(row => [row[0], row[1]]),
+      script: [...document.scripts].find(node => node.src.includes('googletagmanager.com'))?.outerHTML,
+      suspended: localStorage.getItem('livro-a-livro-usage-suspended-v1') || sessionStorage.getItem('livro-a-livro-usage-suspended-v1'),
+      buttons: [...document.querySelectorAll('button')].map(button => button.textContent?.trim()).filter(Boolean),
+    }));
+    console.error('GA_CONSENT_GATE_STATE', JSON.stringify({ state, requests, pageErrors }));
+    throw error;
+  }
   await page.waitForTimeout(150);
   const scripts = requests.filter(url => url.includes('googletagmanager.com'));
   const collects = requests.filter(url => url.includes('google-analytics.com'));
