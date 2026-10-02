@@ -1,0 +1,39 @@
+name: Relatar problema
+description: Conte o que aconteceu, sem enviar dados da sua biblioteca.
+title: "[Problema] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir, procure issues semelhantes. Para falhas de segurança ou vazamento de dados, siga SECURITY.md e não publique detalhes aqui.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como reproduzir
+      description: Use livros e notas fictícios. Liste os passos desde a abertura do app.
+      placeholder: "1. Abra a tela...\n2. Toque em...\n3. Observe..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: O que você esperava?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: O que aconteceu?
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Navegador e sistema
+      description: Por exemplo, Safari no iPhone ou Chrome no Android. Diga se abriu pelo ícone da tela inicial.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Informações adicionais
+      description: Não inclua títulos ou notas pessoais, avaliações, backups, tokens ou capturas com dados reais.

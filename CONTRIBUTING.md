@@ -2,6 +2,13 @@
 
 A biblioteca pertence à pessoa que a criou. Leia primeiro o [estado atual](README.md#estado-atual), a [arquitetura](docs/architecture.md), o [design system](docs/design-system.md) e a issue da mudança. A [auditoria de maturidade](docs/audit-2026-09-27.md) identifica fluxos incompletos e prioridades.
 
+## Antes de começar
+
+1. Procure uma [issue](https://github.com/ewflaviano/livro-a-livro/issues) existente para o problema ou ideia.
+2. Para um erro comum, abra uma issue pelo modelo **Relatar problema**. Use livros e notas fictícios; informe o navegador, o sistema e os passos para reproduzir.
+3. Para uma ideia, use **Sugerir melhoria** e explique a necessidade. Mudanças maiores em dados, privacidade ou infraestrutura precisam de alinhamento na issue antes da implementação.
+4. Para falhas que possam expor biblioteca, backups ou credenciais, siga [SECURITY.md](SECURITY.md) e não abra issue pública.
+
 ## Preparar o ambiente
 
 - Node.js 24 e npm, como no CI; use `npm ci` para respeitar o lockfile.
@@ -38,11 +45,13 @@ Os testes TypeScript ficam junto ao código (`*.test.ts`/`*.test.tsx`); `test/fi
 ## Fluxo de entrega
 
 1. Uma issue por vez. Descreva o comportamento esperado e os critérios de aceite sem dados reais.
-2. Parta da `main` em `codex/issue-<número>-<resumo>`, com árvore de trabalho limpa ou mudanças existentes preservadas.
+2. Se não tiver acesso de escrita, crie um fork do repositório. Parta da `main` em uma branch curta no seu fork, por exemplo `fix/busca-autores`. Os agentes internos usam `codex/issue-<número>-<resumo>`. Mantenha a árvore de trabalho limpa ou preserve mudanças existentes.
 3. Leia os testes relacionados antes de editar. Mantenha a alteração limitada à issue.
 4. Atualize a documentação afetada, principalmente a disponibilidade real no README. Não marque como pronto um módulo ainda sem composição/interface.
-5. Abra PR ligado à issue (`Closes #<número>` quando concluir todos os critérios). Informe comportamento, validação e limites conhecidos.
+5. Envie a branch e abra PR para `main` ligado à issue (`Closes #<número>` quando concluir todos os critérios). Informe comportamento, validação e limites conhecidos. Nunca envie commits diretamente para `main`.
 6. Revise e integre antes de iniciar a próxima issue. OAuth, experimentos e infraestrutura exigem revisão de arquitetura pelo papel SOL definido em [AGENTS.md](AGENTS.md).
+
+A proteção da `main` exige PR, checks `frontend`, `api` e `browser` aprovados, branch atualizada e conversas resolvidas; bloqueia exclusão e force push sem exceção. O GitHub não exige uma aprovação formal de outra conta, como no BioRotina. O responsável decide quando integrar cada PR; contribuições externas devem aguardar essa decisão. O CI valida PRs, mas só publica na AWS depois do merge em `main`.
 
 ## Checks
 
@@ -87,6 +96,10 @@ Na descrição do PR, separe checks automatizados, observações de navegador e 
 - Não adicione IA, login obrigatório, recomendações, feed, metas, notificações ou coleta pessoal sem issue e decisão explícita.
 
 Ao encontrar uma falha, prepare uma reprodução mínima com dados sintéticos e descreva impacto, pré-condições e limite da evidência. Nunca anexe credenciais ou uma biblioteca real para demonstrá-la.
+
+## Licença
+
+O código e a documentação original estão sob a [licença MIT](LICENSE). Dependências e materiais de terceiros mantêm as próprias licenças. O campo `private: true` em `package.json` impede apenas a publicação acidental do pacote npm.
 
 ### Parser de importação e teste sem rede
 
