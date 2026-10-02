@@ -63,6 +63,7 @@ Resources:
           var location = 'https://livroalivro.app.br' + request.uri;
           var query = request.querystring;
           var pairs = [];
+          // CloudFront groups repeated parameter names; their original interleaving is unavailable.
           for (var name in query) {
             if (!Object.prototype.hasOwnProperty.call(query, name)) continue;
             var values = query[name].multiValue || [query[name]];

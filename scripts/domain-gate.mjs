@@ -12,6 +12,9 @@ for (const host of ['www.livroalivro.app.br', 'livroalivro.com.br', 'www.livroal
   const result = handler({ request: request(host, '/privacidade.html', { lang: { value: 'pt-BR' }, id: { multiValue: [{ value: '1' }, { value: '2' }] } }) });
   assert.equal(result.statusCode, 301);
   assert.equal(result.headers.location.value, 'https://livroalivro.app.br/privacidade.html?lang=pt-BR&id=1&id=2');
+  const parsed = new URL(result.headers.location.value);
+  assert.equal(parsed.pathname, '/privacidade.html');
+  assert.deepEqual(parsed.searchParams.getAll('id'), ['1', '2']);
 }
 assert.equal(handler({ request: request('livroalivro.app.br') }).uri, '/livro');
 assert.equal(handler({ request: request('d36pvibsr6v8wx.cloudfront.net') }).uri, '/livro');
