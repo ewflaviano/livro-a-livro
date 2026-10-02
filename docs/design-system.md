@@ -19,7 +19,7 @@ A interface tem catálogos locais em PT-BR e EN. A escolha do idioma fica neste 
 5. **Local não significa cópia de segurança.** Comunicar onde os registros estão, o que foi salvo e o que uma exportação realmente confirma.
 6. **O básico independe de catálogo externo.** A entrada manual continua disponível quando não há rede, capa ou resultado de busca.
 
-Visitas com Google Analytics e diagnóstico de erros compartilham uma escolha no aviso compacto. Aceitar liga os dois; recusar desliga os dois. Configurações mostra um estado curto e um acesso para rever a escolha no mesmo aviso. Falha de armazenamento mantém ambos desligados; nenhum detalhe livre do erro vai ao diagnóstico.
+Visitas com Google Analytics, diagnóstico de erros, experimentos opcionais e suas contagens técnicas compartilham uma escolha no aviso compacto. Aceitar liga essas finalidades; recusar as desliga. Configurações mostra um estado curto e um acesso para rever a escolha no mesmo aviso. Falha de armazenamento mantém a medição desligada; nenhum detalhe livre do erro vai ao diagnóstico.
 
 O BioRotina é a referência funcional para conexão global, sincronização, resolução de divergências e escolhas iniciais de privacidade. A [correção de direção de 27 set 2026](paridade-biorotina.md) define a entrega sequencial dessas equivalências. Esta identidade usa linguagem editorial, serifas, tinta ameixa e marcador amarelo próprios. Os estados históricos abaixo não substituem essa decisão nem afirmam que toda a correção já foi entregue.
 
