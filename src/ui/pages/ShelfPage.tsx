@@ -1,3 +1,4 @@
+import { useExperiment } from '../../experiments/ExperimentProvider';
 import { BookCover } from '../components/BookCover';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -15,6 +16,7 @@ const pageSize = 24;
 
 export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const { t, locale } = useLocale();
+  const summaryLayout = useExperiment('shelf-summary-layout');
   const labels = { read: t('readPlural'), reading: t('reading'), 'want-to-read': t('wantToRead'), all: t('all') };
   const statusLabels = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
   const { state, retry, updatePreferences, positions, shelfPages, setShelfPage,
@@ -156,7 +158,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         <span aria-live="polite">{t('pageOf', { page, total: totalPages })}</span>
         <button className="button button-secondary" disabled={page === totalPages} onClick={() => changePage(page + 1)}>{t('next')}</button>
       </nav>}</>}
-    {yearBooks.length > 0 && !globalSearch && <dl className="shelf-metrics" aria-label={t('booksReadYear', { year: yearText })}>
+    {yearBooks.length > 0 && !globalSearch && <dl className={`shelf-metrics${summaryLayout === 'compact' ? ' shelf-metrics--compact' : ''}`} aria-label={t('booksReadYear', { year: yearText })}>
       <div><dt>{t('readPlural')}</dt><dd aria-label={t(pluralCategory(locale, metrics.books) === 'one' ? 'bookReadCountYearOne' : 'booksReadCountYear', { count: formatNumber(locale, metrics.books), year: yearText })}>{formatNumber(locale, metrics.books)}</dd></div>
       <div><dt>{t('pages')}</dt><dd aria-label={metrics.pages === null ? t('pagesUnknown') : t(pluralCategory(locale, metrics.pages) === 'one' ? 'pageReadCountOne' : 'pagesReadCount', { count: formatNumber(locale, metrics.pages) })}>{metrics.pages === null ? '—' : formatNumber(locale, metrics.pages)}</dd></div>
       <div><dt>{t('authors')}</dt><dd aria-label={metrics.authors === null ? t('authorUnknown') : t(pluralCategory(locale, metrics.authors) === 'one' ? 'authorReadCountOne' : 'authorsReadCount', { count: formatNumber(locale, metrics.authors) })}>{metrics.authors === null ? '—' : formatNumber(locale, metrics.authors)}</dd></div>

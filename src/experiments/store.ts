@@ -39,12 +39,22 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     const next = { ...(current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary')), ...patch };
     await tx.store.put(next, STATE_KEY);
     await tx.done;
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('livro-experiments-changed'));
+    if (typeof BroadcastChannel !== 'undefined') {
+      const channel = new BroadcastChannel('livro-experiments');
+      channel.postMessage('changed'); channel.close();
+    }
     return next;
   }
   async function saveAssignment(key: string, assignmentVersion: number, variant: string) {
-    const current = await read();
-    const next = { ...current, assignments: { ...current.assignments, [key]: { assignmentVersion, variant } } };
-    await connection.db.put('experimentState', next, STATE_KEY);
+    connection.ensureOpen();
+    const tx = connection.db.transaction('experimentState', 'readwrite');
+    const current = await tx.store.get(STATE_KEY);
+    const state = current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary');
+    if (!state.experimentsConsent) { await tx.done; return state; }
+    const next = { ...state, assignments: { ...state.assignments, [key]: { assignmentVersion, variant } } };
+    await tx.store.put(next, STATE_KEY);
+    await tx.done;
     return next;
   }
   return { read, patch, saveAssignment, close: connection.close };

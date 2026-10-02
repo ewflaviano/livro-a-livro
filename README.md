@@ -22,7 +22,7 @@ A biblioteca fica no IndexedDB do navegador. Não há conta obrigatória; Google
 | Configurações | Ano, Grade/Lista e filtro persistidos; versão/build, estado offline e verificação de atualização |
 | Idioma PT/EN | Interface e políticas públicas bilíngues; escolha local em Configurações, disponível offline e fora do backup/Drive |
 | Google Drive | Liberado no workflow público para teste manual do responsável, com login e autorização em duas etapas; gates entre perfis ainda pendentes na issue #13 |
-| Experimentos e métricas | Consentimentos e módulos existem; consumo do catálogo, variantes e envio ainda não estão conectados à aplicação |
+| Experimentos e métricas | Runtime de catálogo e variante visual da estante implementados, desligados sem consentimento; publicação e telemetria própria ainda pendentes |
 
 Veja a [auditoria de maturidade](docs/audit-2026-09-27.md) para evidências, riscos e ordem de correção. Exportação e restauração locais estão disponíveis; a validação do ciclo completo de instalação/atualização PWA permanece um gate separado. Não limpe o armazenamento de uma biblioteca real para testar recuperação.
 

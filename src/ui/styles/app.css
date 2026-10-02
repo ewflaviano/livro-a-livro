@@ -348,3 +348,6 @@ html:has(.analytics-banner) { scroll-padding-bottom: 8rem; }
   .analytics-actions { gap: var(--space-1); }
   .analytics-actions .button { min-height: var(--target-min); }
 }
+
+.shelf-page .shelf-metrics--compact { gap: var(--space-1) var(--space-3); font-size: var(--text-small); }
+.shelf-page .shelf-metrics--compact dd { font-size: var(--text-small); }
