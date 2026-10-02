@@ -26,6 +26,8 @@ try {
   if (requests.length) throw new Error('PRECONSENT_REQUEST');
   if (process.env.LAL_GA_SCREENSHOT) await page.screenshot({ path: process.env.LAL_GA_SCREENSHOT });
   await page.getByRole('button', { name: 'Recusar' }).click();
+  await page.waitForFunction(() => localStorage.getItem('livro-a-livro-usage-suspended-v1') !== '1' &&
+    sessionStorage.getItem('livro-a-livro-usage-suspended-v1') !== '1');
   await page.reload();
   if (requests.length) throw new Error('REJECTION_REQUEST');
   await page.goto(`${origin}/#/configuracoes`);
