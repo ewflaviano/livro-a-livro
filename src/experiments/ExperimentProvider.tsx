@@ -31,7 +31,8 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
           if (!state.experimentsConsent) { clear(); return; }
           const next = await fetchCatalog(fetch, baseUrl, controller.signal);
           if (disposed || epoch !== request) return;
-          if (!next || next.catalogRevision < revision) { clear(); return; }
+          if (!next || next.catalogRevision < revision || !(await store.acceptCatalogRevision(next.catalogRevision))) { clear(); return; }
+          if (disposed || epoch !== request) return;
           revision = next.catalogRevision;
           const assigned: Partial<Record<ExperimentKey, string>> = {};
           for (const entry of next.experiments) {

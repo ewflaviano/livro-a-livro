@@ -7,6 +7,7 @@ const stateSchema = z.strictObject({
   seed: z.string().regex(/^[a-f0-9]{64}$/),
   experimentsConsent: z.boolean(),
   telemetryConsent: z.boolean(),
+  highestCatalogRevision: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1),
   assignments: z.record(z.string().max(80), z.strictObject({ assignmentVersion: z.number().int().positive(), variant: z.string().max(80) })),
 });
 export type ExperimentState = z.infer<typeof stateSchema>;
@@ -17,7 +18,7 @@ function randomSeed() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 function defaultState(): ExperimentState {
-  return { seed: randomSeed(), experimentsConsent: false, telemetryConsent: false, assignments: {} };
+  return { seed: randomSeed(), experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
 }
 
 export async function openExperimentStore(options: { name?: string } = {}) {
@@ -57,7 +58,20 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     await tx.done;
     return next;
   }
-  return { read, patch, saveAssignment, close: connection.close };
+  async function acceptCatalogRevision(revision: number) {
+    connection.ensureOpen();
+    const tx = connection.db.transaction('experimentState', 'readwrite');
+    const current = await tx.store.get(STATE_KEY);
+    const state = current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary');
+    if (!state.experimentsConsent || !Number.isSafeInteger(revision) || revision < state.highestCatalogRevision) {
+      await tx.done;
+      return false;
+    }
+    if (revision > state.highestCatalogRevision) await tx.store.put({ ...state, highestCatalogRevision: revision }, STATE_KEY);
+    await tx.done;
+    return true;
+  }
+  return { read, patch, saveAssignment, acceptCatalogRevision, close: connection.close };
 }
 
 export type ExperimentStore = Awaited<ReturnType<typeof openExperimentStore>>;

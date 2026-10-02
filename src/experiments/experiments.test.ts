@@ -26,11 +26,15 @@ describe('local experiment gates', () => {
     expect(initial.telemetryConsent).toBe(false);
     expect(initial.seed).toMatch(/^[a-f0-9]{64}$/);
     const updated = await store.patch({ experimentsConsent: true });
+    expect(await store.acceptCatalogRevision(4)).toBe(true);
     await store.saveAssignment('shelf-summary-layout', 1, 'compact');
     store.close();
     const reopened = await openExperimentStore({ name });
     expect((await reopened.read()).seed).toBe(initial.seed);
     expect((await reopened.read()).experimentsConsent).toBe(true);
+    expect((await reopened.read()).highestCatalogRevision).toBe(4);
+    expect(await reopened.acceptCatalogRevision(3)).toBe(false);
+    expect(await reopened.acceptCatalogRevision(4)).toBe(true);
     expect(updated.telemetryConsent).toBe(false);
     reopened.close();
   });
@@ -39,14 +43,14 @@ describe('local experiment gates', () => {
     expect(parseCatalog({ ...validCatalog, expiresAt: '2000-01-01T00:00:00.000Z' })).toBeNull();
     expect(parseCatalog({ ...validCatalog, experiments: [{ ...validCatalog.experiments[0], key: 'unknown' }] })?.experiments).toEqual([]);
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'a'.repeat(64), experimentsConsent: false, telemetryConsent: false, assignments: {} };
+    const state = { seed: 'a'.repeat(64), experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
     expect(await assignExperiment(experiment, state, { build: '1', driveConnected: false })).toBeNull();
     expect(await assignExperiment({ ...experiment, killSwitch: true }, { ...state, experimentsConsent: true }, { build: '1', driveConnected: false })).toBeNull();
   });
 
   it('removes a saved participant when rollout shrinks and honours the kill switch', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false,
+    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
       assignments: { 'shelf-summary-layout': { assignmentVersion: 1, variant: 'compact' } } };
     expect(await assignExperiment({ ...experiment, rolloutBasisPoints: 0 }, state, { build: '0.1.0', driveConnected: false })).toBeNull();
     expect(await assignExperiment({ ...experiment, killSwitch: true }, state, { build: '0.1.0', driveConnected: false })).toBeNull();
@@ -61,7 +65,7 @@ describe('local experiment gates', () => {
 
   it('compares build versions numerically', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, assignments: {} };
+    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
     const entry = { ...experiment, eligibility: { ...experiment.eligibility, minBuild: '0.9.0' } };
     expect(await assignExperiment(entry, state, { build: '0.10.0', driveConnected: false })).not.toBeNull();
     expect(await assignExperiment(entry, state, { build: '0.8.9', driveConnected: false })).toBeNull();
@@ -77,7 +81,7 @@ describe('local experiment gates', () => {
 
   it('assigns deterministically and preserves a matching saved assignment', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false,
+    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
       assignments: { 'shelf-summary-layout': { assignmentVersion: 1, variant: 'compact' } } };
     await expect(assignExperiment(experiment, state, { build: '1', driveConnected: false })).resolves.toEqual({ key: 'shelf-summary-layout', variant: 'compact', assignmentVersion: 1 });
   });
