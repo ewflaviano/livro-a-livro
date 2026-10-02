@@ -26,7 +26,7 @@ function Shell() {
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
   const { positions } = useLibrary();
-  const returnTo = ['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
+  const returnTo = ['/estante', '/lendo', '/quero-ler', '/autores'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
   const showLanguagePrompt = location.pathname !== '/configuracoes' && languageChoice?.suggestChoice === true;
 
   useEffect(() => {
@@ -67,7 +67,7 @@ function Shell() {
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
       <nav className="bottom-navigation" aria-label={t('mobileNavigation')}>
-        <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? 'page' : undefined}>
+        <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler', '/autores'].includes(location.pathname) ? 'page' : undefined}>
           <Library aria-hidden="true" /><span>{t('shelf')}</span>
         </Link>
         <NavLink to="/adicionar" state={{ returnTo }} onClick={() => positions.set(returnTo, window.scrollY)}>

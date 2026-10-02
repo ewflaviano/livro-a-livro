@@ -1,9 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { recordDiagnostic } from '../diagnostics/client';
 import type { ShelfService, ShelfState } from '../services/shelf-service';
 import type { PortablePreferences } from '../ports/library-repository';
 import { openShelfService } from './composition';
 import type { LibraryService } from '../services/library-service';
+
+export type AuthorsView = { query: string; page: number; expanded: string | null; bookPage: number; returnBookId: string | null };
 
 type LibraryContext = {
   state: ShelfState;
@@ -16,6 +18,8 @@ type LibraryContext = {
   setShelfQuery: (query: string) => void;
   shelfSearchScope: 'year' | 'all';
   setShelfSearchScope: (scope: 'year' | 'all') => void;
+  authorsView: AuthorsView;
+  setAuthorsView: Dispatch<SetStateAction<AuthorsView>>;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
   catalog: ShelfService['catalog'] | null;
@@ -33,6 +37,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const [attempt, setAttempt] = useState(0);
   const [shelfQuery, setShelfQuery] = useState('');
   const [shelfSearchScope, setShelfSearchScope] = useState<'year' | 'all'>('year');
+  const [authorsView, setAuthorsView] = useState<AuthorsView>({ query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null });
   const updateShelfQuery = useCallback((query: string) => {
     setShelfQuery(query);
     if (!query.trim()) setShelfSearchScope('year');
@@ -59,7 +64,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
     updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage,
-    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, books: service?.books ?? null,
+    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, authorsView, setAuthorsView, books: service?.books ?? null,
     backup: service?.backup ?? null, catalog: service?.catalog ?? null,
   }}>{children}</Context.Provider>;
 }
