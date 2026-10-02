@@ -3,7 +3,11 @@ Description: Livro a Livro static PWA. This stack contains no user library data.
 Parameters:
   CertificateArn: { Type: String }
   HostedZoneId: { Type: String }
+  RedirectHostedZoneId: { Type: String }
+  EnableComBr: { Type: String, Default: 'true', AllowedValues: ['true', 'false'] }
   DomainName: { Type: String, Default: livroalivro.app.br }
+Conditions:
+  ComBrEnabled: !Equals [!Ref EnableComBr, 'true']
 Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
@@ -43,6 +47,49 @@ Resources:
             IncludeSubdomains: false
             Override: true
           XSSProtection: { ModeBlock: true, Protection: true, Override: true }
+  CanonicalRedirect:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: livro-a-livro-canonical-redirect
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirect alternate site domains to the canonical HTTPS domain.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var host = request.headers.host.value.toLowerCase();
+          if (host === 'livroalivro.app.br') return request;
+          if (host !== 'www.livroalivro.app.br' &&
+              host !== 'livroalivro.com.br' &&
+              host !== 'www.livroalivro.com.br') return request;
+          var location = 'https://livroalivro.app.br' + request.uri;
+          var query = request.querystring;
+          var pairs = [];
+          function encodePart(raw) {
+            // CloudFront keeps percent escapes in query values; decode once to avoid %2520.
+            var formValue = raw.replace(/\+/g, '%20');
+            try { return encodeURIComponent(decodeURIComponent(formValue)); }
+            catch (error) { return encodeURIComponent(raw.replace(/\+/g, ' ')); }
+          }
+          // CloudFront groups repeated parameter names; their original interleaving is unavailable.
+          for (var name in query) {
+            if (!Object.prototype.hasOwnProperty.call(query, name)) continue;
+            var values = query[name].multiValue || [query[name]];
+            for (var i = 0; i < values.length; i++) {
+              pairs.push(encodePart(name) + '=' + encodePart(values[i].value || ''));
+            }
+          }
+          if (pairs.length) location += '?' + pairs.join('&');
+          return {
+            statusCode: 301,
+            statusDescription: 'Moved Permanently',
+            headers: {
+              location: { value: location },
+              'cache-control': { value: 'public,max-age=300' }
+            }
+          };
+        }
   FrontendDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -50,7 +97,11 @@ Resources:
         Enabled: true
         HttpVersion: http2and3
         IPV6Enabled: true
-        Aliases: [!Ref DomainName]
+        Aliases:
+          - !Ref DomainName
+          - !Sub 'www.${DomainName}'
+          - !If [ComBrEnabled, livroalivro.com.br, !Ref 'AWS::NoValue']
+          - !If [ComBrEnabled, www.livroalivro.com.br, !Ref 'AWS::NoValue']
         DefaultRootObject: index.html
         Origins:
           - Id: application
@@ -64,6 +115,9 @@ Resources:
           CachedMethods: [GET, HEAD, OPTIONS]
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
           ResponseHeadersPolicyId: !Ref SecurityHeaders
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt CanonicalRedirect.FunctionMetadata.FunctionARN
           Compress: true
         CacheBehaviors:
           - PathPattern: /assets/*
@@ -73,6 +127,9 @@ Resources:
             CachedMethods: [GET, HEAD, OPTIONS]
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
             ResponseHeadersPolicyId: !Ref SecurityHeaders
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt CanonicalRedirect.FunctionMetadata.FunctionARN
             Compress: true
         ViewerCertificate:
           AcmCertificateArn: !Ref CertificateArn
@@ -104,6 +161,52 @@ Resources:
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  WwwSiteAlias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.livroalivro.app.br
+      Type: A
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  WwwSiteAliasIpv6:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.livroalivro.app.br
+      Type: AAAA
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  RedirectApexAlias:
+    Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
+    Properties:
+      HostedZoneId: !Ref RedirectHostedZoneId
+      Name: livroalivro.com.br
+      Type: A
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  RedirectApexAliasIpv6:
+    Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
+    Properties:
+      HostedZoneId: !Ref RedirectHostedZoneId
+      Name: livroalivro.com.br
+      Type: AAAA
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  RedirectWwwAlias:
+    Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
+    Properties:
+      HostedZoneId: !Ref RedirectHostedZoneId
+      Name: www.livroalivro.com.br
+      Type: A
+      AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
+  RedirectWwwAliasIpv6:
+    Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
+    Properties:
+      HostedZoneId: !Ref RedirectHostedZoneId
+      Name: www.livroalivro.com.br
       Type: AAAA
       AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
 Outputs:
