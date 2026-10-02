@@ -30,7 +30,7 @@ afterEach(cleanup);
 it('previews English consent without enabling Analytics before acceptance', async () => {
   mount('en');
   expect(await screen.findByRole('button', { name: 'Accept' })).toBeTruthy();
-  expect(screen.getByText(/does not follow you across other sites/)).toBeTruthy();
+  expect(screen.getByText(/may test interface variations with technical counts/)).toBeTruthy();
   expect(harness.enable).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
   expect(harness.persisted).toBe('rejected');
@@ -39,7 +39,7 @@ it('previews English consent without enabling Analytics before acceptance', asyn
 it('does not load GA undecided or rejected and persists before enabling on acceptance', async () => {
   harness.enable.mockImplementationOnce(async () => { expect(harness.persisted).toBe('accepted'); return true; });
   mount(); await screen.findByRole('button', { name: 'Aceitar' });
-  expect(screen.getByText(/contar visitas e envia dados técnicos de erros para melhorar o app/)).toBeTruthy();
+  expect(screen.getByText(/contamos visitas com Google Analytics.*códigos técnicos de erro.*variações da interface/)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Saiba mais' })).toBeTruthy();
   expect(harness.enable).not.toHaveBeenCalled();
   expect(diagnostic.setEnabled).not.toHaveBeenCalledWith(true);
