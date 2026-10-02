@@ -310,6 +310,31 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([['pt-BR', 'Limpar filtro', 'Buscar na estante', 'Todos os anos'], ['en', 'Clear filter', 'Search your shelf', 'All years']] as const)(
+    'clears only the status filter from an empty global search in %s', async (locale, clearLabel, searchLabel, scopeLabel) => {
+      const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+      const { repository } = await setup([
+        book('Registro sintético', { shelfYear: 2025, status: 'read' }),
+        book('Outro registro', { status: 'reading' }),
+      ], '/estante', locale);
+      const before = await repository.readBackupSnapshot();
+      await userEvent.type(screen.getByRole('searchbox', { name: searchLabel }), 'sintético');
+      await userEvent.click(screen.getByRole('radio', { name: scopeLabel }));
+      await userEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Reading' : 'Lendo' }));
+      await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('reading'));
+      expect(screen.getByRole('button', { name: clearLabel })).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+      await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('all'));
+      expect(screen.getByRole('heading', { name: 'Registro sintético' })).toBeTruthy();
+      expect((screen.getByRole('searchbox', { name: searchLabel }) as HTMLInputElement).value).toBe('sintético');
+      expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: searchLabel }));
+      expect((screen.getByRole('radio', { name: scopeLabel }) as HTMLInputElement).checked).toBe(true);
+      expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
+      expect(await repository.readBackupSnapshot()).toMatchObject({ books: before.books, preferences: before.preferences });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it('finds a saved ISBN with or without separators only in the selected scope and filter', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     const { repository } = await setup([
@@ -321,6 +346,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(input.getAttribute('placeholder')).toBe('Buscar livro, autor ou ISBN');
     await userEvent.type(input, '978-0-00-000000-2');
     expect(screen.getByRole('heading', { name: 'Nenhum livro encontrado.' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Limpar filtro' })).toBeNull();
     await userEvent.click(screen.getByRole('radio', { name: 'Todos os anos' }));
     expect(screen.getByRole('heading', { name: 'Edição de teste' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));

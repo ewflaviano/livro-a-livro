@@ -286,6 +286,8 @@ Rótulos e ícones permanecem visíveis, seleção usa `aria-current`, alvos tê
 
 A estante usa duas colunas abaixo de 640 px e quatro no tablet, com títulos completos e capas 2:3 inteiras. Cabeçalho, métricas e ferramentas são compactos; compartilhar fica depois da coleção e desaparece quando não há Lidos. Busca por título/autoria/ISBN salvo completo filtra registros locais do ano/estado selecionados por padrão; **Todos os anos** amplia somente o alcance local, sem rede, e mostra o ano em cada resultado. Limpar busca preserva ano, filtro e modo. Consulta, alcance e rolagem sobrevivem à visita ao detalhe na sessão; a consulta não vai para URL, preferências ou telemetria.
 
+Quando a busca não encontra livros com um filtro de estado ativo, o estado vazio oferece **Limpar filtro**. A ação preserva consulta, ano e alcance, devolve o foco ao campo de busca e não aparece quando o filtro já é Todos.
+
 Resultados externos têm título, autoria, origem e primeira publicação da obra quando conhecida em linhas compactas. A pessoa revisa os dados da edição antes de salvar; entrada manual continua disponível. Validar 320/390/768/1440 px, paisagem, foco, diálogos, formulário e zoom de 200%.
 
 ### Backup local — estados entregues na issue #40
