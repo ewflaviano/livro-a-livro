@@ -232,6 +232,34 @@ h2 { font-size: var(--text-h2); }
 .shelf-page .shelf-metrics dt { font-size: var(--text-small); }
 .shelf-heading { align-items: center; }
 .shelf-heading h1 { font-size: clamp(2rem, 4vw, 3rem); }
+.shelf-title-group { display: grid; gap: var(--space-1); }
+.shelf-title-group h1 { margin: 0; }
+.shelf-authors-link { display: inline-flex; align-items: center; width: fit-content; min-height: var(--target-min); font-size: var(--text-small); }
+.authors-page { overflow-wrap: anywhere; }
+.authors-intro { color: var(--color-text-secondary); }
+.authors-search { display: grid; gap: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+.authors-search span { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--target-min); padding-inline: var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); }
+.authors-search span:focus-within { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); }
+.authors-search svg { width: var(--icon-sm); height: var(--icon-sm); color: var(--color-text-secondary); flex: none; }
+.authors-search input { width: 100%; min-width: 0; min-height: var(--target-min); border: 0; outline: 0; background: transparent; color: var(--color-text); font: inherit; font-weight: normal; }
+.authors-count { margin-block: var(--space-3); color: var(--color-text-secondary); font-size: var(--text-small); }
+.author-groups, .author-books ol { list-style: none; margin: 0; padding: 0; }
+.author-groups { display: grid; gap: var(--space-3); }
+.author-group { min-width: 0; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+.author-group-toggle { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--target-min); padding: var(--space-3) var(--space-4); border: 0; background: transparent; color: var(--color-text); font: inherit; text-align: start; cursor: pointer; }
+.author-group-toggle:hover { background: var(--color-surface-subtle); }
+.author-monogram { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: var(--radius-control); background: var(--color-selected-bg); color: var(--color-selected-text); font-family: var(--font-editorial); font-size: var(--text-h3); }
+.author-group-label { display: grid; min-width: 0; flex: 1; gap: var(--space-1); }
+.author-group-label strong { overflow-wrap: anywhere; }
+.author-group-label small, .author-book-link small { color: var(--color-text-secondary); font-size: var(--text-small); }
+.author-chevron { width: var(--icon-sm); height: var(--icon-sm); flex: none; color: var(--color-action); transition: transform .2s ease; }
+.author-group-toggle[aria-expanded="true"] .author-chevron { transform: rotate(180deg); }
+.author-books { border-top: var(--border-width) solid var(--color-border); padding: var(--space-2) var(--space-4) var(--space-3) calc(2.5rem + 2 * var(--space-4) + var(--space-3)); background: var(--color-surface-subtle); }
+.author-books[hidden] { display: none; }
+.author-book-link { display: grid; gap: var(--space-1); min-height: var(--target-min); padding-block: var(--space-2); color: var(--color-link); }
+.author-book-link strong { font-weight: var(--weight-semibold); }
+.author-book-link small { font-weight: normal; }
+.author-books .shelf-pagination { margin-bottom: 0; }
 .shelf-metrics { margin-block: var(--space-4); padding-block: var(--space-3); }
 .shelf-metrics dd { font-size: var(--text-h3); }
 .shelf-page .share-entry { margin-block: var(--space-2); }
@@ -281,6 +309,7 @@ h2 { font-size: var(--text-h2); }
   .shelf-toolbar { margin-block: var(--space-2); flex-wrap: nowrap; }
   .shelf-search { max-width: none; flex: 1 1 auto; }
   .shelf-sort { margin-inline-start: 0; flex: none; }
+  .author-books { padding-inline-start: var(--space-5); }
 }
 .settings-version { margin-bottom: var(--space-2); font-size: var(--text-small); color: var(--color-text-secondary); }
 .settings-options { margin-top: var(--space-4); }
