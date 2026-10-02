@@ -22,9 +22,10 @@ import { AnalyticsProvider, useAnalytics } from './AnalyticsProvider';
 import { AnalyticsBanner } from '../ui/components/AnalyticsBanner';
 import { SettingsPage } from '../ui/pages/SettingsPage';
 import { LocalePreview } from '../i18n/context';
+import { clearUsageSuspension, isUsageSuspended } from './suspension';
 function View() { const analytics = useAnalytics(); const navigate = useNavigate(); return <><AnalyticsBanner /><button onClick={() => navigate('/livro/private-id?secret=1')}>Abrir livro</button><button onClick={analytics.review}>Revisar escolha</button><button onClick={() => void analytics.choose('rejected')}>Forçar recusa</button><span>{analytics.choice ?? 'indeciso'}</span></>; }
 const mount = (locale: 'pt-BR' | 'en' = 'pt-BR') => render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/estante']}><AnalyticsProvider><View /></AnalyticsProvider></MemoryRouter></LocalePreview>);
-beforeEach(() => { harness.openFail = false; harness.openGate = null; harness.opened.mockClear(); harness.persisted = null; harness.read.mockClear(); harness.write.mockClear(); harness.enable.mockClear(); harness.disable.mockClear(); harness.page.mockClear(); diagnostic.setEnabled.mockClear(); });
+beforeEach(() => { clearUsageSuspension(); harness.openFail = false; harness.openGate = null; harness.opened.mockClear(); harness.persisted = null; harness.read.mockClear(); harness.write.mockClear(); harness.enable.mockClear(); harness.disable.mockClear(); harness.page.mockClear(); diagnostic.setEnabled.mockClear(); });
 afterEach(cleanup);
 it('previews English consent without enabling Analytics before acceptance', async () => {
   mount('en');
@@ -124,6 +125,7 @@ it('keeps both senders off after a failed revocation and an old accepted reread'
   harness.write.mockRejectedValueOnce(new Error('synthetic quota'));
   await userEvent.click(screen.getByRole('button', { name: 'Forçar recusa' }));
   await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+  expect(isUsageSuspended()).toBe(true);
   await act(async () => { window.dispatchEvent(new Event('focus')); });
   await waitFor(() => expect(harness.read).toHaveBeenCalledTimes(2));
   expect(diagnostic.setEnabled).toHaveBeenLastCalledWith(false);

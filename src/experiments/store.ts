@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { openDatabase } from '../adapters/indexeddb/database';
 import { parseDomain } from '../domain/errors';
+import { isUsageSuspended } from '../analytics/suspension';
 
 const STATE_KEY = 'preferences';
 const stateSchema = z.strictObject({
@@ -39,7 +40,7 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     const state = normalizeExperimentState(current);
     if (state.consentVersion !== (current as { consentVersion?: number }).consentVersion) await connection.db.put('experimentState', state, STATE_KEY);
     const usage = await connection.db.get('experimentState', 'usage-consent-v2');
-    return usage === 'accepted' ? state : { ...state, experimentsConsent: false, telemetryConsent: false };
+    return usage === 'accepted' && !isUsageSuspended() ? state : { ...state, experimentsConsent: false, telemetryConsent: false };
   }
   async function patch(patch: Partial<Pick<ExperimentState, 'experimentsConsent' | 'telemetryConsent'>>) {
     connection.ensureOpen();
@@ -60,7 +61,7 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     const tx = connection.db.transaction('experimentState', 'readwrite');
     const current = await tx.store.get(STATE_KEY);
     const state = current === undefined ? newExperimentState() : normalizeExperimentState(current);
-    if (!state.experimentsConsent) { await tx.done; return state; }
+    if (!state.experimentsConsent || isUsageSuspended()) { await tx.done; return state; }
     const next = { ...state, assignments: { ...state.assignments, [key]: { assignmentVersion, variant } } };
     await tx.store.put(next, STATE_KEY);
     await tx.done;
@@ -71,7 +72,7 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     const tx = connection.db.transaction('experimentState', 'readwrite');
     const current = await tx.store.get(STATE_KEY);
     const state = current === undefined ? newExperimentState() : normalizeExperimentState(current);
-    if (!state.experimentsConsent || !Number.isSafeInteger(revision) || revision < state.highestCatalogRevision) {
+    if (!state.experimentsConsent || isUsageSuspended() || !Number.isSafeInteger(revision) || revision < state.highestCatalogRevision) {
       await tx.done;
       return false;
     }

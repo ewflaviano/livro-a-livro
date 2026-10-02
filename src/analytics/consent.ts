@@ -26,6 +26,7 @@ export async function openAnalyticsConsentStore(options: { name?: string; channe
     }
     await legacy.done;
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('livro-experiments-changed'));
+    try { channel?.postMessage('changed'); } catch { /* Focus will recheck. */ }
     try { experimentChannel?.postMessage('changed'); } catch { /* Focus will recheck. */ }
     for (const destination of legacyChannels) {
       try { destination?.postMessage('changed'); } catch { /* Focus will recheck. */ }

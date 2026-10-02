@@ -4,6 +4,7 @@ import { fetchCatalog, type Catalog } from './catalog';
 import { openExperimentStore } from './store';
 import { experimentRegistry, type ExperimentKey, type ExperimentVariant } from './registry';
 import { experimentTelemetry } from '../diagnostics/telemetry';
+import { isUsageSuspended, USAGE_SUSPENSION_EVENT } from '../analytics/suspension';
 
 const API = import.meta.env.VITE_EXPERIMENTS_API_URL || '';
 const Context = createContext<{ catalog: Catalog | null; variants: Partial<Record<ExperimentKey, string>>; assigned: Partial<Record<ExperimentKey, string>> }>({ catalog: null, variants: {}, assigned: {} });
@@ -24,23 +25,27 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
       const epoch = ++request;
       controller?.abort();
       controller = new AbortController();
-      if (document.visibilityState === 'hidden' || navigator.onLine === false) { clear(); return; }
+      if (isUsageSuspended() || document.visibilityState === 'hidden' || navigator.onLine === false) { clear(); return; }
       try {
         const store = await openExperimentStore();
         try {
           const state = await store.read();
           if (disposed || epoch !== request) return;
+          if (isUsageSuspended()) { clear(); return; }
           if (!state.experimentsConsent) { clear(); return; }
           const next = await fetchCatalog(fetch, baseUrl, controller.signal);
           if (disposed || epoch !== request) return;
+          if (isUsageSuspended()) { clear(); return; }
           if (!next || next.catalogRevision < revision || !(await store.acceptCatalogRevision(next.catalogRevision))) { clear(); return; }
           if (disposed || epoch !== request) return;
+          if (isUsageSuspended()) { clear(); return; }
           revision = next.catalogRevision;
           const assigned: Partial<Record<ExperimentKey, string>> = {};
           const activeVariants: Partial<Record<ExperimentKey, string>> = {};
           for (const entry of next.experiments) {
             const choice = await assignExperiment(entry, state, { build: __APP_VERSION__, driveConnected: false });
             if (disposed || epoch !== request) return;
+            if (isUsageSuspended()) { clear(); return; }
             if (choice) {
               assigned[choice.key] = choice.variant;
               if (choice.variant !== experimentRegistry[choice.key].defaultVariant) activeVariants[choice.key] = choice.variant;
@@ -52,6 +57,7 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
             }
           }
           if (disposed || epoch !== request) return;
+          if (isUsageSuspended()) { clear(); return; }
           experimentTelemetry.setEnabled(state.telemetryConsent && Object.keys(assigned).length > 0);
           setCatalog(next);
           setVariants(activeVariants);
@@ -65,6 +71,8 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-experiments');
     channel?.addEventListener('message', onFocus);
     window.addEventListener('livro-experiments-changed', onFocus);
+    window.addEventListener(USAGE_SUSPENSION_EVENT, onFocus);
+    window.addEventListener('storage', onFocus);
     window.addEventListener('online', onFocus);
     window.addEventListener('offline', clear);
     document.addEventListener('visibilitychange', onFocus);
@@ -73,6 +81,8 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
     return () => {
       disposed = true; controller?.abort(); experimentTelemetry.setEnabled(false); channel?.close(); window.clearInterval(interval); window.clearTimeout(expiryTimer);
       window.removeEventListener('livro-experiments-changed', onFocus);
+      window.removeEventListener(USAGE_SUSPENSION_EVENT, onFocus);
+      window.removeEventListener('storage', onFocus);
       window.removeEventListener('online', onFocus);
       window.removeEventListener('offline', clear);
       document.removeEventListener('visibilitychange', onFocus);
@@ -87,10 +97,11 @@ export function useExperiment<K extends ExperimentKey>(key: K, visible = true): 
   const control = experimentRegistry[key].defaultVariant as ExperimentVariant<K>;
   const active = !!catalog && Date.parse(catalog.expiresAt) > Date.now() && navigator.onLine !== false;
   const variant = active ? (variants[key] ?? control) as ExperimentVariant<K> : control;
+  const assignmentVersion = catalog?.experiments.find(entry => entry.key === key)?.assignmentVersion;
   useEffect(() => {
-    if (active && visible && assigned[key] && catalog?.catalogRevision === 1) experimentTelemetry.record({
-      build: __APP_VERSION__, experiment: key, revision: catalog.catalogRevision, variant: assigned[key], event: 'exposure',
+    if (active && visible && assigned[key] && assignmentVersion === 1) experimentTelemetry.record({
+      build: __APP_VERSION__, experiment: key, revision: assignmentVersion, variant: assigned[key], event: 'exposure',
     });
-  }, [active, assigned, catalog?.catalogRevision, key, visible]);
+  }, [active, assigned, assignmentVersion, key, visible]);
   return variant;
 }

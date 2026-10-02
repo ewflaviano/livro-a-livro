@@ -118,6 +118,8 @@ describe('opt-in telemetry', () => {
     const telemetry = createTelemetry('https://api.example.test', fetcher);
     telemetry.setEnabled(true);
     telemetry.record({ build: 'private-title', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' });
+    const unsafe = { build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' as const, title: 'private book' };
+    telemetry.record(unsafe);
     expect(telemetry.snapshot()).toEqual([]);
     telemetry.record({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' });
     const pending = telemetry.flush();

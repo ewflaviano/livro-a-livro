@@ -13,6 +13,9 @@ const EVENTS: readonly TelemetryEvent[] = ['exposure', 'use', 'error', 'rollback
 const CODES: readonly TelemetryCode[] = ['catalog_invalid', 'catalog_unavailable', 'sync_unavailable', 'storage_unavailable'];
 
 function valid(value: Observation): boolean {
+  const keys = Object.keys(value);
+  if (keys.length !== (value.event === 'error' ? 6 : 5) ||
+    keys.some(key => !['build', 'experiment', 'revision', 'variant', 'event', 'code'].includes(key))) return false;
   return value.build === __APP_VERSION__ && value.experiment === 'shelf-summary-layout' && value.revision === 1 &&
     (value.variant === 'control' || value.variant === 'compact') && EVENTS.includes(value.event) &&
     (value.event === 'error' ? value.code !== undefined && CODES.includes(value.code) : value.code === undefined);
@@ -42,11 +45,13 @@ export function createTelemetry(baseUrl: string, fetcher: typeof fetch = fetch) 
   }
   function record(item: Observation) {
     if (!enabled || !valid(item)) return;
+    const safe: Observation = { build: item.build, experiment: item.experiment, revision: item.revision,
+      variant: item.variant, event: item.event, ...(item.code === undefined ? {} : { code: item.code }) };
     const now = Date.now(); prune(now);
-    const name = key(item);
+    const name = key(safe);
     if (seen.has(name) || items.size >= MAX_ITEMS && !items.has(name)) return;
     const current = items.get(name);
-    items.set(name, { ...item, count: Math.min(MAX_COUNT, (current?.count ?? 0) + 1) });
+    items.set(name, { ...safe, count: Math.min(MAX_COUNT, (current?.count ?? 0) + 1) });
     if (!timer) timer = setTimeout(() => { timer = undefined; void flush(); }, FLUSH_DELAY_MS);
   }
   async function flush() {
