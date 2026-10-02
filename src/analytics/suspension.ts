@@ -4,6 +4,7 @@ const CHANNEL = 'livro-a-livro-usage-suspension';
 export const USAGE_SUSPENSION_EVENT = 'livro-usage-suspension-changed';
 const TAB_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'server';
 let suspendedInMemory = false;
+let localRevocationPending = false;
 
 function stored(): boolean {
   if (typeof window === 'undefined') return false;
@@ -36,10 +37,12 @@ export function isUsageSuspended(): boolean {
 }
 
 export function suspendUsage() {
+  localRevocationPending = true;
   apply(true, false); broadcast('suspend');
 }
 
 export function clearUsageSuspension() {
+  localRevocationPending = false;
   apply(false, false); broadcast('resume');
 }
 
@@ -49,7 +52,7 @@ export function listenUsageSuspension() {
   const receive = (event: MessageEvent) => {
     if (event.data?.from === TAB_ID) return;
     if (event.data?.value === 'suspend') apply(true, true);
-    else if (event.data?.value === 'resume') apply(false, true);
+    else if (event.data?.value === 'resume' && !localRevocationPending) apply(false, true);
   };
   channel.addEventListener('message', receive);
   return () => { channel.removeEventListener('message', receive); channel.close(); };
