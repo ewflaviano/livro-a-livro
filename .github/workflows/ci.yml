@@ -280,3 +280,4 @@ jobs:
             else
               echo 'Telemetry function is not provisioned yet; operator must apply infra/api.yml.'
             fi
+          fi
