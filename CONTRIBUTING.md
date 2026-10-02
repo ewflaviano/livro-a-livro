@@ -51,7 +51,7 @@ Os testes TypeScript ficam junto ao código (`*.test.ts`/`*.test.tsx`); `test/fi
 5. Envie a branch e abra PR para `main` ligado à issue (`Closes #<número>` quando concluir todos os critérios). Informe comportamento, validação e limites conhecidos. Nunca envie commits diretamente para `main`.
 6. Revise e integre antes de iniciar a próxima issue. OAuth, experimentos e infraestrutura exigem revisão de arquitetura pelo papel SOL definido em [AGENTS.md](AGENTS.md).
 
-A proteção da `main` exige PR, checks `frontend`, `api` e `browser` aprovados, branch atualizada e conversas resolvidas; bloqueia exclusão e force push sem exceção. O GitHub não exige uma aprovação formal de outra conta, como no BioRotina. O responsável decide quando integrar cada PR; contribuições externas devem aguardar essa decisão. O CI valida PRs, mas só publica na AWS depois do merge em `main`.
+A proteção da `main` exige PR, checks `frontend`, `api` e `browser` aprovados, branch atualizada e conversas resolvidas; bloqueia exclusão e force push. Apenas a conta `inovaprog` pode integrar PRs nessa branch. O GitHub não exige aprovação formal de outra pessoa: comentários ou aprovações de contribuidores não autorizam o merge. Aguarde a decisão do mantenedor. O CI valida PRs, mas só publica na AWS depois do merge em `main`.
 
 ## Checks
 
