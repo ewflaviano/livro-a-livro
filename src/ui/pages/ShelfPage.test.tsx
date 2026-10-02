@@ -321,10 +321,13 @@ describe('annual shelf with the real IndexedDB adapter', () => {
       await userEvent.type(screen.getByRole('searchbox', { name: searchLabel }), 'sintético');
       await userEvent.click(screen.getByRole('radio', { name: scopeLabel }));
       await userEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Reading' : 'Lendo' }));
+      await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('reading'));
       expect(screen.getByRole('button', { name: clearLabel })).toBeTruthy();
       await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+      await waitFor(async () => expect((await repository.readPreferences()).filter).toBe('all'));
       expect(screen.getByRole('heading', { name: 'Registro sintético' })).toBeTruthy();
       expect((screen.getByRole('searchbox', { name: searchLabel }) as HTMLInputElement).value).toBe('sintético');
+      expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: searchLabel }));
       expect((screen.getByRole('radio', { name: scopeLabel }) as HTMLInputElement).checked).toBe(true);
       expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
       expect(await repository.readBackupSnapshot()).toMatchObject({ books: before.books, preferences: before.preferences });
