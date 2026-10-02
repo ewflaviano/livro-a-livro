@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { openDatabase } from '../adapters/indexeddb/database';
 import { parseDomain } from '../domain/errors';
+import { isUsageSuspended } from '../analytics/suspension';
 
 const STATE_KEY = 'preferences';
 const stateSchema = z.strictObject({
   seed: z.string().regex(/^[a-f0-9]{64}$/),
+  consentVersion: z.number().int().min(0).max(1).default(0),
   experimentsConsent: z.boolean(),
   telemetryConsent: z.boolean(),
   highestCatalogRevision: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1),
@@ -17,8 +19,12 @@ function randomSeed() {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-function defaultState(): ExperimentState {
-  return { seed: randomSeed(), experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
+export function newExperimentState(): ExperimentState {
+  return { seed: randomSeed(), consentVersion: 1, experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
+}
+export function normalizeExperimentState(value: unknown): ExperimentState {
+  const state = parseDomain(stateSchema, value, 'InvalidLibrary');
+  return state.consentVersion === 1 ? state : { ...state, consentVersion: 1, experimentsConsent: false, telemetryConsent: false, assignments: {} };
 }
 
 export async function openExperimentStore(options: { name?: string } = {}) {
@@ -27,17 +33,20 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     connection.ensureOpen();
     const current = await connection.db.get('experimentState', STATE_KEY);
     if (current === undefined) {
-      const created = defaultState();
+      const created = newExperimentState();
       await connection.db.put('experimentState', created, STATE_KEY);
       return created;
     }
-    return parseDomain(stateSchema, current, 'InvalidLibrary');
+    const state = normalizeExperimentState(current);
+    if (state.consentVersion !== (current as { consentVersion?: number }).consentVersion) await connection.db.put('experimentState', state, STATE_KEY);
+    const usage = await connection.db.get('experimentState', 'usage-consent-v2');
+    return usage === 'accepted' && !isUsageSuspended() ? state : { ...state, experimentsConsent: false, telemetryConsent: false };
   }
   async function patch(patch: Partial<Pick<ExperimentState, 'experimentsConsent' | 'telemetryConsent'>>) {
     connection.ensureOpen();
     const tx = connection.db.transaction('experimentState', 'readwrite');
     const current = await tx.store.get(STATE_KEY);
-    const next = { ...(current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary')), ...patch };
+    const next = { ...(current === undefined ? newExperimentState() : normalizeExperimentState(current)), ...patch };
     await tx.store.put(next, STATE_KEY);
     await tx.done;
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('livro-experiments-changed'));
@@ -51,8 +60,8 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     connection.ensureOpen();
     const tx = connection.db.transaction('experimentState', 'readwrite');
     const current = await tx.store.get(STATE_KEY);
-    const state = current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary');
-    if (!state.experimentsConsent) { await tx.done; return state; }
+    const state = current === undefined ? newExperimentState() : normalizeExperimentState(current);
+    if (!state.experimentsConsent || isUsageSuspended()) { await tx.done; return state; }
     const next = { ...state, assignments: { ...state.assignments, [key]: { assignmentVersion, variant } } };
     await tx.store.put(next, STATE_KEY);
     await tx.done;
@@ -62,8 +71,8 @@ export async function openExperimentStore(options: { name?: string } = {}) {
     connection.ensureOpen();
     const tx = connection.db.transaction('experimentState', 'readwrite');
     const current = await tx.store.get(STATE_KEY);
-    const state = current === undefined ? defaultState() : parseDomain(stateSchema, current, 'InvalidLibrary');
-    if (!state.experimentsConsent || !Number.isSafeInteger(revision) || revision < state.highestCatalogRevision) {
+    const state = current === undefined ? newExperimentState() : normalizeExperimentState(current);
+    if (!state.experimentsConsent || isUsageSuspended() || !Number.isSafeInteger(revision) || revision < state.highestCatalogRevision) {
       await tx.done;
       return false;
     }

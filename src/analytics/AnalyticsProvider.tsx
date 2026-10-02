@@ -5,6 +5,8 @@ import { useLocation } from 'react-router-dom';
 import { disableAnalytics, suspendAnalytics, enableAnalytics, recordPublicPage } from './ga4';
 import { openAnalyticsConsentStore, type AnalyticsChoice } from './consent';
 import { diagnosticsClient } from '../diagnostics/client';
+import { experimentTelemetry } from '../diagnostics/telemetry';
+import { clearUsageSuspension, isUsageSuspended, listenUsageSuspension, suspendUsage, USAGE_SUSPENSION_EVENT } from './suspension';
 
 type View = { choice: AnalyticsChoice; loading: boolean; saving: boolean; error: boolean; analyticsUnavailable: boolean; reviewing: boolean; reloadSuggested: boolean; reload: () => void;
   choose: (choice: Exclude<AnalyticsChoice, null>) => Promise<void>; retry: () => void; review: () => void; closeReview: () => void };
@@ -43,15 +45,17 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       const next = await store.current.read();
       if (ticket !== request.current || !active.current) return;
       const previous = choiceRef.current;
-      if (next === 'rejected') revocationPending.current = false;
+      if (next === 'rejected') { revocationPending.current = false; if (isUsageSuspended()) clearUsageSuspension(); }
+      else if (isUsageSuspended()) revocationPending.current = true;
       choiceRef.current = next ?? null; setChoice(next ?? null); setLoading(false); setError(revocationPending.current);
       if (previous === 'accepted' && next === 'rejected') { lastRecorded.current = null; disableAnalytics(); setAnalyticsUnavailable(false); readyRef.current = false; setTagReady(false); reopenAfterRevoke(); return; }
-      if (revocationPending.current) return;
+      if (revocationPending.current) { experimentTelemetry.setEnabled(false); return; }
       diagnosticsClient.setEnabled(next === 'accepted');
+      if (next !== 'accepted') experimentTelemetry.setEnabled(false);
       await activate(next ?? null, ticket);
     } catch {
       if (ticket !== request.current || !active.current) return;
-      disableAnalytics(); diagnosticsClient.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true);
+      disableAnalytics(); diagnosticsClient.setEnabled(false); experimentTelemetry.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true);
     }
   }
   function openStore(): Promise<void> {
@@ -65,7 +69,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
           unsubscribe.current = next.subscribe(() => { void refresh(); });
         }
         await refresh();
-      } catch { if (active.current) { disableAnalytics(); diagnosticsClient.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true); } }
+      } catch { if (active.current) { disableAnalytics(); diagnosticsClient.setEnabled(false); experimentTelemetry.setEnabled(false); readyRef.current = false; setTagReady(false); setAnalyticsUnavailable(false); setLoading(false); setError(true); } }
     })();
     opening.current = task;
     void task.finally(() => { if (opening.current === task) opening.current = null; });
@@ -75,15 +79,18 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     active.current = true; void openStore();
     const onFocus = () => { if (store.current) void refresh(); };
+    const stopSuspension = listenUsageSuspension();
     window.addEventListener('focus', onFocus);
-    return () => { window.removeEventListener('focus', onFocus); active.current = false; ++request.current; unsubscribe.current(); store.current?.close(); store.current = null; suspendAnalytics(); diagnosticsClient.setEnabled(false); };
+    window.addEventListener('storage', onFocus);
+    window.addEventListener(USAGE_SUSPENSION_EVENT, onFocus);
+    return () => { stopSuspension(); window.removeEventListener('focus', onFocus); window.removeEventListener('storage', onFocus); window.removeEventListener(USAGE_SUSPENSION_EVENT, onFocus); active.current = false; ++request.current; unsubscribe.current(); store.current?.close(); store.current = null; suspendAnalytics(); diagnosticsClient.setEnabled(false); };
   }, []);
   useEffect(() => {
     if (!tagReady || loading || error || choice !== 'accepted' || lastRecorded.current === location.pathname) return;
     recordPublicPage(location.pathname); lastRecorded.current = location.pathname;
   }, [location.pathname, tagReady, loading, error, choice]);
   async function choose(next: Exclude<AnalyticsChoice, null>) {
-    if (next === 'rejected') { revocationPending.current = true; disableAnalytics(); diagnosticsClient.setEnabled(false); setAnalyticsUnavailable(false); }
+    if (next === 'rejected') { revocationPending.current = true; suspendUsage(); disableAnalytics(); diagnosticsClient.setEnabled(false); experimentTelemetry.setEnabled(false); setAnalyticsUnavailable(false); }
     if (next === 'accepted' && revocationPending.current) return;
     if (savingRef.current) { if (next === 'rejected') queuedRejection.current = true; return; }
     if (!store.current) { setError(true); return; }
@@ -97,6 +104,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       writeReleased = true;
       savingRef.current = false; if (active.current) setSaving(false);
       if (queuedRejection.current) { queuedRejection.current = false; void choose('rejected'); return; }
+      clearUsageSuspension();
       pendingChoice.current = null;
       if (ticket !== request.current || !active.current) return;
       if (!queuedRejection.current) revocationPending.current = false;

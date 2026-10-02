@@ -42,19 +42,17 @@ pub trait Sink: Clone + Send + Sync + 'static {
 }
 pub fn router<T: Sink>(sink: T) -> Router {
     Router::new()
-        .route("/v1/telemetry/batches", post(record::<T>))
+        .route(
+            "/v1/telemetry/batches",
+            post(record::<T>).options(|| async { StatusCode::NO_CONTENT }),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024))
         .with_state(sink)
 }
 async fn record<T: Sink>(State(sink): State<T>, Json(batch): Json<Batch>) -> StatusCode {
     if batch.items.is_empty()
         || batch.items.len() > 20
-        || batch.items.iter().any(|item| {
-            item.build.len() > 80
-                || item.experiment.len() > 80
-                || item.variant.len() > 80
-                || item.count == 0
-        })
+        || batch.items.iter().any(|item| !valid(item))
     {
         return StatusCode::BAD_REQUEST;
     }
@@ -62,6 +60,27 @@ async fn record<T: Sink>(State(sink): State<T>, Json(batch): Json<Batch>) -> Sta
         Ok(()) => StatusCode::NO_CONTENT,
         Err(()) => StatusCode::SERVICE_UNAVAILABLE,
     }
+}
+
+fn valid(item: &Item) -> bool {
+    item.build == env!("CARGO_PKG_VERSION")
+        && item.experiment == "shelf-summary-layout"
+        && item.revision == 1
+        && matches!(item.variant.as_str(), "control" | "compact")
+        && (1..=100).contains(&item.count)
+        && matches!(
+            (&item.event, &item.code),
+            (Event::Exposure | Event::Use | Event::Rollback, None)
+                | (
+                    Event::Error,
+                    Some(
+                        Code::CatalogInvalid
+                            | Code::CatalogUnavailable
+                            | Code::SyncUnavailable
+                            | Code::StorageUnavailable
+                    )
+                )
+        )
 }
 
 #[cfg(test)]
@@ -86,7 +105,7 @@ mod tests {
     async fn accepts_only_small_allowlisted_batches() {
         let sink = Memory::default();
         let copy = sink.clone();
-        let body = r#"{"items":[{"build":"1","experiment":"shelf-summary-layout","revision":1,"variant":"control","event":"exposure","count":1}]}"#;
+        let body = include_str!("../../test/fixtures/telemetry/allowed.json");
         let response = router(sink)
             .oneshot(
                 Request::post("/v1/telemetry/batches")
@@ -111,5 +130,43 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn rejects_unlisted_dimensions_before_writing() {
+        for altered in [
+            r#""build":"other""#,
+            r#""experiment":"private-title""#,
+            r#""revision":2"#,
+            r#""variant":"unknown""#,
+            r#""count":0"#,
+            r#""count":101"#,
+        ] {
+            let sink = Memory::default();
+            let copy = sink.clone();
+            let body = include_str!("../../test/fixtures/telemetry/allowed.json");
+            let original = if altered.contains("build") {
+                r#""build":"0.1.0""#
+            } else if altered.contains("experiment") {
+                r#""experiment":"shelf-summary-layout""#
+            } else if altered.contains("revision") {
+                r#""revision":1"#
+            } else if altered.contains("variant") {
+                r#""variant":"control""#
+            } else {
+                r#""count":1"#
+            };
+            let response = router(sink)
+                .oneshot(
+                    Request::post("/v1/telemetry/batches")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body.replace(original, altered)))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert!(copy.0.lock().unwrap().is_empty());
+        }
     }
 }

@@ -16,7 +16,6 @@ const pageSize = 24;
 
 export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const { t, locale } = useLocale();
-  const summaryLayout = useExperiment('shelf-summary-layout');
   const labels = { read: t('readPlural'), reading: t('reading'), 'want-to-read': t('wantToRead'), all: t('all') };
   const statusLabels = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
   const { state, retry, updatePreferences, positions, shelfPages, setShelfPage,
@@ -35,6 +34,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const query = searchText(shelfQuery.trim());
   const isbnQuery = normalizeIsbn(shelfQuery.trim());
   const globalSearch = !!query && shelfSearchScope === 'all';
+  const summaryLayout = useExperiment('shelf-summary-layout', state.status === 'ready' && yearBooks.length > 0 && !globalSearch);
   const booksInScope = globalSearch && state.status === 'ready' ? state.snapshot.books : yearBooks;
   const filtered = filter === 'all' ? booksInScope : booksInScope.filter((book) => book.status === filter);
   const matches = query ? filtered.filter(book =>

@@ -14,6 +14,7 @@ import type { LibraryExport } from '../../backup/schema';
 import { useLocale } from '../../i18n/context';
 import { formatDate, formatNumber, pluralCategory } from '../../i18n/locale';
 import type { MessageKey } from '../../i18n/messages';
+import { useAnalytics } from '../../analytics/AnalyticsProvider';
 
 export function downloadLibrary(data: LibraryExport, suffix: string) {
   const url = URL.createObjectURL(new Blob([serializeBackup(referencedExport(data))], { type: 'application/json;charset=utf-8' }));
@@ -22,6 +23,7 @@ export function downloadLibrary(data: LibraryExport, suffix: string) {
 }
 export function DataPage() {
   const { t, locale } = useLocale();
+  const analytics = useAnalytics();
   const countBooks = (count: number) => t(pluralCategory(locale, count) === 'one' ? 'backupBookOne' : 'backupBooks', { count: formatNumber(locale, count) });
   const dateTime = (value: string) => formatDate(locale, new Date(value), { dateStyle: 'short', timeStyle: 'short' });
   const location = useLocation();
@@ -83,6 +85,12 @@ export function DataPage() {
     {local && <p className="notice-panel" role="status">{t('localTestData')}</p>}
     <BackupPanel />
     <CatalogPanel />
+    <section aria-labelledby="experiment-data-title">
+      <h2 id="experiment-data-title">{t('experimentDataTitle')}</h2>
+      <p>{t('experimentDataExplanation')}</p>
+      <p>{t('experimentDataStatus', { choice: analytics.loading ? t('checking') : analytics.error ? t('checkFailed') : analytics.choice === 'accepted' ? t('accepted') : analytics.choice === 'rejected' ? t('rejected') : t('undecided') })}</p>
+      <button className="button button-secondary" onClick={analytics.review}>{t('reviewChoice')}</button>
+    </section>
     <h2 ref={driveHeading} className="sync-resolution-heading" tabIndex={-1}>{t('optionalGoogleDrive')}</h2>
     {state.login?.status === 'unavailable' && <p>{t('loginCheckFailed')} <button className="button button-secondary" onClick={() => void act(() => coordinator!.refreshLogin())}>{t('verifyConnection')}</button></p>}
     {state.logoutUnconfirmed && <p role="alert">{t('logoutUnconfirmed')}</p>}

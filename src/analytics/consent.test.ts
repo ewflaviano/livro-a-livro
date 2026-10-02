@@ -13,13 +13,18 @@ it('keeps both measurements off despite prior consent keys, then writes one choi
   await db.put('experimentState', { seed: 'a'.repeat(64), experimentsConsent: true, telemetryConsent: true, assignments: {} }, 'preferences');
   await db.put('experimentState', 'accepted', 'ga4-consent-v1');
   await db.put('experimentState', 'accepted', 'diagnostics-consent-v1');
+  await db.put('experimentState', 'accepted', 'usage-consent-v1');
   const second = await openAnalyticsConsentStore({ name, channelFactory: () => null }); stores.push(second);
   expect(await db.get('experimentState', 'ga4-consent-v1')).toBe('rejected');
   expect(await db.get('experimentState', 'diagnostics-consent-v1')).toBe('rejected');
+  expect(await db.get('experimentState', 'usage-consent-v1')).toBe('rejected');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean }).experimentsConsent).toBe(false);
   expect(await first.read()).toBeNull(); await first.write('accepted'); expect(await first.read()).toBe('accepted');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean; telemetryConsent: boolean })).toMatchObject({ experimentsConsent: true, telemetryConsent: true });
   expect(await db.get('experimentState', 'ga4-consent-v1')).toBe('rejected');
   expect(await db.get('experimentState', 'diagnostics-consent-v1')).toBe('rejected');
   expect(await second.read()).toBe('accepted'); await second.write('rejected'); expect(await first.read()).toBe('rejected');
+  expect((await db.get('experimentState', 'preferences') as { experimentsConsent: boolean; telemetryConsent: boolean })).toMatchObject({ experimentsConsent: false, telemetryConsent: false });
 });
 it('broadcasts only invalidation, forcing another tab to reread IDB', async () => {
   const name = crypto.randomUUID(); names.push(name);
@@ -35,6 +40,20 @@ it('broadcasts only invalidation, forcing another tab to reread IDB', async () =
   await a.write('accepted'); await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(channels[0].postMessage).toHaveBeenCalledWith('changed'); expect(await changed.mock.results[0].value).toBe('accepted');
   expect(channels.slice(1, 3).every(channel => channel.postMessage.mock.calls.length === 1)).toBe(true);
+});
+it('notifies a tab still using the previous combined consent when migrating', async () => {
+  const name = crypto.randomUUID(); names.push(name);
+  const initialized = await openAnalyticsConsentStore({ name, channelFactory: () => null }); initialized.close();
+  const db = await openDB<LibraryDatabase>(name); stores.push(db);
+  await db.put('experimentState', 'accepted', 'usage-consent-v1');
+  const sent = new Map<string, ReturnType<typeof vi.fn>>();
+  const store = await openAnalyticsConsentStore({ name, channelFactory: channel => {
+    const postMessage = vi.fn(); sent.set(channel, postMessage);
+    return { postMessage, close() {}, onmessage: null } as unknown as BroadcastChannel;
+  } }); stores.push(store);
+  expect(await db.get('experimentState', 'usage-consent-v1')).toBe('rejected');
+  expect(sent.get('livro-a-livro-usage-consent')).toHaveBeenCalledWith('changed');
+  expect(await store.read()).toBeNull();
 });
 it('does not announce or accept a failed transaction', async () => {
   const name = crypto.randomUUID(); names.push(name);

@@ -62,7 +62,7 @@ it('retains the material privacy topics below the summary', () => {
     'não recebe livros, notas, avaliações, capas, snapshots ou backups',
     'Revogar o acesso não significa apagar automaticamente cópias',
     'dez minutos', '30 dias', '180 dias', '24 horas',
-    'não carrega o script do Analytics nem envia esses códigos',
+    'não carrega o script do Analytics, não consulta o catálogo de experimentos',
     'uma escolha única para contar visitas', 'mesmo aceite do aviso permite',
     'Open Library', 'Pesquisar no Google Books', 'somente quando você clica', '14 dias', 'ewanderson.flaviano@gmail.com',
   ]) expect(text).toContain(phrase);

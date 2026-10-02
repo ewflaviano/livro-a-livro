@@ -1,35 +1,27 @@
 # Experimentos e métricas
 
-Participação em experimentos e métricas técnicas é opcional, independente do Google Drive e desligada por padrão. Nenhuma escolha altera a biblioteca local.
+O aviso de uso do aplicativo oferece uma escolha conjunta para visitas, diagnóstico de erros, experimentos de interface e contagens técnicas dos experimentos. A escolha é opcional, local ao navegador e independente do Drive. O aceite antigo (`usage-consent-v1`) não ativa as novas finalidades: a pessoa precisa aceitar o texto ampliado (`usage-consent-v2`). Sem esse aceite, o catálogo não é consultado e a telemetria de experimentos não é enviada. A revogação interrompe as consultas, cancela envios em andamento e descarta contadores em memória. Se a gravação da revogação falhar, um bloqueio em memória e, quando disponível, em armazenamento local/sessão mantém as funções opcionais desligadas até uma escolha durável; abas abertas recebem o aviso por canal e evento de armazenamento. Se todas as formas de gravação falharem, o bloqueio só vale até a aba ser recarregada, e a mensagem de erro pede nova tentativa antes disso. Sair e apagar dados locais também apaga a escolha.
 
-O diagnóstico de erros da issue #95 tem rota própria. A issue #97 unifica sua escolha com a de visitas do Google Analytics; essa escolha não usa o catálogo, a semente, as atribuições ou a telemetria desta página e não ativa experimentos. A integração de experimentos continua pendente da issue #47.
+## Catálogo e distribuição
 
-## Estado da integração — 2 out 2026
+O código só reconhece `shelf-summary-layout` e as variantes `control` e `compact`. O catálogo remoto escolhe percentuais e um *kill switch*, mas não executa código. O cliente usa 10.000 faixas e uma semente aleatória guardada no IndexedDB; semente e atribuições não entram no backup, Drive, API ou telemetria. O catálogo é revisto a cada 60 segundos, ao retornar à aba e ao voltar a conexão. Catálogo ausente, inválido, vencido, indisponível, com revisão inferior ou desligado resulta em `control`. O catálogo inicial de produção é vazio: nenhum experimento está ativo.
 
-A issue #47 conecta o catálogo ao runtime e aplica uma variante visual reversível ao resumo da estante. O rollout usa 10.000 buckets estáveis por seed local e versão de atribuição. Reduzir o percentual retira imediatamente quem saiu da faixa na próxima revalidação; o kill switch prevalece. Sem consentimento de experimentos, o cliente não consulta o catálogo. O valor inicial da tabela é ausente e corresponde a controle.
-
-O endpoint de catálogo fica numa Lambda separada, com permissão apenas de leitura da tabela de experimentos. O deploy de infraestrutura e código precisa ocorrer antes da primeira publicação de configuração. A preferência de experimentos ainda não tem nova interface de adesão: após a decisão da issue #63, não adicionar outro convite ou caixa sem texto/finalidade aprovados. Por isso a variante permanece desligada para pessoas comuns até essa decisão. A telemetria própria da issue #47 também permanece sem runtime/ingestão publicados.
-
-Para conferir a próxima revisão antes de publicar:
+O operador publica uma revisão maior após revisar o resultado sem `--apply`:
 
 ```sh
 npm run publish:experiment -- --key shelf-summary-layout --expected-revision 0 --revision 1 --rollout 5 --enabled
 ```
 
-O comando imprime o catálogo. Repetir com `--apply` grava na tabela por compare-and-swap via credenciais AWS do operador. `--rollout` aceita 0 a 100%, `--kill-switch` desliga a variante mesmo com `--enabled`, e toda reversão usa uma revisão maior. Para desligar, publicar nova revisão com `--kill-switch` e conferir `GET /v1/experiments/catalog`; não apagar a linha nem reduzir o contador. O comando não lê ou envia bibliotecas.
+`--apply` grava a revisão por compare-and-swap no DynamoDB. Para desligar, publique uma revisão maior com `--kill-switch` e confirme `GET /v1/experiments/catalog`. Não reduza a revisão nem apague a linha. A versão de atribuição de `shelf-summary-layout` é 1.
 
-## Experimentos
+## Contagens
 
-O aplicativo só reconhece chaves e variantes compiladas em `src/experiments/registry.ts`. Um catálogo remoto versionado pode ativar ou desligar variantes já revisadas, mas não executa código, não cria uma finalidade nova de dados e não habilita o Drive. A atribuição usa uma semente aleatória guardada somente no IndexedDB deste dispositivo; ela não entra no backup, Drive, API ou telemetria.
+O cliente só cria contadores quando a escolha conjunta está aceita e um experimento foi atribuído. O buffer fica em memória, sem fila persistente, `sendBeacon`, Service Worker ou retry automático. Um lote tem até 20 combinações e 10 KiB; são no máximo quatro lotes por hora por aba visível. A requisição usa `credentials: omit`, `redirect: error` e `no-referrer`. A revogação aborta requisições em andamento.
 
-Todo catálogo inválido, expirado, indisponível ou com *kill switch* ativo resulta no controle. O catálogo inicial não ativa nenhum experimento.
+A Lambda de ingestão aceita somente a tupla compilada `build=0.1.0`, `experiment=shelf-summary-layout`, `revision=1`, `variant=control|compact`, evento enumerado e, em erro, código técnico enumerado; cada contagem é de 1 a 100. Aqui `revision` é a `assignmentVersion`, estável quando só o percentual ou o kill switch mudam; não é `catalogRevision`. Rejeita campos adicionais, texto livre, variantes desconhecidas e lotes acima dos limites antes do armazenamento. Uma nova versão de atribuição que precise de métricas exige atualizar a lista compilada no cliente e na API antes de ativá-la.
 
-A maior revisão de catálogo aceita fica no estado local de experimentos no IndexedDB. Recarregar a página ou abrir outra aba não permite reativar uma revisão inferior enquanto esse estado existir. A publicação no DynamoDB também exige a revisão anterior por condição atômica.
+A Lambda tem papel próprio com apenas `UpdateItem` na tabela de agregados diários e escrita em seu grupo de logs. A tabela não contém evento bruto, pessoa, IP, cookie, semente, livro, nota, avaliação, busca, URL, token ou identificador; o índice primário combina somente dia e dimensões enumeradas. Não há índice por pessoa. O TTL marca os agregados para exclusão após 30 dias; a remoção física assíncrona pode demorar mais. Não há PITR nessa tabela. Relatórios operacionais devem filtrar dias válidos e ocultar células com menos de 20 contagens; sem identificador, uma contagem não representa uma pessoa única. O API Gateway não grava access logs/payloads desta rota e aplica throttling; a Lambda não registra corpo ou cabeçalhos.
 
-## Métricas técnicas
+## Implantação
 
-Quando integrado e autorizado, o cliente de métricas foi projetado para manter em memória contadores de eventos enumerados. O envio é sem cookies (`credentials: omit`), em no máximo quatro lotes por hora; um lote contém até 20 combinações e não recebe retry automático. Ao revogar a opção, o buffer é descartado.
-
-Os contratos proíbem títulos, autores, ISBNs, notas, avaliações, UUIDs, seed, conexão Drive, tokens, URLs, IPs como dimensão, horários precisos, stacks e texto livre. A API deverá aceitar apenas combinações de contadores permitidas; a implementação atual ainda precisa da validação descrita em S3. A futura composição de produção agregará esses contadores por dia. Sem identificador, os contadores não representam pessoas únicas.
-
-O catálogo e a ingestão estão em módulos Rust separados da autenticação OAuth: não recebem nem importam credenciais ou contratos de livros.
+O pipeline testa e empacota `auth`, `revocation`, `diagnostics`, `experiments` e `telemetry`. O papel do CI só publica código em Lambdas existentes; o operador implanta infraestrutura com `infra/api.yml` e `scripts/provision-api.sh`, usando change set revisado. A implantação da rota de catálogo deve acontecer antes de qualquer configuração ativa. A rota de telemetria deve retornar 204 para um lote sintético permitido e rejeitar tuplas fora da lista. Verifique CORS/OPTIONS, ausência de cookies, papéis IAM, TTL e que AuthTable/KMS/Secrets não entraram no papel de telemetria. A biblioteca local continua funcional quando as rotas falham.

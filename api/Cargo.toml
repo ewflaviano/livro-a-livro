@@ -29,6 +29,11 @@ path = "src/bin/experiments.rs"
 required-features = ["lambda"]
 
 [[bin]]
+name = "telemetry"
+path = "src/bin/telemetry.rs"
+required-features = ["lambda"]
+
+[[bin]]
 name = "auth-admin"
 path = "src/bin/auth-admin.rs"
 required-features = ["aws"]

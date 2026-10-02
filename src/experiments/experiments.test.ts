@@ -6,6 +6,8 @@ import { fetchCatalog, parseCatalog } from './catalog';
 import { isExperimentKey } from './registry';
 import { openExperimentStore } from './store';
 import { createTelemetry } from '../diagnostics/telemetry';
+import { openAnalyticsConsentStore } from '../analytics/consent';
+import allowedTelemetry from '../../test/fixtures/telemetry/allowed.json';
 
 const validCatalog = {
   catalogRevision: 4,
@@ -26,6 +28,9 @@ describe('local experiment gates', () => {
     expect(initial.telemetryConsent).toBe(false);
     expect(initial.seed).toMatch(/^[a-f0-9]{64}$/);
     const updated = await store.patch({ experimentsConsent: true });
+    expect((await store.read()).experimentsConsent).toBe(false);
+    const consent = await openAnalyticsConsentStore({ name });
+    await consent.write('accepted'); consent.close();
     expect(await store.acceptCatalogRevision(4)).toBe(true);
     await store.saveAssignment('shelf-summary-layout', 1, 'compact');
     store.close();
@@ -43,14 +48,14 @@ describe('local experiment gates', () => {
     expect(parseCatalog({ ...validCatalog, expiresAt: '2000-01-01T00:00:00.000Z' })).toBeNull();
     expect(parseCatalog({ ...validCatalog, experiments: [{ ...validCatalog.experiments[0], key: 'unknown' }] })?.experiments).toEqual([]);
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'a'.repeat(64), experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
+    const state = { seed: 'a'.repeat(64), consentVersion: 1, experimentsConsent: false, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
     expect(await assignExperiment(experiment, state, { build: '1', driveConnected: false })).toBeNull();
     expect(await assignExperiment({ ...experiment, killSwitch: true }, { ...state, experimentsConsent: true }, { build: '1', driveConnected: false })).toBeNull();
   });
 
   it('removes a saved participant when rollout shrinks and honours the kill switch', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
+    const state = { seed: 'b'.repeat(64), consentVersion: 1, experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
       assignments: { 'shelf-summary-layout': { assignmentVersion: 1, variant: 'compact' } } };
     expect(await assignExperiment({ ...experiment, rolloutBasisPoints: 0 }, state, { build: '0.1.0', driveConnected: false })).toBeNull();
     expect(await assignExperiment({ ...experiment, killSwitch: true }, state, { build: '0.1.0', driveConnected: false })).toBeNull();
@@ -65,7 +70,7 @@ describe('local experiment gates', () => {
 
   it('compares build versions numerically', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
+    const state = { seed: 'b'.repeat(64), consentVersion: 1, experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1, assignments: {} };
     const entry = { ...experiment, eligibility: { ...experiment.eligibility, minBuild: '0.9.0' } };
     expect(await assignExperiment(entry, state, { build: '0.10.0', driveConnected: false })).not.toBeNull();
     expect(await assignExperiment(entry, state, { build: '0.8.9', driveConnected: false })).toBeNull();
@@ -81,7 +86,7 @@ describe('local experiment gates', () => {
 
   it('assigns deterministically and preserves a matching saved assignment', async () => {
     const experiment = parseCatalog(validCatalog)!.experiments[0]!;
-    const state = { seed: 'b'.repeat(64), experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
+    const state = { seed: 'b'.repeat(64), consentVersion: 1, experimentsConsent: true, telemetryConsent: false, highestCatalogRevision: -1,
       assignments: { 'shelf-summary-layout': { assignmentVersion: 1, variant: 'compact' } } };
     await expect(assignExperiment(experiment, state, { build: '1', driveConnected: false })).resolves.toEqual({ key: 'shelf-summary-layout', variant: 'compact', assignmentVersion: 1 });
   });
@@ -93,13 +98,34 @@ describe('opt-in telemetry', () => {
     vi.stubGlobal('navigator', { onLine: true });
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     const telemetry = createTelemetry('https://api.example.test', fetcher);
-    telemetry.record({ build: '1', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
+    telemetry.record({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
     expect(telemetry.snapshot()).toEqual([]);
     telemetry.setEnabled(true);
-    telemetry.record({ build: '1', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
-    telemetry.record({ build: '1', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
+    telemetry.record({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
+    telemetry.record({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'compact', event: 'use' });
     expect(await telemetry.flush()).toBe(true);
     expect(fetcher).toHaveBeenCalledWith('https://api.example.test/v1/telemetry/batches', expect.objectContaining({ credentials: 'omit' }));
     expect(JSON.parse(fetcher.mock.calls[0]![1].body).items[0]).toMatchObject({ count: 2, event: 'use' });
+    expect(allowedTelemetry.items[0]).toMatchObject({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'control' });
+  });
+  it('rejects arbitrary dimensions and aborts an in-flight submission on revocation', async () => {
+    vi.stubGlobal('navigator', { onLine: true });
+    let signal: AbortSignal | undefined;
+    const fetcher = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      signal = options.signal as AbortSignal;
+      signal.addEventListener('abort', () => reject(new DOMException('revoked', 'AbortError')));
+    })) as unknown as typeof fetch;
+    const telemetry = createTelemetry('https://api.example.test', fetcher);
+    telemetry.setEnabled(true);
+    telemetry.record({ build: 'private-title', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' });
+    const unsafe = { build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' as const, title: 'private book' };
+    telemetry.record(unsafe);
+    expect(telemetry.snapshot()).toEqual([]);
+    telemetry.record({ build: '0.1.0', experiment: 'shelf-summary-layout', revision: 1, variant: 'control', event: 'exposure' });
+    const pending = telemetry.flush();
+    telemetry.setEnabled(false);
+    expect(signal?.aborted).toBe(true);
+    expect(await pending).toBe(false);
+    expect(telemetry.snapshot()).toEqual([]);
   });
 });
