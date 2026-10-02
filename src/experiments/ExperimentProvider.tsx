@@ -4,7 +4,7 @@ import { fetchCatalog, type Catalog } from './catalog';
 import { openExperimentStore } from './store';
 import { experimentRegistry, type ExperimentKey, type ExperimentVariant } from './registry';
 import { experimentTelemetry } from '../diagnostics/telemetry';
-import { isUsageSuspended, USAGE_SUSPENSION_EVENT } from '../analytics/suspension';
+import { isUsageSuspended, listenUsageSuspension, USAGE_SUSPENSION_EVENT } from '../analytics/suspension';
 
 const API = import.meta.env.VITE_EXPERIMENTS_API_URL || '';
 const Context = createContext<{ catalog: Catalog | null; variants: Partial<Record<ExperimentKey, string>>; assigned: Partial<Record<ExperimentKey, string>> }>({ catalog: null, variants: {}, assigned: {} });
@@ -69,6 +69,7 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
     };
     const onFocus = () => { clear(); if (document.visibilityState === 'visible') void refresh(); };
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('livro-experiments');
+    const stopSuspension = listenUsageSuspension();
     channel?.addEventListener('message', onFocus);
     window.addEventListener('livro-experiments-changed', onFocus);
     window.addEventListener(USAGE_SUSPENSION_EVENT, onFocus);
@@ -79,7 +80,7 @@ export function ExperimentProvider({ children, baseUrl = API }: { children: Reac
     const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 60_000);
     void refresh();
     return () => {
-      disposed = true; controller?.abort(); experimentTelemetry.setEnabled(false); channel?.close(); window.clearInterval(interval); window.clearTimeout(expiryTimer);
+      disposed = true; controller?.abort(); experimentTelemetry.setEnabled(false); channel?.close(); stopSuspension(); window.clearInterval(interval); window.clearTimeout(expiryTimer);
       window.removeEventListener('livro-experiments-changed', onFocus);
       window.removeEventListener(USAGE_SUSPENSION_EVENT, onFocus);
       window.removeEventListener('storage', onFocus);

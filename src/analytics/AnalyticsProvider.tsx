@@ -6,7 +6,7 @@ import { disableAnalytics, suspendAnalytics, enableAnalytics, recordPublicPage }
 import { openAnalyticsConsentStore, type AnalyticsChoice } from './consent';
 import { diagnosticsClient } from '../diagnostics/client';
 import { experimentTelemetry } from '../diagnostics/telemetry';
-import { clearUsageSuspension, isUsageSuspended, suspendUsage } from './suspension';
+import { clearUsageSuspension, isUsageSuspended, listenUsageSuspension, suspendUsage, USAGE_SUSPENSION_EVENT } from './suspension';
 
 type View = { choice: AnalyticsChoice; loading: boolean; saving: boolean; error: boolean; analyticsUnavailable: boolean; reviewing: boolean; reloadSuggested: boolean; reload: () => void;
   choose: (choice: Exclude<AnalyticsChoice, null>) => Promise<void>; retry: () => void; review: () => void; closeReview: () => void };
@@ -79,8 +79,11 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     active.current = true; void openStore();
     const onFocus = () => { if (store.current) void refresh(); };
+    const stopSuspension = listenUsageSuspension();
     window.addEventListener('focus', onFocus);
-    return () => { window.removeEventListener('focus', onFocus); active.current = false; ++request.current; unsubscribe.current(); store.current?.close(); store.current = null; suspendAnalytics(); diagnosticsClient.setEnabled(false); };
+    window.addEventListener('storage', onFocus);
+    window.addEventListener(USAGE_SUSPENSION_EVENT, onFocus);
+    return () => { stopSuspension(); window.removeEventListener('focus', onFocus); window.removeEventListener('storage', onFocus); window.removeEventListener(USAGE_SUSPENSION_EVENT, onFocus); active.current = false; ++request.current; unsubscribe.current(); store.current?.close(); store.current = null; suspendAnalytics(); diagnosticsClient.setEnabled(false); };
   }, []);
   useEffect(() => {
     if (!tagReady || loading || error || choice !== 'accepted' || lastRecorded.current === location.pathname) return;
