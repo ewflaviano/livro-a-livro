@@ -24,6 +24,8 @@ O aplicativo só reconhece chaves e variantes compiladas em `src/experiments/reg
 
 Todo catálogo inválido, expirado, indisponível ou com *kill switch* ativo resulta no controle. O catálogo inicial não ativa nenhum experimento.
 
+A maior revisão de catálogo aceita fica no estado local de experimentos no IndexedDB. Recarregar a página ou abrir outra aba não permite reativar uma revisão inferior enquanto esse estado existir. A publicação no DynamoDB também exige a revisão anterior por condição atômica.
+
 ## Métricas técnicas
 
 Quando integrado e autorizado, o cliente de métricas foi projetado para manter em memória contadores de eventos enumerados. O envio é sem cookies (`credentials: omit`), em no máximo quatro lotes por hora; um lote contém até 20 combinações e não recebe retry automático. Ao revogar a opção, o buffer é descartado.
