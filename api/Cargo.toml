@@ -24,6 +24,11 @@ path = "src/bin/diagnostics.rs"
 required-features = ["lambda"]
 
 [[bin]]
+name = "experiments"
+path = "src/bin/experiments.rs"
+required-features = ["lambda"]
+
+[[bin]]
 name = "auth-admin"
 path = "src/bin/auth-admin.rs"
 required-features = ["aws"]
@@ -48,6 +53,7 @@ serde_json = "1"
 sha2 = "0.10"
 subtle = "2"
 tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
+time = { version = "0.3", features = ["formatting"] }
 url = "2"
 zeroize = "1"
 

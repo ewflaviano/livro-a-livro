@@ -1,3 +1,4 @@
+import { ExperimentProvider } from '../experiments/ExperimentProvider';
 import { AnalyticsProvider } from '../analytics/AnalyticsProvider';
 import { DiagnosticsProvider } from '../diagnostics/DiagnosticsProvider';
 import { ErrorBoundary } from '../diagnostics/ErrorBoundary';
@@ -23,7 +24,7 @@ import { SupportPage } from '../ui/pages/SupportPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
-    <DiagnosticsProvider><ErrorBoundary><LibraryProvider openService={openService}><SyncProvider><AnalyticsProvider><PwaStartup />
+    <DiagnosticsProvider><ErrorBoundary><LibraryProvider openService={openService}><SyncProvider><AnalyticsProvider><ExperimentProvider><PwaStartup />
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
@@ -41,7 +42,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
-    </AnalyticsProvider></SyncProvider></LibraryProvider></ErrorBoundary></DiagnosticsProvider>
+    </ExperimentProvider></AnalyticsProvider></SyncProvider></LibraryProvider></ErrorBoundary></DiagnosticsProvider>
   );
 }
 

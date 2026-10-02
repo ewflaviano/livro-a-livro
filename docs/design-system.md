@@ -271,7 +271,7 @@ Consumo: importar `tokens.css`, aplicar tokens semânticos nos componentes e man
 }
 ```
 
-Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. A escolha conjunta de visitas e erros da issue #97 usa aviso compacto suspenso na parte inferior, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Configurações. Experimentos e métricas técnicas próprios continuam inativos; ver [estado da integração](experiments.md).
+Experimentos devem ser pequenos, descritos como “Experimento”, com efeito/limite explícitos, sem ativar serviços externos por surpresa. Não transformar experimento em promessa de produto; o catálogo original não desenha uma área de experimentos. A escolha conjunta de visitas e erros da issue #97 usa aviso compacto suspenso na parte inferior, com Recusar, Aceitar e Saiba mais; o acesso à revisão fica em Configurações. O gate da variante compacta das métricas está integrado, mas continua inativo sem escolha específica de experimentos e catálogo publicado; métricas técnicas próprias seguem sem envio. A variante altera apenas espaçamento e tamanho do texto, não os números. Ver [estado da integração](experiments.md).
 
 Atualizar guia, tokens e catálogo juntos. Novos estados exigem conteúdo, semântica, comportamento de teclado, variante estreita e contraste revisados. Mudar uma cor primitiva requer conferir todos os papéis que a usam. A documentação é referência de projeto, não declaração de que armazenamento, busca, compartilhamento ou sincronização já existem.
 

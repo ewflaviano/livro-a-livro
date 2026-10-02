@@ -33,7 +33,7 @@ fi
 [[ "$API_SECRET_ARN" == arn:aws:secretsmanager:sa-east-1:*:secret:livro-a-livro/production/auth-* ]]
 [[ "$API_CERTIFICATE_ARN" == arn:aws:acm:sa-east-1:*:certificate/* ]]
 
-api_functions=(diagnostics)
+api_functions=(diagnostics experiments)
 if [[ "${API_DIAGNOSTICS_ONLY:-false}" != true ]]; then api_functions+=(auth revocation); fi
 for api_function in "${api_functions[@]}"; do
   test -f "$API_ARTIFACT_DIR/$api_function/bootstrap.zip"
@@ -50,4 +50,5 @@ aws --region sa-east-1 cloudformation deploy \
     "SecretArn=$API_SECRET_ARN" "ArtifactBucket=$API_ARTIFACT_BUCKET" \
     "AuthCodeKey=$auth_key" \
     "RevocationCodeKey=$revocation_key" \
-    "DiagnosticsCodeKey=releases/$API_RELEASE_ID/diagnostics.zip"
+    "DiagnosticsCodeKey=releases/$API_RELEASE_ID/diagnostics.zip" \
+    "ExperimentsCodeKey=releases/$API_RELEASE_ID/experiments.zip"

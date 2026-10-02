@@ -24,6 +24,7 @@ jobs:
       - run: npm run build
         env:
           VITE_DRIVE_ENABLED: 'true'
+          VITE_EXPERIMENTS_API_URL: 'https://api.livroalivro.app.br'
       - name: Verify only public assets are built
         run: |
           test -f dist/index.html
@@ -71,7 +72,7 @@ jobs:
           "$RUNNER_TEMP/lambda-tools/bin/pip" install cargo-lambda==1.9.2 ziglang==0.14.1
           echo "$RUNNER_TEMP/lambda-tools/bin" >> "$GITHUB_PATH"
       - name: Build Lambda release artifacts
-        run: cargo lambda build --manifest-path api/Cargo.toml --release --locked --all-features --bin auth --bin revocation --bin diagnostics --x86-64 --output-format zip
+        run: cargo lambda build --manifest-path api/Cargo.toml --release --locked --all-features --bin auth --bin revocation --bin diagnostics --bin experiments --x86-64 --output-format zip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: api-release
@@ -101,6 +102,7 @@ jobs:
       - run: npm run build
         env:
           VITE_DRIVE_ENABLED: 'true'
+          VITE_EXPERIMENTS_API_URL: 'https://api.livroalivro.app.br'
       - name: Publish static assets before entry points
         run: |
           BUCKET="$(aws cloudformation describe-stacks --stack-name livro-a-livro-frontend --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue | [0]" --output text)"
@@ -126,6 +128,7 @@ jobs:
       auth: ${{ steps.detect.outputs.auth }}
       revocation: ${{ steps.detect.outputs.revocation }}
       diagnostics: ${{ steps.detect.outputs.diagnostics }}
+      experiments: ${{ steps.detect.outputs.experiments }}
       workflow: ${{ steps.detect.outputs.workflow }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -137,35 +140,41 @@ jobs:
           auth=false
           revocation=false
           diagnostics=false
+          experiments=false
           workflow=false
           if [[ "$GITHUB_EVENT_NAME" == 'push' ]] && ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- .github/workflows/ci.yml; then workflow=true; fi
           if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
             auth=true
             revocation=true
             diagnostics=true
+            experiments=true
           elif ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/; then
             shared=(api/Cargo.lock api/src/aws api/src/config.rs api/src/google.rs api/src/lib.rs api/src/metrics.rs api/src/ports.rs api/src/service.rs)
             if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- "${shared[@]}"; then
               auth=true
               revocation=true
               diagnostics=true
+              experiments=true
             fi
             if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/http.rs api/src/bin/auth.rs; then auth=true; fi
             if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/bin/revocation.rs; then revocation=true; fi
             if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/diagnostics.rs api/src/bin/diagnostics.rs; then diagnostics=true; fi
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/src/experiments.rs api/src/bin/experiments.rs; then experiments=true; fi
             # Manifest-only changes may affect every binary. Adding a diagnostics bin
             # alongside its source does not republish unchanged auth/worker functions.
-            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/Cargo.toml && [[ "$auth$revocation$diagnostics" == falsefalsefalse ]]; then
+            if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- api/Cargo.toml && [[ "$auth$revocation$diagnostics$experiments" == falsefalsefalsefalse ]]; then
               auth=true
               revocation=true
               diagnostics=true
+              experiments=true
             fi
           fi
           echo "auth=$auth" >> "$GITHUB_OUTPUT"
           echo "revocation=$revocation" >> "$GITHUB_OUTPUT"
           echo "diagnostics=$diagnostics" >> "$GITHUB_OUTPUT"
+          echo "experiments=$experiments" >> "$GITHUB_OUTPUT"
           echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
-          if [[ "$auth$revocation$diagnostics" == falsefalsefalse ]]; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
+          if [[ "$auth$revocation$diagnostics$experiments" == falsefalsefalsefalse ]]; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
 
   verify_api_oidc:
     if: github.event_name == 'push' && needs.api_changes.outputs.workflow == 'true'
@@ -179,7 +188,7 @@ jobs:
         with: { name: api-release, path: release }
       - name: Verify tested Lambda artifacts without publishing
         run: |
-          for FUNCTION in auth revocation diagnostics; do
+          for FUNCTION in auth revocation diagnostics experiments; do
             ZIP="release/$FUNCTION/bootstrap.zip"
             test -s "$ZIP"
             unzip -tq "$ZIP" >/dev/null
@@ -216,6 +225,7 @@ jobs:
           PUBLISH_AUTH: ${{ needs.api_changes.outputs.auth }}
           PUBLISH_REVOCATION: ${{ needs.api_changes.outputs.revocation }}
           PUBLISH_DIAGNOSTICS: ${{ needs.api_changes.outputs.diagnostics }}
+          PUBLISH_EXPERIMENTS: ${{ needs.api_changes.outputs.experiments }}
         run: |
           test -n "$ARTIFACT_BUCKET"
           for FUNCTION in auth revocation; do
@@ -240,5 +250,15 @@ jobs:
               aws lambda wait function-updated --function-name livro-a-livro-diagnostics
             else
               echo 'Diagnostics function is not provisioned yet; operator must apply infra/api.yml.'
+            fi
+          fi
+          if [[ "$PUBLISH_EXPERIMENTS" == true ]]; then
+            KEY="releases/$RELEASE_ID/experiments.zip"
+            aws s3 cp release/experiments/bootstrap.zip "s3://$ARTIFACT_BUCKET/$KEY" --only-show-errors
+            if aws lambda get-function-configuration --function-name livro-a-livro-experiments --query 'FunctionName' --output text >/dev/null 2>&1; then
+              aws lambda update-function-code --function-name livro-a-livro-experiments --s3-bucket "$ARTIFACT_BUCKET" --s3-key "$KEY" --query '{State:State,LastUpdateStatus:LastUpdateStatus}'
+              aws lambda wait function-updated --function-name livro-a-livro-experiments
+            else
+              echo 'Experiments function is not provisioned yet; operator must apply infra/api.yml.'
             fi
           fi
