@@ -11,6 +11,6 @@ else try { build = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8'
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __BUILD_ID__: JSON.stringify(build) },
-  build: { rollupOptions: { input: { app: 'index.html', privacy: 'privacidade.html', privacyEn: 'privacy.html' } } },
+  build: { rollupOptions: { input: { app: 'index.html', about: 'sobre.html', aboutEn: 'about.html', privacy: 'privacidade.html', privacyEn: 'privacy.html' } } },
   plugins: [react(), pwaPlugin()],
 });

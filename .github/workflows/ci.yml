@@ -25,6 +25,7 @@ jobs:
         env:
           VITE_DRIVE_ENABLED: 'true'
           VITE_EXPERIMENTS_API_URL: 'https://api.livroalivro.app.br'
+      - run: node scripts/search-index-gate.mjs
       - name: Verify only public assets are built
         run: |
           test -f dist/index.html
@@ -112,14 +113,18 @@ jobs:
           test -n "$DISTRIBUTION" && test "$DISTRIBUTION" != None
           aws s3 sync dist/assets/ "s3://$BUCKET/assets/" --cache-control 'public,max-age=31536000,immutable'
           aws s3 sync dist/icons/ "s3://$BUCKET/icons/" --cache-control 'public,max-age=300,must-revalidate'
-          aws s3 sync dist/ "s3://$BUCKET/" --exclude 'assets/*' --exclude 'icons/*' --exclude 'index.html' --exclude 'privacidade.html' --exclude 'privacy.html' --exclude 'manifest.webmanifest' --exclude 'manifest-en.webmanifest' --exclude 'sw.js' --cache-control 'public,max-age=300,must-revalidate'
+          aws s3 sync dist/ "s3://$BUCKET/" --exclude 'assets/*' --exclude 'icons/*' --exclude 'index.html' --exclude 'sobre.html' --exclude 'about.html' --exclude 'privacidade.html' --exclude 'privacy.html' --exclude 'robots.txt' --exclude 'sitemap.xml' --exclude 'manifest.webmanifest' --exclude 'manifest-en.webmanifest' --exclude 'sw.js' --cache-control 'public,max-age=300,must-revalidate'
           aws s3 cp dist/manifest.webmanifest "s3://$BUCKET/manifest.webmanifest" --cache-control 'no-cache'
           aws s3 cp dist/manifest-en.webmanifest "s3://$BUCKET/manifest-en.webmanifest" --cache-control 'no-cache'
           aws s3 cp dist/privacidade.html "s3://$BUCKET/privacidade.html" --cache-control 'no-cache'
           aws s3 cp dist/privacy.html "s3://$BUCKET/privacy.html" --cache-control 'no-cache'
+          aws s3 cp dist/sobre.html "s3://$BUCKET/sobre.html" --cache-control 'no-cache' --content-type 'text/html; charset=utf-8'
+          aws s3 cp dist/about.html "s3://$BUCKET/about.html" --cache-control 'no-cache' --content-type 'text/html; charset=utf-8'
+          aws s3 cp dist/robots.txt "s3://$BUCKET/robots.txt" --cache-control 'no-cache' --content-type 'text/plain; charset=utf-8'
+          aws s3 cp dist/sitemap.xml "s3://$BUCKET/sitemap.xml" --cache-control 'no-cache' --content-type 'application/xml; charset=utf-8'
           aws s3 cp dist/sw.js "s3://$BUCKET/sw.js" --cache-control 'no-cache'
           aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache'
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest' '/manifest-en.webmanifest' '/privacidade.html' '/privacy.html'
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/index.html' '/sw.js' '/manifest.webmanifest' '/manifest-en.webmanifest' '/privacidade.html' '/privacy.html' '/sobre.html' '/about.html' '/robots.txt' '/sitemap.xml'
 
   api_changes:
     if: github.event_name != 'pull_request'
