@@ -82,7 +82,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
 
   return <section className="shelf-page" aria-labelledby="shelf-title">
     <div className="shelf-heading">
-      <h1 id="shelf-title">{status ? labels[status] : t('shelf')}</h1>
+      <div className="shelf-title-group"><h1 id="shelf-title">{status ? labels[status] : t('shelf')}</h1>
+        {!status && <Link className="shelf-authors-link" to="/autores">{t('browseAuthors')}</Link>}</div>
       <div className="shelf-heading-actions">
         <label className="year-field">{t('shelfYear')}
           <select value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>

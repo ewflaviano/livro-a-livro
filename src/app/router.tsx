@@ -13,6 +13,7 @@ import { NotFoundPage } from '../ui/pages/NotFoundPage';
 import { SettingsPage } from '../ui/pages/SettingsPage';
 import { InstallPage } from '../ui/pages/InstallPage';
 import { ShelfPage } from '../ui/pages/ShelfPage';
+import { AuthorsPage } from '../ui/pages/AuthorsPage';
 import { AddBookPage, BookPage } from '../ui/pages/BookPage';
 import { LibraryProvider } from './LibraryProvider';
 import type { ShelfService } from '../services/shelf-service';
@@ -28,6 +29,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/estante" replace />} />
         <Route path="estante" element={<ShelfPage key="shelf" />} />
+        <Route path="autores" element={<AuthorsPage />} />
         <Route path="lendo" element={<ShelfPage key="reading" status="reading" />} />
         <Route path="quero-ler" element={<ShelfPage key="want" status="want-to-read" />} />
         <Route path="adicionar" element={<AddBookPage />} />
