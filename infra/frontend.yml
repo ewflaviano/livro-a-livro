@@ -4,7 +4,10 @@ Parameters:
   CertificateArn: { Type: String }
   HostedZoneId: { Type: String }
   RedirectHostedZoneId: { Type: String }
+  EnableComBr: { Type: String, Default: 'true', AllowedValues: ['true', 'false'] }
   DomainName: { Type: String, Default: livroalivro.app.br }
+Conditions:
+  ComBrEnabled: !Equals [!Ref EnableComBr, 'true']
 Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
@@ -88,7 +91,11 @@ Resources:
         Enabled: true
         HttpVersion: http2and3
         IPV6Enabled: true
-        Aliases: [!Ref DomainName, !Sub 'www.${DomainName}', livroalivro.com.br, www.livroalivro.com.br]
+        Aliases:
+          - !Ref DomainName
+          - !Sub 'www.${DomainName}'
+          - !If [ComBrEnabled, livroalivro.com.br, !Ref 'AWS::NoValue']
+          - !If [ComBrEnabled, www.livroalivro.com.br, !Ref 'AWS::NoValue']
         DefaultRootObject: index.html
         Origins:
           - Id: application
@@ -166,6 +173,7 @@ Resources:
       AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
   RedirectApexAlias:
     Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
     Properties:
       HostedZoneId: !Ref RedirectHostedZoneId
       Name: livroalivro.com.br
@@ -173,6 +181,7 @@ Resources:
       AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
   RedirectApexAliasIpv6:
     Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
     Properties:
       HostedZoneId: !Ref RedirectHostedZoneId
       Name: livroalivro.com.br
@@ -180,6 +189,7 @@ Resources:
       AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
   RedirectWwwAlias:
     Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
     Properties:
       HostedZoneId: !Ref RedirectHostedZoneId
       Name: www.livroalivro.com.br
@@ -187,6 +197,7 @@ Resources:
       AliasTarget: { DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2, EvaluateTargetHealth: false }
   RedirectWwwAliasIpv6:
     Type: AWS::Route53::RecordSet
+    Condition: ComBrEnabled
     Properties:
       HostedZoneId: !Ref RedirectHostedZoneId
       Name: www.livroalivro.com.br
