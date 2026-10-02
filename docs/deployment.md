@@ -9,17 +9,17 @@
   - `ns-1058.awsdns-04.org`
   - `ns-334.awsdns-41.com`
 
-Os CNAMEs de validação DNS do ACM já existem na zona. Após a delegação se propagar, os certificados serão emitidos automaticamente.
+Os CNAMEs de validação DNS do ACM estão nas zonas Route 53. Os certificados usados em produção estão emitidos.
 
 ### Domínio alternativo e endereço canônico (issue #143)
 
-`livroalivro.com.br` usa uma zona pública Route 53 separada (`Z07009691WRJI46OMYE31`). O Registro.br foi configurado para delegá-la a `ns-1053.awsdns-03.org`, `ns-1674.awsdns-17.co.uk`, `ns-996.awsdns-60.net` e `ns-180.awsdns-22.com`. O painel indicou até duas horas de transição a partir de 02/10/2026, 11h05 BRT. Os CNAMEs de validação ACM foram criados nessa zona antes da delegação. Não interpretar a edição do painel como prova de propagação pública: conferir a delegação e a emissão do certificado antes de alterar a distribuição.
+`livroalivro.com.br` usa uma zona pública Route 53 separada (`Z07009691WRJI46OMYE31`). O Registro.br a delegou a `ns-1053.awsdns-03.org`, `ns-1674.awsdns-17.co.uk`, `ns-996.awsdns-60.net` e `ns-180.awsdns-22.com` em 02/10/2026. Os CNAMEs de validação ACM foram criados nessa zona antes da delegação; a delegação pública e a emissão do certificado foram confirmadas antes da atualização final da distribuição.
 
 O endereço canônico é `https://livroalivro.app.br`. `www.livroalivro.app.br`, `livroalivro.com.br` e `www.livroalivro.com.br` apontam para a mesma distribuição, mas uma função CloudFront devolve 301 para o endereço canônico, preservando caminho e parâmetros de consulta. O evento da CloudFront agrupa parâmetros repetidos, então a ordem original entre nomes diferentes e a grafia exata da consulta podem mudar; os valores continuam presentes. A função é associada tanto à rota padrão quanto a `/assets/*`; não lê IndexedDB, cookies nem conteúdo de livros. O nome canônico continua servindo a PWA diretamente.
 
 O certificado CloudFront de quatro nomes foi solicitado no ACM `us-east-1` com ARN `arn:aws:acm:us-east-1:872515289365:certificate/9d9fe497-953c-4b7d-b16e-95203a394843`. A stack `infra/frontend.yml` exige os parâmetros `CertificateArn`, `HostedZoneId` da zona `.app.br` e `RedirectHostedZoneId` da zona `.com.br`. Validar o change set para confirmar que a distribuição é atualizada sem substituição e que a política de cabeçalhos não é revertida. Depois, testar HTTPS e 301 nos quatro nomes, inclusive uma rota `/assets/*` e uma consulta. O registro de propriedade Google e a API em `api.livroalivro.app.br` não são movidos.
 
-Para disponibilizar `www.livroalivro.app.br` antes do fim da delegação `.com.br`, aplicar primeiro a stack com `EnableComBr=false` e o certificado de dois nomes `arn:aws:acm:us-east-1:872515289365:certificate/d908de11-8339-411c-880e-7affdb677c40`. Depois da emissão do certificado de quatro nomes, atualizar a mesma stack com `EnableComBr=true` e o certificado final. Em ambas as etapas, confirmar que os acessos HTTP terminam no endereço canônico HTTPS.
+A implantação ocorreu em duas etapas: primeiro `EnableComBr=false` com o certificado de dois nomes `arn:aws:acm:us-east-1:872515289365:certificate/d908de11-8339-411c-880e-7affdb677c40`; depois `EnableComBr=true` com o certificado final de quatro nomes. A stack terminou `UPDATE_COMPLETE` sem substituir a distribuição `ENYYQVC12E4VS`. Em 02/10/2026, os quatro nomes resolveram em A/AAAA e HTTPS válido; os três alternativos retornaram 301 para o canônico em páginas e `/assets/*`, preservando os valores de consultas com parâmetros repetidos, espaços e caracteres codificados. Os acessos HTTP terminaram no endereço canônico HTTPS.
 
 ## Certificados
 
