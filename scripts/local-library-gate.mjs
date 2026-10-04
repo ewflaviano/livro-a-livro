@@ -30,7 +30,7 @@ try {
   await page.getByText('Mais detalhes (opcional)', { exact: true }).click();
   await page.getByLabel('Capa (opcional)').setInputFiles({ name: 'synthetic.png', mimeType: 'image/png', buffer: Buffer.from(images['image/png'], 'base64') });
   await expect(page.getByText('Capa pronta para salvar:', { exact: false })).toBeVisible();
-  await page.getByLabel('Observações').fill('Nota sintética privada');
+  await page.getByRole('textbox', { name: 'Observações', exact: true }).fill('Nota sintética privada');
   await page.getByRole('button', { name: 'Salvar livro', exact: true }).click();
   await expect(page.getByRole('link', { name: /Livro sintético de navegação/ })).toBeVisible();
   await page.getByRole('link', { name: /Livro sintético de navegação/ }).click();

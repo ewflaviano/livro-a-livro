@@ -38,7 +38,7 @@ describe('application shell', () => {
 
   it.each([
     ['/lendo', 'Lendo'], ['/dados', 'Seus dados'],
-    ['/configuracoes', 'Configurações'], ['/apoiar', 'Apoie o Livro a Livro'], ['/livro/example', 'Livro'],
+    ['/configuracoes', 'Configurações'], ['/notas', 'Caderno de observações'], ['/apoiar', 'Apoie o Livro a Livro'], ['/livro/example', 'Livro'],
     ['/unknown', 'Página não encontrada'],
   ])('renders a direct visit to %s', (path, title) => {
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>);
@@ -46,11 +46,16 @@ describe('application shell', () => {
     expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeTruthy();
   });
 
-  it('offers three mobile destinations and keeps more active on its child pages', async () => {
+  it('offers five mobile destinations with Add in the center and keeps more active on its child pages', async () => {
     render(<MemoryRouter initialEntries={['/lendo']}><AppRoutes /></MemoryRouter>);
     const mobile = within(screen.getByRole('navigation', { name: 'Navegação mobile' }));
-    expect(mobile.getAllByRole('link')).toHaveLength(3);
+    expect(mobile.getAllByRole('link')).toHaveLength(5);
+    expect(mobile.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/estante', '/autores', '/adicionar', '/notas', '/mais']);
     expect(mobile.getByRole('link', { name: 'Estante' }).getAttribute('aria-current')).toBe('page');
+    expect(mobile.getByRole('link', { name: 'Caderno de observações' }).textContent).toBe('Notas');
+    await userEvent.click(mobile.getByRole('link', { name: 'Caderno de observações' }));
+    expect(mobile.getByRole('link', { name: 'Caderno de observações' }).getAttribute('aria-current')).toBe('page');
+    expect(mobile.getByRole('link', { name: 'Estante' }).getAttribute('aria-current')).toBeNull();
     await userEvent.click(mobile.getByRole('link', { name: 'Mais' }));
     const options = within(screen.getByRole('navigation', { name: 'Outras opções' }));
     expect(options.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/dados', '/configuracoes', '/instalar']);
