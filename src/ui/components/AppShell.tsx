@@ -1,6 +1,6 @@
 import { AnalyticsBanner } from './AnalyticsBanner';
 import { useEffect, useRef } from 'react';
-import { Library, MoreHorizontal, Plus, Settings, ShieldCheck } from 'lucide-react';
+import { Library, MoreHorizontal, NotebookPen, Plus, Settings, ShieldCheck, UsersRound } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLibrary } from '../../app/LibraryProvider';
 import { GlobalSyncControls, GlobalSyncHeader, GlobalSyncAttention } from './GlobalSyncControls';
@@ -12,6 +12,8 @@ import { FirstVisitLanguageChoice } from './LanguageChoice';
 
 const navigation = [
   { to: '/estante', label: 'shelf', icon: Library },
+  { to: '/autores', label: 'authors', icon: UsersRound },
+  { to: '/notas', label: 'notesNav', icon: NotebookPen },
   { to: '/dados', label: 'yourData', icon: ShieldCheck },
   { to: '/configuracoes', label: 'settings', icon: Settings },
 ] as const;
@@ -26,7 +28,7 @@ function Shell() {
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
   const { positions } = useLibrary();
-  const returnTo = ['/estante', '/lendo', '/quero-ler', '/autores'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
+  const returnTo = ['/estante', '/lendo', '/quero-ler', '/autores', '/notas'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
   const showLanguagePrompt = location.pathname !== '/configuracoes' && languageChoice?.suggestChoice === true;
 
   useEffect(() => {
@@ -67,12 +69,14 @@ function Shell() {
         <main id="conteudo" ref={main} tabIndex={-1}><Outlet /></main>
       </div>
       <nav className="bottom-navigation" aria-label={t('mobileNavigation')}>
-        <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler', '/autores'].includes(location.pathname) ? 'page' : undefined}>
+        <Link to="/estante" aria-current={['/estante', '/lendo', '/quero-ler'].includes(location.pathname) ? 'page' : undefined}>
           <Library aria-hidden="true" /><span>{t('shelf')}</span>
         </Link>
+        <NavLink to="/autores"><UsersRound aria-hidden="true" /><span>{t('authors')}</span></NavLink>
         <NavLink to="/adicionar" state={{ returnTo }} onClick={() => positions.set(returnTo, window.scrollY)}>
           <Plus aria-hidden="true" /><span>{t('add')}</span>
         </NavLink>
+        <NavLink to="/notas" aria-label={t('notesNotebook')}><NotebookPen aria-hidden="true" /><span>{t('notesNav')}</span></NavLink>
         <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/instalar', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
           <MoreHorizontal aria-hidden="true" /><span>{t('more')}</span>
         </Link>

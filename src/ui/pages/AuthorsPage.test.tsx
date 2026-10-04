@@ -37,8 +37,10 @@ it('opens a local author index across years and restores the book link after ret
   const repository = await setup(books);
   const before = await repository.readAll();
   const revision = await repository.readRevision();
-  expect(screen.getByRole('link', { name: 'Explorar autores' }).getAttribute('href')).toBe('/autores');
-  await userEvent.click(screen.getByRole('link', { name: 'Explorar autores' }));
+  const authorDestination = within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' });
+  expect(authorDestination.getAttribute('href')).toBe('/autores');
+  expect(screen.queryByRole('link', { name: 'Explorar autores' })).toBeNull();
+  await userEvent.click(authorDestination);
   expect(screen.getByRole('heading', { name: 'Autores' })).toBeTruthy();
   expect(screen.getByText('2 nomes de autoria')).toBeTruthy();
   expect(screen.queryByText('Sem autor')).toBeNull();
@@ -61,7 +63,7 @@ it('opens a local author index across years and restores the book link after ret
 
 it('filters author names offline and displays an accessible empty result in English', async () => {
   await setup([book('Sample book', ['José'])], 'en');
-  await userEvent.click(screen.getByRole('link', { name: 'Explore authors' }));
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Mobile navigation' })).getByRole('link', { name: 'Authors' }));
   const search = screen.getByRole('searchbox', { name: 'Search authors' });
   await userEvent.type(search, 'jose');
   expect(screen.getByText('1 author name')).toBeTruthy();
@@ -77,7 +79,7 @@ it('paginates both author groups and the books inside a group', async () => {
     ...Array.from({ length: 24 }, (_, i) => book(`Other book ${i}`, [`Autora ${String(i + 1).padStart(2, '0')}`])),
   ];
   await setup(books);
-  await userEvent.click(screen.getByRole('link', { name: 'Explorar autores' }));
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
   const authorList = () => within(screen.getByRole('list', { name: 'Índice de autores' }));
   expect(authorList().getAllByRole('listitem', { name: '' })).toHaveLength(24);
   await userEvent.click(authorList().getByRole('button', { name: /Autora 00/ }));
@@ -97,7 +99,7 @@ it('paginates both author groups and the books inside a group', async () => {
 
 it('explains an empty index when books have no author names', async () => {
   await setup([book('Sample book', [])]);
-  await userEvent.click(screen.getByRole('link', { name: 'Explorar autores' }));
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
   expect(screen.getByRole('heading', { name: 'Nenhuma autoria informada ainda.' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Voltar para a estante' })).toBeTruthy();
 });

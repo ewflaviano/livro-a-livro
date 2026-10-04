@@ -19,11 +19,11 @@ import type { MessageKey } from '../../i18n/messages';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
-  return ['/estante', '/lendo', '/quero-ler', '/autores'].includes(destination) ? destination as string : '/estante';
+  return ['/estante', '/lendo', '/quero-ler', '/autores', '/notas'].includes(destination) ? destination as string : '/estante';
 }
 function BackLink({ returnTo }: { returnTo: string }) {
   const { t } = useLocale();
-  return <Link className="back-link" to={returnTo}><ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : 'backToShelfBook')}</Link>;
+  return <Link className="back-link" to={returnTo}><ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : returnTo === '/notas' ? 'backToNotes' : 'backToShelfBook')}</Link>;
 }
 type LoadedBook = { book: Book | null; version: LocalRevision };
 
@@ -69,7 +69,10 @@ function BookDetail({ id }: { id: string }) {
   const [completion, setCompletion] = useState<{ book: Book; version: LocalRevision } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
-  const [saved, setSaved] = useState(Boolean(useLocation().state?.saved));
+  const location = useLocation();
+  const [saved, setSaved] = useState(Boolean(location.state?.saved));
+  const noteHeading = useRef<HTMLHeadingElement>(null);
+  const focusedFromNotes = useRef(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const completingWrite = useRef(false);
   useEffect(() => { if (busy || removing || completion) return blockPwaUpdate(); }, [busy, removing, completion]);
@@ -108,6 +111,12 @@ function BookDetail({ id }: { id: string }) {
     } finally { completingWrite.current = false; setBusy(false); }
   }
   const book = loaded?.book;
+  useLayoutEffect(() => {
+    if (focusedFromNotes.current || !location.state?.focusNote || !book?.note.trim() || editing) return;
+    focusedFromNotes.current = true;
+    const timer = window.setTimeout(() => { noteHeading.current?.focus({ preventScroll: true }); noteHeading.current?.scrollIntoView?.({ block: 'start' }); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [book, editing, location.state]);
   return <section className="page-content"><BackLink returnTo={returnTo} />
     {!loaded || loadError ? <><h1>{t('book')}</h1><LibraryState state={loadError || state.status === 'error' ? 'error' : 'loading'} onRetry={() => { if (!books) retry(); else setAttempt((value) => value + 1); }} /></> :
       !book ? <><h1>{t('bookNotFound')}</h1><p>{t('bookNotFoundExplanation')}</p></> : <>
@@ -142,7 +151,7 @@ function BookDetail({ id }: { id: string }) {
             {book.isbn && <div><dt>ISBN</dt><dd>{book.isbn}</dd></div>}
             {book.rating && <div><dt>{t('myRating')}</dt><dd><span className="book-rating" aria-label={t('ratingOutOfFive', { rating: book.rating })}><span aria-hidden="true">{'★'.repeat(book.rating)}{'☆'.repeat(5 - book.rating)}</span></span></dd></div>}
           </dl>}
-          {book.note?.trim() && <><h2>{t('notes')}</h2><p className="private-note">{book.note}</p></>}
+          {book.note?.trim() && <><h2 ref={noteHeading} className="book-note-heading" tabIndex={-1}>{t('notes')}</h2><p className="private-note">{book.note}</p></>}
           {error && <div role="alert" className="form-error"><p>{t(error)}</p>
             {error === 'completeBookStale' && <button className="button button-secondary" onClick={reload}>{t('reloadSaved')}</button>}
           </div>}

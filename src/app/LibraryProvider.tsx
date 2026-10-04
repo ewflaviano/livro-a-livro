@@ -6,6 +6,7 @@ import { openShelfService } from './composition';
 import type { LibraryService } from '../services/library-service';
 
 export type AuthorsView = { query: string; page: number; expanded: string | null; bookPage: number; returnBookId: string | null };
+export type NotesView = { query: string; page: number; returnBookId: string | null };
 
 type LibraryContext = {
   state: ShelfState;
@@ -20,6 +21,8 @@ type LibraryContext = {
   setShelfSearchScope: (scope: 'year' | 'all') => void;
   authorsView: AuthorsView;
   setAuthorsView: Dispatch<SetStateAction<AuthorsView>>;
+  notesView: NotesView;
+  setNotesView: Dispatch<SetStateAction<NotesView>>;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
   catalog: ShelfService['catalog'] | null;
@@ -38,6 +41,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const [shelfQuery, setShelfQuery] = useState('');
   const [shelfSearchScope, setShelfSearchScope] = useState<'year' | 'all'>('year');
   const [authorsView, setAuthorsView] = useState<AuthorsView>({ query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null });
+  const [notesView, setNotesView] = useState<NotesView>({ query: '', page: 1, returnBookId: null });
   const updateShelfQuery = useCallback((query: string) => {
     setShelfQuery(query);
     if (!query.trim()) setShelfSearchScope('year');
@@ -64,7 +68,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   return <Context.Provider value={{ state: failed ? { status: 'error' } : state,
     retry: () => { setAttempt((value) => value + 1); },
     updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage,
-    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, authorsView, setAuthorsView, books: service?.books ?? null,
+    shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, authorsView, setAuthorsView, notesView, setNotesView, books: service?.books ?? null,
     backup: service?.backup ?? null, catalog: service?.catalog ?? null,
   }}>{children}</Context.Provider>;
 }
