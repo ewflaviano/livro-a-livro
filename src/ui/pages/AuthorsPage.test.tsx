@@ -62,7 +62,8 @@ it('opens a local author index across years and restores the book link after ret
 });
 
 it('filters author names offline and displays an accessible empty result in English', async () => {
-  await setup([book('Sample book', ['José'])], 'en');
+  const repository = await setup([book('Sample book', ['José'])], 'en');
+  const revision = await repository.readRevision();
   await userEvent.click(within(screen.getByRole('navigation', { name: 'Mobile navigation' })).getByRole('link', { name: 'Authors' }));
   const search = screen.getByRole('searchbox', { name: 'Search authors' });
   await userEvent.type(search, 'jose');
@@ -71,6 +72,25 @@ it('filters author names offline and displays an accessible empty result in Engl
   await userEvent.type(search, 'unknown');
   expect(screen.getByRole('heading', { name: 'No authors found.' })).toBeTruthy();
   expect(screen.getByText('0 author names')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+  expect(search).toBe(document.activeElement);
+  expect((search as HTMLInputElement).value).toBe('');
+  expect(screen.getByText('1 author name')).toBeTruthy();
+  expect(await repository.readRevision()).toEqual(revision);
+});
+
+it('clears an empty author search with the keyboard in Portuguese', async () => {
+  await setup([book('Livro fictício', ['Ana'])]);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  const search = screen.getByRole('searchbox', { name: 'Buscar autor' });
+  await userEvent.type(search, 'nome inexistente');
+  expect(screen.getByRole('heading', { name: 'Nenhum autor encontrado.' })).toBeTruthy();
+  await userEvent.tab();
+  const clear = screen.getByRole('button', { name: 'Limpar busca' });
+  expect(clear).toBe(document.activeElement);
+  await userEvent.keyboard('{Enter}');
+  expect(search).toBe(document.activeElement);
+  expect(screen.getByText('1 nome de autoria')).toBeTruthy();
 });
 
 it('paginates both author groups and the books inside a group', async () => {
