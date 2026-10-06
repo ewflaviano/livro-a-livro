@@ -10,13 +10,14 @@ A [apresentação pública do aplicativo](https://livroalivro.app.br/sobre.html)
 
 ## Estado atual
 
-**Revisado em 4 out 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
+**Revisado em 6 out 2026.** O projeto tem uma base local funcional, Configurações e ajuda de instalação. O backup local tem fluxo independente. Os serviços opcionais seguem os gates de liberação abaixo; issue fechada ou módulo testado não significa recurso disponível de ponta a ponta.
 
 | Recurso | Disponibilidade atual |
 | --- | --- |
 | Estante anual, busca local entre anos, Grade/Lista, filtros, ordenação e estatísticas | Integrados à interface; livros e preferências portáveis no IndexedDB, alcance da busca só na sessão |
 | Índice de autores | Página local acessível pela navegação principal; consulta nomes de autoria e seus livros em todos os anos, sem alterar os registros |
 | Caderno de observações | Página local de consulta e busca nas notas privadas já salvas em livros de todos os anos; sem campos ou serviço novos |
+| Revisão de possíveis duplicatas | Página local em Seus dados para conferir registros parecidos do mesmo ano; não combina nem altera livros automaticamente |
 | Cadastro manual, edição, exclusão, notas e avaliações | Integrados; livro em Lendo pode ser marcado como Lido no detalhe, com confirmação e commit local |
 | Busca Open Library | Explícita, com capa pequena no resultado e dados da edição carregados ao escolher; revisão antes de salvar; indisponível no simulador local |
 | Capas Open Library | Mesma capa na revisão, estante e detalhe; usa conexão e mostra fallback em ausência/erro/offline |
@@ -96,6 +97,8 @@ Para restaurar, selecione **Importar JSON**, confira quantidades/anos do arquivo
 Em **Seus dados → Exportar catálogo**, baixe um CSV de todos os anos para planilha ou um Markdown agrupado em Lidos, Lendo e Quero ler. O CSV contém título, autoria, ano da estante, estado, páginas e ISBN. O Markdown contém título, autoria, ano da estante e estado. Nenhum dos dois inclui notas, avaliações ou capas. Os arquivos são gerados somente neste dispositivo e podem ser baixados offline; o aplicativo não os envia a serviços externos. Antes de compartilhar o Markdown com um agente de IA escolhido por você, confira seu conteúdo e as regras de privacidade desse serviço. CSV e Markdown não podem ser restaurados aqui: **Exportar JSON** continua sendo a cópia completa para recuperação.
 
 ### Navegação e busca local
+
+Em **Seus dados → Conferir possíveis duplicatas**, a página agrupa registros do mesmo ano que compartilham título e autoria normalizados, ISBN ou edição Open Library. A comparação é local e funciona offline; releituras e homônimos podem ser legítimos. Abra cada livro para conferir ou usar as ações existentes. A revisão não altera registros, backup ou Drive, e não requer API.
 
 Em celular e tablet (abaixo de 1024 px), use Estante, Autores, Adicionar, Notas e Mais na barra inferior; Adicionar fica no centro. Mais reúne Seus dados, Configurações, Instalar e Apoiar; no desktop, a lateral traz Estante, Autores, Notas, Seus dados e Configurações, e Adicionar livro fica junto ao título da estante. Lendo e Quero ler são filtros da estante. **Autores** abre um índice local de nomes de autoria em todos os anos; cada grupo mostra livros, ano e estado, com busca e paginação. O índice não inclui livros sem autoria e não altera a seleção da estante. **Notas** abre o Caderno de observações: reúne livros de todos os anos com observação salva, permite busca local por título, autoria e texto, mostra um trecho e abre o detalhe para ler a nota completa. Busca e página ficam só na sessão e o retorno recupera foco e posição; não há novo índice persistido, migração ou envio desses textos. O campo de busca local filtra título, autoria e ISBN salvo sem conexão; o ISBN completo pode ser digitado com ou sem separadores. Com texto digitado, **Este ano** é o alcance inicial e **Todos os anos** procura na biblioteca inteira, identifica o ano de cada resultado e funciona mesmo quando o ano selecionado está vazio. A busca preserva filtro/modo/página e o contexto ao voltar de um livro; limpar o texto devolve a estante anual. Consulta e alcance ficam somente na memória da sessão, fora do backup/Drive. O botão compacto ao lado de Grade/Lista alterna entre adição mais recente (padrão) e título A–Z; a escolha fica apenas neste dispositivo e não entra no backup/Drive. Grade mobile tem duas colunas. A ação de compartilhar ano foi retirada da estante enquanto se decide um lugar adequado.
 

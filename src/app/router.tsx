@@ -22,6 +22,7 @@ import { SyncProvider } from './SyncProvider';
 import { DataPage } from '../ui/pages/DataPage';
 import { MorePage } from '../ui/pages/MorePage';
 import { SupportPage } from '../ui/pages/SupportPage';
+import { DuplicatesPage } from '../ui/pages/DuplicatesPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
@@ -38,6 +39,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="livro/:id" element={<BookPage />} />
         <Route path="mais" element={<MorePage />} />
         <Route path="dados" element={<DataPage />} />
+        <Route path="duplicatas" element={<DuplicatesPage />} />
         <Route path="apoiar" element={<SupportPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
         <Route path="instalar" element={<InstallPage />} />
