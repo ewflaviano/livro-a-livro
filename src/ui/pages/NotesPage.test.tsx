@@ -65,6 +65,18 @@ it('shows empty and no-match states in English', async () => {
   expect((screen.getByRole('searchbox', { name: 'Search notes' }) as HTMLInputElement).value).toBe('');
 });
 
+it('shows the matching passage from a long note as literal text', async () => {
+  const repository = await setup([book('Exemplo', `${'início '.repeat(40)}Coração revisitado <b>literal</b>`)]);
+  await screen.findByText('1 livro com observações');
+  await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar nas observações' }), 'coracao revisitado');
+  const excerpt = document.querySelector('.note-book-excerpt');
+  expect(excerpt?.classList.contains('note-book-excerpt-search')).toBe(true);
+  expect(excerpt?.textContent?.startsWith('…')).toBe(true);
+  expect(excerpt?.textContent).toContain('Coração revisitado <b>literal</b>');
+  expect(excerpt?.innerHTML).not.toContain('<b>');
+  expect((await repository.readAll()).books).toHaveLength(1);
+});
+
 it('paginates note entries and resets to first page for a new search', async () => {
   await setup(Array.from({ length: 25 }, (_, index) => book(`Livro ${String(index).padStart(2, '0')}`, `Nota ${index}`)));
   expect(await screen.findByText('25 livros com observações')).toBeTruthy();
