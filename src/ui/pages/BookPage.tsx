@@ -19,11 +19,11 @@ import type { MessageKey } from '../../i18n/messages';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
-  return ['/estante', '/lendo', '/quero-ler', '/autores', '/notas'].includes(destination) ? destination as string : '/estante';
+  return ['/estante', '/lendo', '/quero-ler', '/autores', '/notas', '/duplicatas'].includes(destination) ? destination as string : '/estante';
 }
 function BackLink({ returnTo }: { returnTo: string }) {
   const { t } = useLocale();
-  return <Link className="back-link" to={returnTo}><ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : returnTo === '/notas' ? 'backToNotes' : 'backToShelfBook')}</Link>;
+  return <Link className="back-link" to={returnTo}><ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : returnTo === '/notas' ? 'backToNotes' : returnTo === '/duplicatas' ? 'backToDuplicates' : 'backToShelfBook')}</Link>;
 }
 type LoadedBook = { book: Book | null; version: LocalRevision };
 

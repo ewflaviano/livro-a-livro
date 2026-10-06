@@ -3,7 +3,7 @@ import type { ResolutionPreview } from '../../sync/merge';
 import { BackupPanel } from '../components/BackupPanel';
 import { CatalogPanel } from '../components/CatalogPanel';
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useSync } from '../../app/SyncProvider';
 import { serializeBackup } from '../../backup/serialize';
 import { referencedExport } from '../../sync/snapshot';
@@ -85,6 +85,11 @@ export function DataPage() {
     {local && <p className="notice-panel" role="status">{t('localTestData')}</p>}
     <BackupPanel />
     <CatalogPanel />
+    <section className="duplicates-entry" aria-labelledby="duplicates-entry-title">
+      <h2 id="duplicates-entry-title">{t('duplicatesTitle')}</h2>
+      <p>{t('duplicatesIntro')}</p>
+      <Link className="button button-secondary" to="/duplicatas">{t('duplicatesEntry')}</Link>
+    </section>
     <section aria-labelledby="experiment-data-title">
       <h2 id="experiment-data-title">{t('experimentDataTitle')}</h2>
       <p>{t('experimentDataExplanation')}</p>

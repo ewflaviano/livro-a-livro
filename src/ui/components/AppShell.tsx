@@ -28,7 +28,7 @@ function Shell() {
   const main = useRef<HTMLElement>(null);
   const previousPath = useRef(location.pathname);
   const { positions } = useLibrary();
-  const returnTo = ['/estante', '/lendo', '/quero-ler', '/autores', '/notas'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
+  const returnTo = ['/estante', '/lendo', '/quero-ler', '/autores', '/notas', '/duplicatas'].includes(location.pathname) ? location.pathname : location.state?.returnTo ?? '/estante';
   const showLanguagePrompt = location.pathname !== '/configuracoes' && languageChoice?.suggestChoice === true;
 
   useEffect(() => {
@@ -77,7 +77,7 @@ function Shell() {
           <Plus aria-hidden="true" /><span>{t('add')}</span>
         </NavLink>
         <NavLink to="/notas" aria-label={t('notesNotebook')}><NotebookPen aria-hidden="true" /><span>{t('notesNav')}</span></NavLink>
-        <Link to="/mais" aria-current={['/mais', '/dados', '/configuracoes', '/instalar', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
+        <Link to="/mais" aria-current={['/mais', '/dados', '/duplicatas', '/configuracoes', '/instalar', '/apoiar'].includes(location.pathname) ? 'page' : undefined}>
           <MoreHorizontal aria-hidden="true" /><span>{t('more')}</span>
         </Link>
       </nav>
