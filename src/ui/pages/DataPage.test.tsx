@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Use the actual Node Blob before schemas load; browser decode is exercised separately.
 await vi.hoisted(async () => { const { Blob } = await import('node:buffer'); globalThis.Blob = Blob as unknown as typeof globalThis.Blob; });
 import { openDB, deleteDB } from 'idb';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { openLibraryRepository } from '../../adapters/indexeddb/library-repository';
@@ -234,6 +234,7 @@ describe('local catalogue downloads', () => {
     expect(csv).toContain('"Título","Autoria","Ano da estante","Estado","Páginas","ISBN"');
     expect(csv).toContain('"Farol de papel","Autora Exemplo","2024","Lendo"');
     await userEvent.click(screen.getByRole('button', { name: 'Baixar Markdown' }));
+    await waitFor(() => expect(downloaded).toHaveLength(2));
     const markdown = await downloaded[1].text();
     expect(markdown).toContain('## Lidos');
     expect(markdown).toContain('## Lendo\n\n- Farol de papel — Autora Exemplo (Ano da estante: 2024)');
