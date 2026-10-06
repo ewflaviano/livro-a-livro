@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
-import { booksWithNotes, matchesNote, noteExcerpt } from '../../domain/notes';
+import { booksWithNotes, matchesNote, matchingNoteExcerpt } from '../../domain/notes';
 import { formatShelfYear } from '../../domain/library';
 import { formatNumber } from '../../i18n/locale';
 import { useLocale } from '../../i18n/context';
@@ -67,7 +67,7 @@ export function NotesPage() {
               <p className="note-book-meta">{t('authorBookMeta', { year: formatShelfYear(book.shelfYear), status: statuses[book.status] })}</p>
               <h2>{book.title}</h2>
               <p className="note-book-author">{book.authors.join(', ') || t('authorUnknown')}</p>
-              <p className="note-book-excerpt">{noteExcerpt(book.note)}</p>
+              <p className={`note-book-excerpt${notesView.query.trim() ? ' note-book-excerpt-search' : ''}`}>{matchingNoteExcerpt(book.note, notesView.query)}</p>
               <Link className="note-book-link" data-book-id={book.id} to={`/livro/${book.id}`} state={{ returnTo: '/notas', focusNote: true }}
                 aria-label={t('openBookNoteNamed', { title: book.title, year: formatShelfYear(book.shelfYear) })}
                 onClick={() => { positions.set('/notas', window.scrollY); setNotesView(view => ({ ...view, returnBookId: book.id })); }}>

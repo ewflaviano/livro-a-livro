@@ -275,6 +275,7 @@ h2 { font-size: var(--text-h2); }
 .note-book h2 { font-size: var(--text-h3); margin: 0 0 var(--space-1); }
 .note-book-author { margin: 0 0 var(--space-4); }
 .note-book-excerpt { border-inline-start: 3px solid var(--color-accent); padding-inline-start: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.note-book-excerpt-search { display: block; overflow: visible; }
 .note-book-link { display: inline-flex; align-items: center; min-height: var(--target-min); font-size: var(--text-small); font-weight: var(--weight-semibold); }
 .notes-empty { margin-top: var(--space-6); }
 
