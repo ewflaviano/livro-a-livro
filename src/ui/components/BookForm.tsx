@@ -8,6 +8,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { blockPwaUpdate } from '../../pwa/register';
 import { prepareCover, type CoverMedia } from '../../media/cover';
 import { useLocale } from '../../i18n/context';
+import { formatNumber } from '../../i18n/locale';
 import type { MessageKey } from '../../i18n/messages';
 
 const fieldMessages: Record<string, MessageKey> = {
@@ -36,7 +37,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
   book?: Book; initialDraft?: NewBook; year: number; version: LocalRevision; service: LibraryService;
   onSaved: (book: Book, version: LocalRevision) => void; onCancel: () => void; onReload: () => void; cancelLabel?: string;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [initial] = useState(() => makeDraft(book ?? initialDraft, year));
   const [draft, setDraft] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -166,7 +167,7 @@ export function BookForm({ book, initialDraft, year, version, service, onSaved, 
       </fieldset>
       {error && <p className="form-error" role="alert">{t(error)}</p>}
       {conflict && <button type="button" className="button button-secondary" disabled={busy} onClick={() => setDialog('reload')}>{t('reloadSaved')}</button>}
-      {duplicates > 0 && <div className="notice-panel" role="status"><p>{t('duplicateWarning')}</p>
+      {duplicates > 0 && <div className="notice-panel" role="status"><p>{t(duplicates === 1 ? 'duplicateWarningOne' : 'duplicateWarningMany', { count: formatNumber(locale, duplicates) })}</p>
         <button type="button" className="button button-secondary" disabled={busy || coverPreparing} onClick={() => void save(true)}>{t('saveAnyway')}</button></div>}
       <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy || coverPreparing}>{busy ? t('saving') : book ? t('saveChanges') : t('saveBook')}</button>
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => dirty ? setDialog('cancel') : onCancel()}>{cancelLabel ?? t('cancel')}</button></div>

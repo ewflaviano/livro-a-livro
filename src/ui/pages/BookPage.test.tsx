@@ -261,10 +261,23 @@ describe('manual books and private detail', () => {
     await userEvent.type(titleField(), 'Livro de teste');
     await userEvent.click(screen.getByRole('button', { name: 'Salvar livro' }));
     await screen.findByRole('button', { name: 'Salvar mesmo assim' });
+    expect(screen.getByRole('button', { name: 'Salvar mesmo assim' }).closest('[role="status"]')?.textContent).toContain('1 registro parecido nesta estante.');
     expect((await repository.readAll()).books).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'Salvar mesmo assim' }));
     await screen.findByRole('heading', { name: 'Estante', level: 1 });
     expect((await repository.readAll()).books).toHaveLength(2);
+  });
+  it.each([
+    { locale: 'pt-BR' as const, count: 2, label: '2 registros parecidos nesta estante.', title: 'Título (obrigatório)', save: 'Salvar livro', anyway: 'Salvar mesmo assim' },
+    { locale: 'en' as const, count: 1, label: '1 similar record on this shelf.', title: 'Title (required)', save: 'Save book', anyway: 'Save anyway' },
+    { locale: 'en' as const, count: 2, label: '2 similar records on this shelf.', title: 'Title (required)', save: 'Save book', anyway: 'Save anyway' },
+  ])('shows $count matching records in $locale without saving automatically', async ({ locale, count, label, title, save, anyway }) => {
+    const { repository } = await setup(Array.from({ length: count }, () => synthetic()), '/adicionar', locale);
+    await userEvent.type(await screen.findByRole('textbox', { name: title }), 'Livro de teste');
+    await userEvent.click(screen.getByRole('button', { name: save }));
+    await screen.findByRole('button', { name: anyway });
+    expect(screen.getByRole('button', { name: anyway }).closest('[role="status"]')?.textContent).toContain(label);
+    expect((await repository.readAll()).books).toHaveLength(count);
   });
   it('preserves unsaved edits on a quota failure and allows retry', async () => {
     const { repository } = await setup();
