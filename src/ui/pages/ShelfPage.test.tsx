@@ -236,6 +236,37 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(screen.getAllByRole('link', { name: 'Adicionar livro' }).every((link) => link.getAttribute('href') === '/adicionar')).toBe(true);
   });
 
+  it.each([
+    ['pt-BR', 'Nenhum livro na estante de 2026', 'Ver estante de 2025', 'Ano da estante'],
+    ['en', 'No books on the 2026 shelf', 'View 2025 shelf', 'Shelf year'],
+  ] as const)('opens the latest populated year from an empty year in %s without changing books or using the network', async (locale, heading, action, yearLabel) => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      book('Livro sintético antigo', { shelfYear: 2024 }),
+      book('Livro sintético recente', { shelfYear: 2025 }),
+    ], '/estante', locale);
+    const before = await repository.readBackupSnapshot();
+    expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: locale === 'en' ? 'Start your shelf' : 'Comece sua estante' })).toBeNull();
+    expect(screen.getByRole('link', { name: locale === 'en' ? 'Add book' : 'Adicionar livro' })).toBeTruthy();
+    screen.getByRole('button', { name: action }).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('heading', { name: 'Livro sintético recente' })).toBeTruthy();
+    const select = screen.getByRole('combobox', { name: yearLabel }) as HTMLSelectElement;
+    expect(select.value).toBe('2025');
+    expect(document.activeElement).toBe(select);
+    expect((await repository.readBackupSnapshot()).books).toEqual(before.books);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selected status filter when opening a populated year', async () => {
+    await setup([book('Livro sintético', { shelfYear: 2025, status: 'read' })], '/lendo');
+    expect(screen.getByText('O filtro Lendo continuará selecionado ao mudar de ano.')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Ver estante de 2025' }));
+    expect(screen.getByRole('heading', { name: 'Nenhum livro em Lendo nesta estante.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Lendo' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('preserves year, mode, filter and return position from a book without placing content in URLs', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     vi.stubGlobal('scrollY', 340);
@@ -419,7 +450,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     vi.stubGlobal('scrollY', 280);
     const { repository } = await setup([book('Caminho das nuvens', { shelfYear: 2025 })]);
-    expect(screen.getByRole('heading', { name: 'Comece sua estante' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Nenhum livro na estante de 2026' })).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'Filtrar por estado' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Ver em lista' })).toBeNull();
     const input = screen.getByRole('searchbox', { name: 'Buscar na estante' });
@@ -433,7 +464,7 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('nuvens');
     expect(window.scrollTo).toHaveBeenCalledWith(0, 280);
     await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
-    expect(screen.getByRole('heading', { name: 'Comece sua estante' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Nenhum livro na estante de 2026' })).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'Onde buscar' })).toBeNull();
     expect((await repository.readPreferences()).shelfYear).toBe(2026);
   });

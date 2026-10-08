@@ -24,6 +24,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const navigate = useNavigate();
   const restored = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
+  const yearSelect = useRef<HTMLSelectElement>(null);
+  const yearFocusTarget = useRef<number | null>(null);
   const collection = useRef<HTMLOListElement>(null);
   const pageNavigation = useRef(false);
   const title = status ? labels[status] : t('myShelf');
@@ -63,6 +65,11 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
     collection.current?.querySelector<HTMLAnchorElement>('.book-entry')?.focus();
     collection.current?.scrollIntoView?.({ block: 'start' });
   }, [page]);
+  useLayoutEffect(() => {
+    if (yearFocusTarget.current !== year || state.status !== 'ready') return;
+    yearSelect.current?.focus();
+    yearFocusTarget.current = null;
+  }, [year, state.status]);
 
   if (state.status !== 'ready') return <section aria-label={title}>
     <h1>{title}</h1><LibraryState state={state.status} onRetry={retry} />
@@ -70,6 +77,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const { snapshot, preferences } = state;
   const yearText = formatShelfYear(year);
   const years = [...new Set([currentYear, year, ...snapshot.books.map((book) => book.shelfYear)])].sort((a, b) => b - a);
+  const latestBookYear = snapshot.books.reduce((latest, book) => Math.max(latest, book.shelfYear), 0);
   const metrics = statisticsForYear(yearBooks, year);
   function selectFilter(next: typeof filter) {
     updatePreferences({ filter: next });
@@ -85,7 +93,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <div className="shelf-title-group"><h1 id="shelf-title">{status ? labels[status] : t('shelf')}</h1></div>
       <div className="shelf-heading-actions">
         <label className="year-field">{t('shelfYear')}
-          <select value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
+          <select ref={yearSelect} value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
             <option value="current">{t('currentYearAutomatic')}</option>
             {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
           </select>
@@ -136,7 +144,16 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p>
         {filter !== 'all' && <button className="button button-secondary" onClick={() => { searchInput.current?.focus(); selectFilter('all'); }}>{t('clearFilter')}</button>}
       </div> : yearBooks.length === 0 && !globalSearch ?
-      <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 ?
+      <div className="notice-panel shelf-year-empty"><h2>{t('emptyYearTitle', { year: yearText })}</h2>
+        <p>{t('emptyYearHelp')}</p>
+        {filter !== 'all' && <p>{t('emptyYearFilterHelp', { filter: labels[filter] })}</p>}
+        <div className="shelf-year-empty-actions">
+          <button className="button button-secondary" type="button" onClick={() => { yearFocusTarget.current = latestBookYear; updatePreferences({ shelfYear: latestBookYear }); }}>
+            {t('viewYearWithBooks', { year: formatShelfYear(latestBookYear) })}
+          </button>
+          <Link className="button button-primary" to="/adicionar" state={{ returnTo: location.pathname }}>{t('addBook')}</Link>
+        </div>
+      </div> : visible.length === 0 ?
       <div className="notice-panel"><h2>{t('noBooksInFilter', { filter: labels[filter] })}</h2>
         <button className="button button-secondary" onClick={() => selectFilter('all')}>{t('clearFilter')}</button></div> :
       <><ol ref={collection} className={`book-collection book-collection--${preferences.mode}`}
