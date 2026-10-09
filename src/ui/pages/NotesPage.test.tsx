@@ -65,6 +65,19 @@ it('shows empty and no-match states in English', async () => {
   expect((screen.getByRole('searchbox', { name: 'Search notes' }) as HTMLInputElement).value).toBe('');
 });
 
+it.each([
+  ['pt-BR', 'Voltar para a estante', 'Ano da estante'],
+  ['en', 'Back to shelf', 'Shelf year'],
+] as const)('returns from notes to the local shelf in %s', async (locale, backLabel, yearLabel) => {
+  const repository = await setup([book('Livro de teste', 'Observação fictícia')], locale);
+  const before = await repository.readAll();
+  const link = screen.getByRole('link', { name: backLabel });
+  expect(link.getAttribute('href')).toBe('/estante');
+  await userEvent.click(link);
+  expect(await screen.findByRole('combobox', { name: yearLabel })).toBeTruthy();
+  expect(await repository.readAll()).toEqual(before);
+});
+
 it('shows the matching passage from a long note as literal text', async () => {
   const repository = await setup([book('Exemplo', `${'início '.repeat(40)}Coração revisitado <b>literal</b>`)]);
   await screen.findByText('1 livro com observações');
@@ -92,7 +105,7 @@ it('paginates note entries and resets to first page for a new search', async () 
 it('explains how to start when no book has a note', async () => {
   await setup([book('Sem nota', '  ')]);
   expect(await screen.findByRole('heading', { name: 'Nenhuma observação salva ainda.' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Voltar para a estante' })).toBeTruthy();
+  expect(screen.getAllByRole('link', { name: 'Voltar para a estante' })).toHaveLength(1);
 });
 
 it('refreshes the note list after a committed library replacement', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
 import { booksWithNotes, matchesNote, matchingNoteExcerpt } from '../../domain/notes';
 import { formatShelfYear } from '../../domain/library';
@@ -51,10 +51,11 @@ export function NotesPage() {
   }, [state.status, positions, setNotesView]);
 
   return <section className="page-content notes-page" aria-labelledby="notes-title">
+    <Link className="back-link" to="/estante"><ArrowLeft aria-hidden="true" />{t('backToShelf')}</Link>
     <h1 id="notes-title">{t('notesNotebook')}</h1>
     {state.status !== 'ready' ? <LibraryState state={state.status} onRetry={retry} /> : state.snapshot.books.length === 0 ?
       <div className="notice-panel notes-empty"><h2>{t('notesLibraryEmpty')}</h2><p>{t('notesLibraryEmptyHelp')}</p><Link className="button button-primary" to="/adicionar" state={{ returnTo: '/notas', focusNote: true }}>{t('addBook')}</Link></div> : notedBooks.length === 0 ?
-      <div className="notice-panel notes-empty"><h2>{t('notesEmpty')}</h2><p>{t('notesEmptyHelp')}</p><Link className="button button-secondary" to="/estante">{t('backToShelf')}</Link></div> : <>
+      <div className="notice-panel notes-empty"><h2>{t('notesEmpty')}</h2><p>{t('notesEmptyHelp')}</p></div> : <>
         <p className="notes-intro">{t('notesIntro')}</p>
         <label className="notes-search">{t('searchNotes')}
           <span><Search aria-hidden="true" /><input ref={searchInput} type="search" value={notesView.query} maxLength={200}
