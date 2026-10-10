@@ -63,6 +63,23 @@ it('shows empty and no-match states in English', async () => {
   expect(screen.getByRole('heading', { name: 'No notes found.' })).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
   expect((screen.getByRole('searchbox', { name: 'Search notes' }) as HTMLInputElement).value).toBe('');
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search notes' }));
+});
+
+it.each([
+  ['pt-BR', 'Buscar nas observações', 'Limpar busca'],
+  ['en', 'Search notes', 'Clear search'],
+] as const)('clears a matching search and returns to all notes in %s', async (locale, searchLabel, clearLabel) => {
+  await setup([book('Primeiro', 'Anotação A'), book('Segundo', 'Anotação B')], locale);
+  const search = await screen.findByRole('searchbox', { name: searchLabel });
+  expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
+  await userEvent.type(search, 'Primeiro');
+  expect(within(screen.getByRole('list', { name: locale === 'en' ? 'Books with notes' : 'Livros com observações' })).getAllByRole('listitem')).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+  expect((search as HTMLInputElement).value).toBe('');
+  expect(document.activeElement).toBe(search);
+  expect(within(screen.getByRole('list', { name: locale === 'en' ? 'Books with notes' : 'Livros com observações' })).getAllByRole('listitem')).toHaveLength(2);
+  expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
 });
 
 it.each([
@@ -100,6 +117,11 @@ it('paginates note entries and resets to first page for a new search', async () 
   await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar nas observações' }), 'Livro 00');
   expect(list().getAllByRole('listitem')).toHaveLength(1);
   expect(screen.queryByRole('navigation', { name: 'Páginas de observações' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+  expect(list().getAllByRole('listitem')).toHaveLength(24);
+  expect(list().getAllByRole('listitem')[0].textContent).toContain('Livro 00');
+  expect(screen.getByRole('navigation', { name: 'Páginas de observações' })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Buscar nas observações' }));
 });
 
 it('explains how to start when no book has a note', async () => {

@@ -24,6 +24,10 @@ export function NotesPage() {
   const returnOnEntry = useRef(notesView.returnBookId);
   const restoredOnEntry = useRef(false);
   const statuses = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
+  const clearSearch = () => {
+    setNotesView(view => ({ ...view, query: '', page: 1, returnBookId: null }));
+    searchInput.current?.focus();
+  };
 
   useEffect(() => { document.title = `${t('notesNotebook')} · ${t('appName')}`; }, [t]);
   useEffect(() => {
@@ -62,7 +66,8 @@ export function NotesPage() {
             onChange={event => setNotesView(view => ({ ...view, query: event.target.value, page: 1, returnBookId: null }))} /></span>
         </label>
         <p className="notes-count">{t(matches.length === 1 ? 'notesResultOne' : 'notesResults', { count: formatNumber(locale, matches.length) })}</p>
-        {matches.length === 0 ? <div className="notice-panel"><h2>{t('notesNoMatches')}</h2><p>{t('notesTryAnother')}</p><button className="button button-secondary" onClick={() => { setNotesView(view => ({ ...view, query: '', page: 1 })); searchInput.current?.focus(); }}>{t('clearSearch')}</button></div> : <>
+        {notesView.query.length > 0 && matches.length > 0 && <div className="notes-clear-search"><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div>}
+        {matches.length === 0 ? <div className="notice-panel"><h2>{t('notesNoMatches')}</h2><p>{t('notesTryAnother')}</p><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div> : <>
           <ol ref={list} className="note-books" aria-label={t('notesList')} start={(page - 1) * pageSize + 1}>
             {pageBooks.map(book => <li className="note-book" key={book.id}>
               <p className="note-book-meta">{t('authorBookMeta', { year: formatShelfYear(book.shelfYear), status: statuses[book.status] })}</p>
