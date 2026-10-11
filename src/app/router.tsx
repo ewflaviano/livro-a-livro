@@ -23,6 +23,7 @@ import { DataPage } from '../ui/pages/DataPage';
 import { MorePage } from '../ui/pages/MorePage';
 import { SupportPage } from '../ui/pages/SupportPage';
 import { DuplicatesPage } from '../ui/pages/DuplicatesPage';
+import { ReviewDetailsPage } from '../ui/pages/ReviewDetailsPage';
 
 export function AppRoutes({ openService }: { openService?: () => Promise<ShelfService> } = {}) {
   return (
@@ -40,6 +41,7 @@ export function AppRoutes({ openService }: { openService?: () => Promise<ShelfSe
         <Route path="mais" element={<MorePage />} />
         <Route path="dados" element={<DataPage />} />
         <Route path="duplicatas" element={<DuplicatesPage />} />
+        <Route path="revisar-fichas" element={<ReviewDetailsPage />} />
         <Route path="apoiar" element={<SupportPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
         <Route path="instalar" element={<InstallPage />} />
