@@ -93,6 +93,29 @@ it('clears an empty author search with the keyboard in Portuguese', async () => 
   expect(screen.getByText('1 nome de autoria')).toBeTruthy();
 });
 
+it.each([
+  ['pt-BR', 'Buscar autor', 'Limpar busca', 'Índice de autores'],
+  ['en', 'Search authors', 'Clear search', 'Author index'],
+] as const)('clears a matching author search and restores the full index in %s', async (locale, searchLabel, clearLabel, listLabel) => {
+  const repository = await setup([book('Livro A', ['Ana']), book('Livro B', ['Bia'])], locale);
+  const revision = await repository.readRevision();
+  await userEvent.click(within(screen.getByRole('navigation', { name: locale === 'en' ? 'Mobile navigation' : 'Navegação mobile' })).getByRole('link', { name: locale === 'en' ? 'Authors' : 'Autores' }));
+  const search = screen.getByRole('searchbox', { name: searchLabel });
+  expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
+  await userEvent.type(search, 'Ana');
+  const index = within(screen.getByRole('list', { name: listLabel }));
+  expect(index.getAllByRole('listitem')).toHaveLength(1);
+  await userEvent.click(index.getByRole('button'));
+  expect(index.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+  await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+  expect((search as HTMLInputElement).value).toBe('');
+  expect(document.activeElement).toBe(search);
+  expect(index.getAllByRole('listitem')).toHaveLength(2);
+  expect(index.getAllByRole('button').every(button => button.getAttribute('aria-expanded') === 'false')).toBe(true);
+  expect(screen.queryByRole('button', { name: clearLabel })).toBeNull();
+  expect(await repository.readRevision()).toEqual(revision);
+});
+
 it('paginates both author groups and the books inside a group', async () => {
   const books = [
     ...Array.from({ length: 25 }, (_, i) => book(`Main book ${String(i).padStart(2, '0')}`, ['Autora 00'])),
