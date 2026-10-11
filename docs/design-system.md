@@ -294,7 +294,7 @@ A estante usa duas colunas abaixo de 640 px e quatro no tablet, com títulos com
 
 Quando a busca não encontra livros com um filtro de estado ativo, o estado vazio oferece **Limpar filtro**. A ação preserva consulta, ano e alcance, devolve o foco ao campo de busca e não aparece quando o filtro já é Todos.
 
-No índice de autores, a busca sem resultados oferece **Limpar busca**. A ação restaura a lista da primeira página e devolve o foco ao campo, sem alterar a estante.
+No índice de autores, uma busca preenchida oferece **Limpar busca** com ou sem resultados. A ação restaura a lista da primeira página, fecha o grupo expandido e devolve o foco ao campo, sem alterar a estante.
 
 Resultados externos têm título, autoria, origem e primeira publicação da obra quando conhecida em linhas compactas. A pessoa revisa os dados da edição antes de salvar; entrada manual continua disponível. Validar 320/390/768/1440 px, paisagem, foco, diálogos, formulário e zoom de 200%.
 

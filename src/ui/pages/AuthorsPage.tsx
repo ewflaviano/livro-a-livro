@@ -29,6 +29,10 @@ export function AuthorsPage() {
   const list = useRef<HTMLOListElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const statuses = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
+  const clearSearch = () => {
+    setAuthorsView(view => ({ ...view, query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null }));
+    searchInput.current?.focus();
+  };
 
   useEffect(() => { document.title = `${t('authors')} · ${t('appName')}`; }, [t]);
   useEffect(() => {
@@ -72,7 +76,8 @@ export function AuthorsPage() {
             onChange={event => setAuthorsView(view => ({ ...view, query: event.target.value, page: 1, expanded: null, bookPage: 1, returnBookId: null }))} /></span>
         </label>
         <p className="authors-count">{t(matches.length === 1 ? 'authorResultOne' : 'authorResults', { count: formatNumber(locale, matches.length) })}</p>
-        {matches.length === 0 ? <div className="notice-panel"><h2>{t('authorIndexNoMatches')}</h2><p>{t('authorIndexTryAnother')}</p><button className="button button-secondary" type="button" onClick={() => { setAuthorsView(view => ({ ...view, query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null })); searchInput.current?.focus(); }}>{t('clearSearch')}</button></div> : <>
+        {authorsView.query.length > 0 && matches.length > 0 && <div className="authors-clear-search"><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div>}
+        {matches.length === 0 ? <div className="notice-panel"><h2>{t('authorIndexNoMatches')}</h2><p>{t('authorIndexTryAnother')}</p><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div> : <>
           <ol ref={list} className="author-groups" aria-label={t('authorIndexList')} start={(page - 1) * pageSize + 1}>
             {pageGroups.map((group, index) => {
               const open = group.key === authorsView.expanded;
