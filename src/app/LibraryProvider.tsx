@@ -4,10 +4,12 @@ import type { ShelfService, ShelfState } from '../services/shelf-service';
 import type { PortablePreferences } from '../ports/library-repository';
 import { openShelfService } from './composition';
 import type { LibraryService } from '../services/library-service';
+import type { MissingDetail } from '../domain/review-details';
 
 export type AuthorsView = { query: string; page: number; expanded: string | null; bookPage: number; returnBookId: string | null };
 export type NotesView = { query: string; page: number; returnBookId: string | null };
 export type DuplicatesView = { page: number; expanded: string | null; bookPage: number; returnBookId: string | null; returnGroupKey: string | null };
+export type ReviewDetailsView = { detail: MissingDetail; page: number; returnBookId: string | null };
 
 type LibraryContext = {
   state: ShelfState;
@@ -26,6 +28,8 @@ type LibraryContext = {
   setNotesView: Dispatch<SetStateAction<NotesView>>;
   duplicatesView: DuplicatesView;
   setDuplicatesView: Dispatch<SetStateAction<DuplicatesView>>;
+  reviewDetailsView: ReviewDetailsView;
+  setReviewDetailsView: Dispatch<SetStateAction<ReviewDetailsView>>;
   books: LibraryService | null;
   backup: ShelfService['backup'] | null;
   catalog: ShelfService['catalog'] | null;
@@ -46,6 +50,7 @@ export function LibraryProvider({ children, openService = openShelfService }: {
   const [authorsView, setAuthorsView] = useState<AuthorsView>({ query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null });
   const [notesView, setNotesView] = useState<NotesView>({ query: '', page: 1, returnBookId: null });
   const [duplicatesView, setDuplicatesView] = useState<DuplicatesView>({ page: 1, expanded: null, bookPage: 1, returnBookId: null, returnGroupKey: null });
+  const [reviewDetailsView, setReviewDetailsView] = useState<ReviewDetailsView>({ detail: 'authors', page: 1, returnBookId: null });
   const updateShelfQuery = useCallback((query: string) => {
     setShelfQuery(query);
     if (!query.trim()) setShelfSearchScope('year');
@@ -73,7 +78,8 @@ export function LibraryProvider({ children, openService = openShelfService }: {
     retry: () => { setAttempt((value) => value + 1); },
     updatePreferences: (patch) => service?.updatePreferences(patch), positions: positions.current, shelfPages, setShelfPage,
     shelfQuery, setShelfQuery: updateShelfQuery, shelfSearchScope, setShelfSearchScope, authorsView, setAuthorsView, notesView, setNotesView, books: service?.books ?? null,
-    duplicatesView, setDuplicatesView, backup: service?.backup ?? null, catalog: service?.catalog ?? null,
+    duplicatesView, setDuplicatesView, reviewDetailsView, setReviewDetailsView,
+    backup: service?.backup ?? null, catalog: service?.catalog ?? null,
   }}>{children}</Context.Provider>;
 }
 

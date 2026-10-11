@@ -283,6 +283,19 @@ h2 { font-size: var(--text-h2); }
 .notes-empty { margin-top: var(--space-6); }
 .duplicates-entry { margin-block: var(--space-8); padding: var(--space-6); background: var(--color-surface); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-panel); }
 .duplicates-entry h2 { margin-top: 0; }
+.review-details-entry { margin-block: var(--space-8); padding: var(--space-6); background: var(--color-surface); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-panel); }
+.review-details-entry h2 { margin-top: 0; }
+.review-details-page { overflow-wrap: anywhere; }
+.review-details-intro, .review-details-local { color: var(--color-text-secondary); }
+.review-details-filter { border: 0; margin: var(--space-6) 0 0; padding: 0; min-width: 0; }
+.review-details-filter legend { margin-bottom: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+.review-details-count { margin-block: var(--space-4); color: var(--color-text-secondary); font-size: var(--text-small); }
+.review-details-list { display: grid; gap: var(--space-3); list-style: none; margin: var(--space-4) 0; padding: 0; }
+.review-details-card { min-width: 0; padding: var(--space-5); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.review-details-card h2 { margin: 0 0 var(--space-1); font: var(--weight-semibold) var(--text-body)/var(--leading-compact) var(--font-ui); letter-spacing: normal; }
+.review-details-card p { margin: 0; color: var(--color-text-secondary); font-size: var(--text-small); }
+.review-details-link { display: inline-flex; align-items: center; min-height: var(--target-min); margin-top: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+.review-details-local { font-size: var(--text-small); }
 .duplicates-page { overflow-wrap: anywhere; }
 .duplicates-intro { color: var(--color-text-secondary); }
 .duplicates-count { font-weight: var(--weight-semibold); margin-bottom: var(--space-2); }

@@ -190,6 +190,8 @@ Voltar para Estante 2026; capa, título sem corte, autor e ano da estante; estad
 
 Quando o registro está em **Lendo**, **Marcar como lido** é a ação principal e **Editar livro** permanece secundária. A confirmação cita título e ano, começa com foco em Cancelar e explica que a ação não preenche data de término. Depois do commit local, o estado e as estatísticas da estante mudam; título, ano, capa, datas, nota e avaliação permanecem. Erro de espaço ou concorrência não muda o registro, e conflito pede recarregar a versão salva. Nos outros estados, Editar livro continua como ação principal.
 
+**Revisar fichas:** Seus dados oferece uma consulta local de livros sem autoria, páginas ou ISBN, um critério por vez. A lista mostra título, ano e estado, usa paginação e abre o detalhe para edição voluntária. Ausência de qualquer um desses campos não é erro, pendência nem condição para usar a estante. Após voltar do detalhe, a consulta preserva o critério e recupera foco em um resultado válido; se o livro deixou o recorte, informa que a lista mudou. A consulta não armazena nova preferência nem envia conteúdo para fora do dispositivo.
+
 Datas legadas permanecem no registro e no backup, embora não apareçam no fluxo atual. Estado Salvo / Alterações não salvas / Salvando / Falha ao salvar deve ser literal. Observações e avaliação não são resenha pública. Não há perfil, curtidas, comentários ou botão de publicar.
 
 ## 11. Estatísticas mínimas

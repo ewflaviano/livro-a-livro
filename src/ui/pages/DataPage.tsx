@@ -90,6 +90,11 @@ export function DataPage() {
       <p>{t('duplicatesIntro')}</p>
       <Link className="button button-secondary" to="/duplicatas">{t('duplicatesEntry')}</Link>
     </section>
+    <section className="review-details-entry" aria-labelledby="review-details-entry-title">
+      <h2 id="review-details-entry-title">{t('reviewDetailsTitle')}</h2>
+      <p>{t('reviewDetailsIntro')}</p>
+      <Link className="button button-secondary" to="/revisar-fichas">{t('reviewDetailsEntry')}</Link>
+    </section>
     <section aria-labelledby="experiment-data-title">
       <h2 id="experiment-data-title">{t('experimentDataTitle')}</h2>
       <p>{t('experimentDataExplanation')}</p>
