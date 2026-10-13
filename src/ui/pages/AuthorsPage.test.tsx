@@ -20,8 +20,8 @@ beforeEach(() => {
 });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function setup(books: Book[], locale: Locale = 'pt-BR') {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+async function setup(books: Book[], locale: Locale = 'pt-BR', name = crypto.randomUUID()) {
+  const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   await repository.updatePreferences({ shelfYear: 2026 });
   const service = createShelfService(repository);
@@ -59,6 +59,124 @@ it('opens a local author index across years and restores the book link after ret
   expect(window.scrollTo).toHaveBeenCalledWith(0, 350);
   expect(await repository.readAll()).toEqual(before);
   expect(await repository.readRevision()).toEqual(revision);
+});
+
+it('moves focus to a book in its new author group after an edit', async () => {
+  await setup([book('Livro A', ['Ana']), book('Livro B', ['Bia'])]);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  await userEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Livro A/ }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
+  const authors = screen.getByRole('textbox', { name: 'Autores (opcional, um por linha)' });
+  await userEvent.clear(authors);
+  await userEvent.type(authors, 'Bia');
+  await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+  await screen.findByText('Livro salvo neste dispositivo.');
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /Bia/ }).getAttribute('aria-expanded')).toBe('true'));
+  const moved = await screen.findByRole('link', { name: /Livro A/ });
+  await waitFor(() => expect(document.activeElement).toBe(moved));
+  expect(screen.getByRole('button', { name: /Bia/ }).getAttribute('aria-expanded')).toBe('true');
+});
+
+it('announces a changed English index and focuses its heading when a filtered book leaves', async () => {
+  await setup([book('Sample book', ['Ana'])], 'en');
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Mobile navigation' })).getByRole('link', { name: 'Authors' }));
+  await userEvent.type(screen.getByRole('searchbox', { name: 'Search authors' }), 'ana');
+  await userEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Sample book/ }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Edit book' }));
+  const authors = screen.getByRole('textbox', { name: 'Authors (optional, one per line)' });
+  await userEvent.clear(authors);
+  await userEvent.type(authors, 'Bia');
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await screen.findByText('Book saved on this device.', {}, { timeout: 10000 });
+  await userEvent.click(screen.getByRole('link', { name: 'Back to authors' }));
+  expect(await screen.findByRole('heading', { name: 'No authors found.' })).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('index has been updated'));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Authors', level: 1 })));
+  expect((screen.getByRole('searchbox', { name: 'Search authors' }) as HTMLInputElement).value).toBe('ana');
+});
+
+it('finds a book moved to another author page by a concurrent local change', async () => {
+  const original = book('Livro fictício', ['Autora 00']);
+  const others = Array.from({ length: 24 }, (_, i) => book(`Outro ${i}`, [`Autora ${String(i + 1).padStart(2, '0')}`]));
+  const repository = await setup([original, ...others]);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  await userEvent.click(screen.getByRole('button', { name: /Autora 00/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Livro fictício/ }));
+  await screen.findByRole('link', { name: 'Voltar para autores' });
+  await repository.commit({ kind: 'replace', books: [{ ...original, authors: ['Zeta'] }, ...others] }, await repository.readRevision());
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /Zeta/ }).getAttribute('aria-expanded')).toBe('true'));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('link', { name: /Livro fictício/ })));
+  expect(screen.getByRole('button', { name: /Zeta/ }).getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByText('Página 2 de 2')).toBeTruthy();
+});
+
+it('restores focus when the library advances again during the return read', async () => {
+  const original = book('Livro fictício', ['Ana']);
+  const repository = await setup([original]);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  await userEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Livro fictício/ }));
+  await screen.findByRole('link', { name: 'Voltar para autores' });
+  const readRevision = repository.readRevision.bind(repository);
+  let advanced = false;
+  vi.spyOn(repository, 'readRevision').mockImplementation(async () => {
+    const version = await readRevision();
+    if (!advanced) {
+      advanced = true;
+      await repository.commit({ kind: 'put', book: { ...original, authors: ['Bia'] } }, version);
+    }
+    return version;
+  });
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /Bia/ }).getAttribute('aria-expanded')).toBe('true'));
+  const moved = screen.getByRole('link', { name: /Livro fictício/ });
+  await waitFor(() => expect(document.activeElement).toBe(moved));
+});
+
+it('refreshes an unnoticed change from another connection before restoring focus', async () => {
+  const name = crypto.randomUUID();
+  const original = book('Livro fictício', ['Ana']);
+  const repository = await setup([original], 'pt-BR', name);
+  const other = await openLibraryRepository({ name, channelFactory: null });
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  await userEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Livro fictício/ }));
+  await screen.findByRole('link', { name: 'Voltar para autores' });
+  const readRevision = repository.readRevision.bind(repository);
+  let advanced = false;
+  vi.spyOn(repository, 'readRevision').mockImplementation(async () => {
+    if (!advanced) {
+      advanced = true;
+      await other.commit({ kind: 'put', book: { ...original, authors: ['Bia'] } }, await other.readRevision());
+    }
+    return readRevision();
+  });
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /Bia/ }).getAttribute('aria-expanded')).toBe('true'));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('link', { name: /Livro fictício/ })));
+  other.close();
+});
+
+it('focuses a stable destination if an unseen revision cannot be projected', async () => {
+  const name = crypto.randomUUID();
+  const original = book('Livro fictício', ['Ana']);
+  const repository = await setup([original], 'pt-BR', name);
+  const other = await openLibraryRepository({ name, channelFactory: null });
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  await userEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Livro fictício/ }));
+  await screen.findByRole('link', { name: 'Voltar para autores' });
+  await other.commit({ kind: 'put', book: { ...original, authors: ['Bia'] } }, await other.readRevision());
+  vi.spyOn(repository, 'checkForChanges').mockResolvedValue();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Autores', level: 1 })), { timeout: 3500 });
+  expect(screen.getByRole('status').textContent).toContain('índice foi atualizado');
+  expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+  other.close();
 });
 
 it('filters author names offline and displays an accessible empty result in English', async () => {
