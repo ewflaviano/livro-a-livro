@@ -17,6 +17,7 @@ export function createLibraryService(repository: LibraryRepository, dependencies
 }) {
   return {
     readBook: (id: string) => repository.readBook(id),
+    checkForChanges: () => repository.checkForChanges(),
     readCover: (id: string) => repository.readCover(id),
     readRevision: () => repository.readRevision(),
     async save(input: { draft: NewBook; id?: string; year: number; expected: LocalRevision; allowDuplicate?: boolean; coverMedia?: CoverMedia }): Promise<SaveBookResult> {
