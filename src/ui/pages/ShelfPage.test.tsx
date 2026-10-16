@@ -341,6 +341,44 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['pt-BR', 'Buscar na estante', 'Buscar em todos os anos', 'Todos os anos'],
+    ['en', 'Search your shelf', 'Search all years', 'All years'],
+  ] as const)('opens a known result in another year from the empty search in %s', async (locale, searchLabel, actionLabel, scopeLabel) => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      book('Livro de apoio', { shelfYear: 2026 }),
+      book('Farol sintético', { shelfYear: 2025 }),
+    ], '/estante', locale);
+    const before = await repository.readBackupSnapshot();
+    await userEvent.type(screen.getByRole('searchbox', { name: searchLabel }), 'farol');
+    expect(screen.getByRole('button', { name: actionLabel })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: actionLabel }));
+    const result = screen.getByRole('link', { name: /Farol sintético/ });
+    expect(document.activeElement).toBe(result);
+    expect((screen.getByRole('radio', { name: scopeLabel }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('searchbox', { name: searchLabel }) as HTMLInputElement).value).toBe('farol');
+    expect(screen.queryByRole('button', { name: actionLabel })).toBeNull();
+    expect((await repository.readBackupSnapshot()).books).toEqual(before.books);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('offers another year only when the current status filter has a match there', async () => {
+    await setup([
+      book('Livro de apoio', { shelfYear: 2026, status: 'reading' }),
+      book('Farol sintético', { shelfYear: 2025, status: 'read' }),
+    ]);
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'farol');
+    expect(screen.getByRole('button', { name: 'Buscar em todos os anos' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    expect(screen.queryByRole('button', { name: 'Buscar em todos os anos' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Todos' }));
+    expect(screen.getByRole('button', { name: 'Buscar em todos os anos' })).toBeTruthy();
+    await userEvent.clear(screen.getByRole('searchbox', { name: 'Buscar na estante' }));
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar na estante' }), 'inexistente');
+    expect(screen.queryByRole('button', { name: 'Buscar em todos os anos' })).toBeNull();
+  });
+
   it.each([['pt-BR', 'Limpar filtro', 'Buscar na estante', 'Todos os anos'], ['en', 'Clear filter', 'Search your shelf', 'All years']] as const)(
     'clears only the status filter from an empty global search in %s', async (locale, clearLabel, searchLabel, scopeLabel) => {
       const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);

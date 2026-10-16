@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowDownAZ, Clock3, Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
-import { normalizeIsbn, type ReadingStatus } from '../../domain/book';
+import { normalizeIsbn, type Book, type ReadingStatus } from '../../domain/book';
 import { booksForYear, formatShelfYear, orderShelfBooks } from '../../domain/library';
 import { statisticsForYear } from '../../domain/statistics';
 import { LibraryState } from '../components/LibraryState';
@@ -28,6 +28,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const yearFocusTarget = useRef<number | null>(null);
   const collection = useRef<HTMLOListElement>(null);
   const pageNavigation = useRef(false);
+  const focusExpandedResult = useRef(false);
   const title = status ? labels[status] : t('myShelf');
   const currentYear = new Date().getFullYear();
   const year = state.status === 'ready' ? state.preferences.shelfYear ?? currentYear : currentYear;
@@ -39,8 +40,10 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const summaryLayout = useExperiment('shelf-summary-layout', state.status === 'ready' && yearBooks.length > 0 && !globalSearch);
   const booksInScope = globalSearch && state.status === 'ready' ? state.snapshot.books : yearBooks;
   const filtered = filter === 'all' ? booksInScope : booksInScope.filter((book) => book.status === filter);
-  const matches = query ? filtered.filter(book =>
-    searchText([book.title, ...book.authors].join(' ')).includes(query) || book.isbn === isbnQuery) : filtered;
+  const matchesQuery = (book: Book) => searchText([book.title, ...book.authors].join(' ')).includes(query) || book.isbn === isbnQuery;
+  const matches = query ? filtered.filter(matchesQuery) : filtered;
+  const hasOtherYearMatches = !globalSearch && !!query && matches.length === 0 && state.status === 'ready' &&
+    state.snapshot.books.some(book => book.shelfYear !== year && (filter === 'all' || book.status === filter) && matchesQuery(book));
   const visible = orderShelfBooks(matches, state.status === 'ready' ? state.preferences.sortOrder : 'recent', locale);
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
   const selection = JSON.stringify([year, filter, shelfQuery, globalSearch, state.status === 'ready' ? state.preferences.sortOrder : 'recent']);
@@ -65,6 +68,11 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
     collection.current?.querySelector<HTMLAnchorElement>('.book-entry')?.focus();
     collection.current?.scrollIntoView?.({ block: 'start' });
   }, [page]);
+  useLayoutEffect(() => {
+    if (!focusExpandedResult.current || !globalSearch) return;
+    focusExpandedResult.current = false;
+    collection.current?.querySelector<HTMLAnchorElement>('.book-entry')?.focus();
+  }, [globalSearch]);
   useLayoutEffect(() => {
     if (yearFocusTarget.current !== year || state.status !== 'ready') return;
     yearSelect.current?.focus();
@@ -142,7 +150,12 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>{t('retrySavePreferences')}</button></div>}
     {snapshot.books.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
       <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p>
-        {filter !== 'all' && <button className="button button-secondary" onClick={() => { searchInput.current?.focus(); selectFilter('all'); }}>{t('clearFilter')}</button>}
+        {(hasOtherYearMatches || filter !== 'all') && <div className="shelf-search-empty-actions">
+          {hasOtherYearMatches && <button className="button button-secondary" type="button" onClick={() => {
+            focusExpandedResult.current = true; setShelfSearchScope('all');
+          }}>{t('searchAcrossYearsAction')}</button>}
+          {filter !== 'all' && <button className="button button-secondary" onClick={() => { searchInput.current?.focus(); selectFilter('all'); }}>{t('clearFilter')}</button>}
+        </div>}
       </div> : yearBooks.length === 0 && !globalSearch ?
       <div className="notice-panel shelf-year-empty"><h2>{t('emptyYearTitle', { year: yearText })}</h2>
         <p>{t('emptyYearHelp')}</p>
