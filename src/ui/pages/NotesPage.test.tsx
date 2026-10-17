@@ -67,6 +67,24 @@ it('shows empty and no-match states in English', async () => {
 });
 
 it.each([
+  ['pt-BR', 'Buscar nas observações', '0 livros com observações', '2 livros com observações', 'Limpar busca'],
+  ['en', 'Search notes', '0 books with notes', '2 books with notes', 'Clear search'],
+] as const)('announces the settled result count without moving focus in %s', async (locale, searchLabel, none, all, clearLabel) => {
+  await setup([book('Primeiro', 'Observação A'), book('Segundo', 'Observação B')], locale);
+  const search = await screen.findByRole('searchbox', { name: searchLabel });
+  const status = document.querySelector<HTMLElement>('.notes-page [role="status"]');
+  expect(status?.getAttribute('aria-atomic')).toBe('true');
+  expect(status?.textContent).toBe('');
+  await userEvent.type(search, 'ausente');
+  expect(status?.textContent).toBe('');
+  await waitFor(() => expect(status?.textContent).toBe(none));
+  expect(document.activeElement).toBe(search);
+  await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+  await waitFor(() => expect(status?.textContent).toBe(all));
+  expect(document.activeElement).toBe(search);
+});
+
+it.each([
   ['pt-BR', 'Buscar nas observações', 'Limpar busca'],
   ['en', 'Search notes', 'Clear search'],
 ] as const)('clears a matching search and returns to all notes in %s', async (locale, searchLabel, clearLabel) => {

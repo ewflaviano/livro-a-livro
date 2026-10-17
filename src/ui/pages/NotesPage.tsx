@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
@@ -20,16 +20,24 @@ export function NotesPage() {
   const pageBooks = matches.slice((page - 1) * pageSize, page * pageSize);
   const list = useRef<HTMLOListElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const searchChanged = useRef(false);
+  const [announcedCount, setAnnouncedCount] = useState<number | null>(null);
   const pageNavigation = useRef(false);
   const returnOnEntry = useRef(notesView.returnBookId);
   const restoredOnEntry = useRef(false);
   const statuses = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
   const clearSearch = () => {
+    searchChanged.current = true;
     setNotesView(view => ({ ...view, query: '', page: 1, returnBookId: null }));
     searchInput.current?.focus();
   };
 
   useEffect(() => { document.title = `${t('notesNotebook')} · ${t('appName')}`; }, [t]);
+  useEffect(() => {
+    if (!searchChanged.current || state.status !== 'ready') return;
+    const timer = window.setTimeout(() => setAnnouncedCount(matches.length), 500);
+    return () => window.clearTimeout(timer);
+  }, [notesView.query, matches.length, state.status]);
   useEffect(() => {
     if (notesView.page > totalPages) setNotesView(view => ({ ...view, page: totalPages }));
   }, [notesView.page, totalPages, setNotesView]);
@@ -63,9 +71,10 @@ export function NotesPage() {
         <p className="notes-intro">{t('notesIntro')}</p>
         <label className="notes-search">{t('searchNotes')}
           <span><Search aria-hidden="true" /><input ref={searchInput} type="search" value={notesView.query} maxLength={200}
-            onChange={event => setNotesView(view => ({ ...view, query: event.target.value, page: 1, returnBookId: null }))} /></span>
+            onChange={event => { searchChanged.current = true; setNotesView(view => ({ ...view, query: event.target.value, page: 1, returnBookId: null })); }} /></span>
         </label>
         <p className="notes-count">{t(matches.length === 1 ? 'notesResultOne' : 'notesResults', { count: formatNumber(locale, matches.length) })}</p>
+        <p className="visually-hidden" role="status" aria-atomic="true">{announcedCount === null ? '' : t(announcedCount === 1 ? 'notesResultOne' : 'notesResults', { count: formatNumber(locale, announcedCount) })}</p>
         {notesView.query.length > 0 && matches.length > 0 && <div className="notes-clear-search"><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div>}
         {matches.length === 0 ? <div className="notice-panel"><h2>{t('notesNoMatches')}</h2><p>{t('notesTryAnother')}</p><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div> : <>
           <ol ref={list} className="note-books" aria-label={t('notesList')} start={(page - 1) * pageSize + 1}>
