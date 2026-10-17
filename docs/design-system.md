@@ -145,6 +145,8 @@ No cadastro, estado usa três opções visíveis e ano da estante usa controle d
 
 Estado de leitura é um badge com ícone e texto, não um botão se não houver ação. Avisos de sistema usam título, explicação e próximo passo. Sucesso em `role="status"` apenas quando ocorrer, erro de envio em região anunciada; não colocar todas as amostras estáticas em regiões vivas. Não anunciar cada tecla de busca. Carregamento usa texto e espaço reservado, sem cintilação. Erro de armazenamento: “Não foi possível salvar. Seu texto continua aqui. Tente novamente.” Nunca mostrar sucesso antes da confirmação de persistência.
 
+No Caderno de observações (issue #179), a contagem visível da busca muda imediatamente. Uma região de status separada anuncia apenas a contagem após uma breve pausa na digitação, inclusive quando não há resultados; não anuncia cada tecla nem o texto privado da observação.
+
 ### Confirmação e retorno
 
 Exclusão de um livro pede “Excluir [título] desta estante?” e explica que registro, avaliação e nota serão removidos deste dispositivo. Cancelar vem antes de Excluir. Importação que substitui dados sempre exige resumo e confirmação específica. No produto, usar `dialog` nativo ou equivalente acessível: título, foco inicial seguro, foco contido, Escape para cancelar e retorno ao acionador. Demonstrações estáticas de confirmação devem usar painéis identificados como amostra, não janelas modais ativas.
