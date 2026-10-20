@@ -197,6 +197,38 @@ it('filters author names offline and displays an accessible empty result in Engl
   expect(await repository.readRevision()).toEqual(revision);
 });
 
+it.each([
+  ['pt-BR', 'Navegação mobile', 'Autores', 'Buscar autor', '1 nome de autoria', '0 nomes de autoria', 'Limpar busca'],
+  ['en', 'Mobile navigation', 'Authors', 'Search authors', '1 author name', '0 author names', 'Clear search'],
+] as const)('announces author search results after a pause in %s without moving focus', async (locale, navigation, destination, searchLabel, one, zero, clearLabel) => {
+  const repository = await setup([book('Livro fictício', ['Ana'])], locale);
+  const revision = await repository.readRevision();
+  await userEvent.click(within(screen.getByRole('navigation', { name: navigation })).getByRole('link', { name: destination }));
+  const search = screen.getByRole('searchbox', { name: searchLabel });
+  const announcement = document.querySelector<HTMLElement>('.authors-announcement');
+  expect(announcement?.getAttribute('aria-live')).toBe('polite');
+  expect(announcement?.textContent).toBe('');
+
+  await userEvent.type(search, 'ana');
+  expect(announcement?.textContent).toBe('');
+  await waitFor(() => expect(announcement?.textContent).toBe(one));
+  expect(document.activeElement).toBe(search);
+
+  await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+  expect(announcement?.textContent).toBe('');
+  await waitFor(() => expect(announcement?.textContent).toBe(one));
+  expect(document.activeElement).toBe(search);
+
+  await userEvent.type(search, 'missing');
+  await waitFor(() => expect(announcement?.textContent).toBe(zero));
+  expect(document.activeElement).toBe(search);
+
+  await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+  await waitFor(() => expect(announcement?.textContent).toBe(one));
+  expect(document.activeElement).toBe(search);
+  expect(await repository.readRevision()).toEqual(revision);
+});
+
 it('clears an empty author search with the keyboard in Portuguese', async () => {
   await setup([book('Livro fictício', ['Ana'])]);
   await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));

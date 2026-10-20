@@ -32,15 +32,24 @@ export function AuthorsPage() {
   const list = useRef<HTMLOListElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const searchChanged = useRef(false);
+  const [announcedCount, setAnnouncedCount] = useState<number | null>(null);
   const [listChanged, setListChanged] = useState(false);
   const [returnRevision, setReturnRevision] = useState<LocalRevision | 'failed' | null>(null);
   const statuses = { read: t('readSingular'), reading: t('reading'), 'want-to-read': t('wantToRead') };
   const clearSearch = () => {
+    searchChanged.current = true;
+    setAnnouncedCount(null);
     setAuthorsView(view => ({ ...view, query: '', page: 1, expanded: null, bookPage: 1, returnBookId: null }));
     searchInput.current?.focus();
   };
 
   useEffect(() => { document.title = `${t('authors')} · ${t('appName')}`; }, [t]);
+  useEffect(() => {
+    if (!searchChanged.current || state.status !== 'ready') return;
+    const timer = window.setTimeout(() => setAnnouncedCount(matches.length), 500);
+    return () => window.clearTimeout(timer);
+  }, [authorsView.query, matches.length, state.status]);
   useEffect(() => {
     if (authorsView.page > totalPages || authorsView.bookPage > bookPages) {
       setAuthorsView(view => ({ ...view, page: Math.min(view.page, totalPages), bookPage: Math.min(view.bookPage, bookPages) }));
@@ -142,9 +151,10 @@ export function AuthorsPage() {
         <p className="authors-intro">{t('authorsIntro')}</p>
         <label className="authors-search">{t('searchAuthors')}
           <span><Search aria-hidden="true" /><input ref={searchInput} type="search" value={authorsView.query} maxLength={200}
-            onChange={event => setAuthorsView(view => ({ ...view, query: event.target.value, page: 1, expanded: null, bookPage: 1, returnBookId: null }))} /></span>
+            onChange={event => { searchChanged.current = true; setAnnouncedCount(null); setAuthorsView(view => ({ ...view, query: event.target.value, page: 1, expanded: null, bookPage: 1, returnBookId: null })); }} /></span>
         </label>
         <p className="authors-count">{t(matches.length === 1 ? 'authorResultOne' : 'authorResults', { count: formatNumber(locale, matches.length) })}</p>
+        <p className="visually-hidden authors-announcement" aria-live="polite" aria-atomic="true">{announcedCount === null ? '' : t(announcedCount === 1 ? 'authorResultOne' : 'authorResults', { count: formatNumber(locale, announcedCount) })}</p>
         {authorsView.query.length > 0 && matches.length > 0 && <div className="authors-clear-search"><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div>}
         {matches.length === 0 ? <div className="notice-panel"><h2>{t('authorIndexNoMatches')}</h2><p>{t('authorIndexTryAnother')}</p><button className="button button-secondary" type="button" onClick={clearSearch}>{t('clearSearch')}</button></div> : <>
           <ol ref={list} className="author-groups" aria-label={t('authorIndexList')} start={(page - 1) * pageSize + 1}>

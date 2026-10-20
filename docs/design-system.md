@@ -302,6 +302,8 @@ Quando a busca anual não encontra resultado, mas a mesma consulta e filtro têm
 
 No índice de autores, uma busca preenchida oferece **Limpar busca** com ou sem resultados. A ação restaura a lista da primeira página, fecha o grupo expandido e devolve o foco ao campo, sem alterar a estante.
 
+A busca de autores anuncia somente a contagem de nomes encontrados, inclusive zero, após 500 ms de pausa; a região viva já existe antes da digitação e não repete nomes ou livros. Limpar a busca mantém o foco no campo e anuncia a contagem restaurada. O índice continua local e utilizável offline.
+
 Ao voltar de um livro pelo índice de autores, manter busca e posição quando o link ainda estiver visível. Se a autoria mudou, localizar o livro no novo grupo e página alcançáveis; caso ele saia da busca, anunciar que o índice foi atualizado e focar o título, sem recuperar uma posição de rolagem inválida.
 
 Resultados externos têm título, autoria, origem e primeira publicação da obra quando conhecida em linhas compactas. A pessoa revisa os dados da edição antes de salvar; entrada manual continua disponível. Validar 320/390/768/1440 px, paisagem, foco, diálogos, formulário e zoom de 200%.
