@@ -259,6 +259,33 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('announces the count after a filter leaves the reading route', async () => {
+    await setup([book('Registro lido'), book('Registro em leitura', { status: 'reading' })], '/lendo');
+    expect(document.querySelector<HTMLElement>('.shelf-announcement')?.textContent).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: 'Todos' }));
+    const announcement = document.querySelector<HTMLElement>('.shelf-announcement');
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe('2 livros encontrados neste ano'));
+  });
+
+  it('does not announce when the selected filter stays the same across routes', async () => {
+    await setup([book('Registro em leitura', { status: 'reading' })], '/lendo');
+    await userEvent.click(screen.getByRole('button', { name: 'Lendo' }));
+    const announcement = document.querySelector<HTMLElement>('.shelf-announcement');
+    await new Promise(resolve => setTimeout(resolve, 600));
+    expect(announcement?.textContent).toBe('');
+  });
+
+  it('announces the count after opening an available year from an empty year', async () => {
+    await setup([book('Registro de outro ano', { shelfYear: 2025 })]);
+    expect(document.querySelector<HTMLElement>('.shelf-announcement')?.textContent).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: 'Ver estante de 2025' }));
+    const announcement = document.querySelector<HTMLElement>('.shelf-announcement');
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe('1 livro encontrado neste ano'));
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Ano da estante' }));
+  });
+
   it('keeps the selected status filter when opening a populated year', async () => {
     await setup([book('Livro sintético', { shelfYear: 2025, status: 'read' })], '/lendo');
     expect(screen.getByText('O filtro Lendo continuará selecionado ao mudar de ano.')).toBeTruthy();
@@ -483,6 +510,64 @@ describe('annual shelf with the real IndexedDB adapter', () => {
     expect((await repository.readBackupSnapshot()).books).toEqual(before.books);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['pt-BR', 'Buscar na estante', 'Ano da estante', 'Todos os anos', 'Lendo', 'Limpar busca', '25 livros encontrados neste ano', '26 livros encontrados em todos os anos', '1 livro encontrado em todos os anos', '0 livros encontrados em todos os anos', '0 livros encontrados neste ano', '1 livro encontrado neste ano'],
+    ['en', 'Search your shelf', 'Shelf year', 'All years', 'Reading', 'Clear search', '25 books found this year', '26 books found across all years', '1 book found across all years', '0 books found across all years', '0 books found this year', '1 book found this year'],
+  ] as const)('announces the settled shelf count in %s without moving focus or sending data', async (
+    locale, searchLabel, yearLabel, allYearsLabel, readingLabel, clearLabel, yearCount, allCount, oneGlobalCount, zeroGlobalCount, zeroYearCount, oneCount,
+  ) => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { repository } = await setup([
+      ...numberedBooks(25),
+      book('Livro externo', { shelfYear: 2025, status: 'reading' }),
+    ], '/estante', locale);
+    const originalBooks = (await repository.readAll()).books;
+    const search = screen.getByRole('searchbox', { name: searchLabel });
+    const announcement = document.querySelector<HTMLElement>('.shelf-announcement');
+    expect(announcement?.getAttribute('role')).toBe('status');
+    expect(announcement?.getAttribute('aria-atomic')).toBe('true');
+    expect(announcement?.textContent).toBe('');
+
+    await userEvent.type(search, 'Livro');
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(yearCount));
+    expect(document.activeElement).toBe(search);
+
+    const scope = screen.getByRole('radio', { name: allYearsLabel });
+    await userEvent.click(scope);
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(allCount));
+    expect(document.activeElement).toBe(scope);
+
+    const reading = screen.getByRole('button', { name: readingLabel });
+    await userEvent.click(reading);
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(oneGlobalCount));
+    expect(document.activeElement).toBe(reading);
+
+    await userEvent.type(search, 'x');
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(zeroGlobalCount));
+
+    await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(zeroYearCount));
+    expect(document.activeElement).toBe(search);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: yearLabel }), '2025');
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(oneCount));
+
+    await userEvent.type(search, 'Livro');
+    await waitFor(() => expect(announcement?.textContent).toBe(oneCount));
+    await userEvent.click(screen.getByRole('button', { name: clearLabel }));
+    expect(announcement?.textContent).toBe('');
+    await waitFor(() => expect(announcement?.textContent).toBe(oneCount));
+    expect(document.activeElement).toBe(search);
+    expect((await repository.readAll()).books).toEqual(originalBooks);
+    expect(fetch).not.toHaveBeenCalled();
+  }, 15_000);
 
   it('finds another year from an empty year and restores the global search after opening a book', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {});

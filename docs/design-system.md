@@ -147,6 +147,8 @@ Estado de leitura é um badge com ícone e texto, não um botão se não houver 
 
 No Caderno de observações (issue #179), a contagem visível da busca muda imediatamente. Uma região de status separada anuncia apenas a contagem após uma breve pausa na digitação, inclusive quando não há resultados; não anuncia cada tecla nem o texto privado da observação.
 
+Na busca da Estante (issue #183), a contagem visível continua imediata. Uma região de status separada, inicialmente vazia, anuncia somente o total completo e o alcance após 500 ms sem mudança de consulta, ano, filtro ou alcance. Inclui zero resultados e limpeza da busca; não anuncia títulos, autoria, ISBN, consulta ou toda a coleção. O aviso visual de busca vazia não é uma segunda região viva.
+
 ### Confirmação e retorno
 
 Exclusão de um livro pede “Excluir [título] desta estante?” e explica que registro, avaliação e nota serão removidos deste dispositivo. Cancelar vem antes de Excluir. Importação que substitui dados sempre exige resumo e confirmação específica. No produto, usar `dialog` nativo ou equivalente acessível: título, foco inicial seguro, foco contido, Escape para cancelar e retorno ao acionador. Demonstrações estáticas de confirmação devem usar painéis identificados como amostra, não janelas modais ativas.

@@ -1,6 +1,6 @@
 import { useExperiment } from '../../experiments/ExperimentProvider';
 import { BookCover } from '../components/BookCover';
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowDownAZ, Clock3, Grid2X2, List, Plus, Search, X } from 'lucide-react';
 import { useLibrary } from '../../app/LibraryProvider';
@@ -29,6 +29,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const collection = useRef<HTMLOListElement>(null);
   const pageNavigation = useRef(false);
   const focusExpandedResult = useRef(false);
+  const searchChanged = useRef((location.state as { announceShelfCount?: boolean } | null)?.announceShelfCount === true);
+  const [announcedCount, setAnnouncedCount] = useState<number | null>(null);
   const title = status ? labels[status] : t('myShelf');
   const currentYear = new Date().getFullYear();
   const year = state.status === 'ready' ? state.preferences.shelfYear ?? currentYear : currentYear;
@@ -50,7 +52,23 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const savedPage = shelfPages.get(location.pathname);
   const page = savedPage?.selection === selection ? Math.min(savedPage.page, totalPages) : 1;
   const pageBooks = visible.slice((page - 1) * pageSize, page * pageSize);
+  const requestCountAnnouncement = () => {
+    searchChanged.current = true;
+    setAnnouncedCount(null);
+  };
   useEffect(() => { document.title = `${title} · ${t('appName')}`; }, [title, t]);
+  useEffect(() => {
+    const navigationState = location.state as { announceShelfCount?: boolean } | null;
+    if (navigationState?.announceShelfCount !== true) return;
+    const nextState = { ...navigationState };
+    delete nextState.announceShelfCount;
+    navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: nextState });
+  }, [location, navigate]);
+  useEffect(() => {
+    if (!searchChanged.current || state.status !== 'ready') return;
+    const timer = window.setTimeout(() => setAnnouncedCount(matches.length), 500);
+    return () => window.clearTimeout(timer);
+  }, [shelfQuery, year, filter, globalSearch, matches.length, state.status]);
   useEffect(() => {
     if (state.status !== 'ready') return;
     if (savedPage?.selection !== selection || savedPage.page !== page) setShelfPage(location.pathname, selection, page);
@@ -88,8 +106,9 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
   const latestBookYear = snapshot.books.reduce((latest, book) => Math.max(latest, book.shelfYear), 0);
   const metrics = statisticsForYear(yearBooks, year);
   function selectFilter(next: typeof filter) {
+    if (next !== filter) requestCountAnnouncement();
     updatePreferences({ filter: next });
-    if (status) navigate('/estante');
+    if (status) navigate('/estante', { state: next !== filter ? { announceShelfCount: true } : null });
   }
   function changePage(next: number) {
     pageNavigation.current = true;
@@ -101,7 +120,10 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       <div className="shelf-title-group"><h1 id="shelf-title">{status ? labels[status] : t('shelf')}</h1></div>
       <div className="shelf-heading-actions">
         <label className="year-field">{t('shelfYear')}
-          <select ref={yearSelect} value={preferences.shelfYear ?? 'current'} onChange={(event) => updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) })}>
+          <select ref={yearSelect} value={preferences.shelfYear ?? 'current'} onChange={(event) => {
+            requestCountAnnouncement();
+            updatePreferences({ shelfYear: event.target.value === 'current' ? null : Number(event.target.value) });
+          }}>
             <option value="current">{t('currentYearAutomatic')}</option>
             {years.map((item) => <option key={item} value={item}>{formatShelfYear(item)}</option>)}
           </select>
@@ -115,8 +137,8 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         <div className="shelf-search">
           <label className="shelf-search-field"><Search aria-hidden="true" /><span className="visually-hidden">{t('searchShelf')}</span>
             <input ref={searchInput} type="search" value={shelfQuery} maxLength={200}
-              placeholder={t('searchBookOrAuthor')} onChange={event => setShelfQuery(event.target.value)} /></label>
-          {shelfQuery && <button className="shelf-search-clear" aria-label={t('clearSearch')} onClick={() => { setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
+              placeholder={t('searchBookOrAuthor')} onChange={event => { requestCountAnnouncement(); setShelfQuery(event.target.value); }} /></label>
+          {shelfQuery && <button className="shelf-search-clear" aria-label={t('clearSearch')} onClick={() => { requestCountAnnouncement(); setShelfQuery(''); searchInput.current?.focus(); }}><X aria-hidden="true" /></button>}
         </div>
         {(yearBooks.length > 0 || !!query) && <><button className="shelf-sort" type="button"
           aria-label={preferences.sortOrder === 'recent' ? t('sortByTitle') : t('sortByRecent')}
@@ -133,9 +155,9 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
       {!!query && <fieldset className="shelf-search-scope">
         <legend>{t('searchScope')}</legend>
         <label><input type="radio" name="shelf-search-scope" checked={!globalSearch}
-          onChange={() => setShelfSearchScope('year')} />{t('searchThisYear')}</label>
+          onChange={() => { requestCountAnnouncement(); setShelfSearchScope('year'); }} />{t('searchThisYear')}</label>
         <label><input type="radio" name="shelf-search-scope" checked={globalSearch}
-          onChange={() => setShelfSearchScope('all')} />{t('searchAllYears')}</label>
+          onChange={() => { requestCountAnnouncement(); setShelfSearchScope('all'); }} />{t('searchAllYears')}</label>
       </fieldset>}
       {(yearBooks.length > 0 || !!query) && <div className="segmented-control shelf-filters" role="group" aria-label={t('filterByStatus')}>
         {(['all', 'read', 'reading', 'want-to-read'] as const).map((value) =>
@@ -145,14 +167,18 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         ? visible.length === 1 ? 'allYearsResultOne' : 'allYearsResults'
         : visible.length === 1 ? 'yearResultOne' : 'yearResults',
         { count: formatNumber(locale, visible.length) })}</p>}
+      <p className="visually-hidden shelf-announcement" role="status" aria-atomic="true">{announcedCount === null ? '' : t(globalSearch
+        ? announcedCount === 1 ? 'allYearsResultOne' : 'allYearsResults'
+        : announcedCount === 1 ? 'yearResultOne' : 'yearResults',
+        { count: formatNumber(locale, announcedCount) })}</p>
     </>}
     {state.preferenceError && <div role="alert"><p>{t('preferenceSaveError')}</p>
       <button className="button button-secondary" onClick={() => updatePreferences(preferences)}>{t('retrySavePreferences')}</button></div>}
     {snapshot.books.length === 0 ? <LibraryState state="empty" returnTo={location.pathname} /> : visible.length === 0 && query ?
-      <div className="notice-panel" role="status"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p>
+      <div className="notice-panel"><h2>{t('noBooksFound')}</h2><p>{t(globalSearch ? 'tryAnotherBookAllYears' : 'tryAnotherBook')}</p>
         {(hasOtherYearMatches || filter !== 'all') && <div className="shelf-search-empty-actions">
           {hasOtherYearMatches && <button className="button button-secondary" type="button" onClick={() => {
-            focusExpandedResult.current = true; setShelfSearchScope('all');
+            focusExpandedResult.current = true; requestCountAnnouncement(); setShelfSearchScope('all');
           }}>{t('searchAcrossYearsAction')}</button>}
           {filter !== 'all' && <button className="button button-secondary" onClick={() => { searchInput.current?.focus(); selectFilter('all'); }}>{t('clearFilter')}</button>}
         </div>}
@@ -161,7 +187,7 @@ export function ShelfPage({ status }: { status?: ReadingStatus }) {
         <p>{t('emptyYearHelp')}</p>
         {filter !== 'all' && <p>{t('emptyYearFilterHelp', { filter: labels[filter] })}</p>}
         <div className="shelf-year-empty-actions">
-          <button className="button button-secondary" type="button" onClick={() => { yearFocusTarget.current = latestBookYear; updatePreferences({ shelfYear: latestBookYear }); }}>
+          <button className="button button-secondary" type="button" onClick={() => { requestCountAnnouncement(); yearFocusTarget.current = latestBookYear; updatePreferences({ shelfYear: latestBookYear }); }}>
             {t('viewYearWithBooks', { year: formatShelfYear(latestBookYear) })}
           </button>
           <Link className="button button-primary" to="/adicionar" state={{ returnTo: location.pathname }}>{t('addBook')}</Link>
