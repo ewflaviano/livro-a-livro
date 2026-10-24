@@ -46,15 +46,18 @@ it('filters optional details across years without writing or fetching', async ()
     'Abrir ficha de Árvore na estante de 2026', 'Abrir ficha de Zeta na estante de 2026',
   ]);
   expect(screen.getByText('2 livros em todos os anos · Sem autoria')).toBeTruthy();
-  await userEvent.click(screen.getByRole('button', { name: 'Páginas' }));
+  expect(screen.getByRole('button', { name: 'Autoria (2)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Páginas (2)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ISBN (2)' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Páginas (2)' }));
   expect(links().map(link => link.getAttribute('aria-label'))).toEqual([
     'Abrir ficha de Zeta na estante de 2026', 'Abrir ficha de Antigo na estante de 2024',
   ]);
-  await userEvent.click(screen.getByRole('button', { name: 'ISBN' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ISBN (2)' }));
   expect(links().map(link => link.getAttribute('aria-label'))).toEqual([
     'Abrir ficha de Árvore na estante de 2026', 'Abrir ficha de Antigo na estante de 2024',
   ]);
-  expect(screen.getByRole('button', { name: 'ISBN' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'ISBN (2)' }).getAttribute('aria-pressed')).toBe('true');
   expect(await repository.readBackupSnapshot()).toEqual(before);
   expect(await repository.readRevision()).toEqual(revision);
 });
@@ -62,6 +65,7 @@ it('filters optional details across years without writing or fetching', async ()
 it('preserves the filter and focuses a valid destination after editing a book out of the list', async () => {
   const original = book('Uma cidade', 2025, { authors: [] });
   const repository = await setup([original]);
+  expect(screen.getByRole('button', { name: 'Autoria (1)' })).toBeTruthy();
   await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Uma cidade na estante de 2025' }));
   await userEvent.click(await screen.findByRole('button', { name: 'Editar livro' }));
   await userEvent.type(screen.getByRole('textbox', { name: 'Autores (opcional, um por linha)' }), 'Autora fictícia');
@@ -71,7 +75,7 @@ it('preserves the filter and focuses a valid destination after editing a book ou
   expect(await screen.findByRole('heading', { name: 'Nenhum livro neste recorte.' })).toBeTruthy();
   expect(screen.getByText('A ficha mudou; a lista foi atualizada.')).toBeTruthy();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Revisar fichas', level: 1 })));
-  expect(screen.getByRole('button', { name: 'Autoria' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Autoria (0)' }).getAttribute('aria-pressed')).toBe('true');
   expect((await repository.readAll()).books[0].authors).toEqual(['Autora fictícia']);
 });
 
@@ -95,8 +99,15 @@ it('responds to local revisions and distinguishes an empty library in English', 
   const original = book('Sample', 2026, { authors: [] });
   const repository = await setup([original], 'en');
   expect(screen.getByRole('list', { name: 'Book details to review' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Authors (1)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Pages (0)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ISBN (0)' })).toBeTruthy();
   await act(async () => { await repository.commit({ kind: 'put', book: { ...original, authors: ['Author'] } }, await repository.readRevision()); });
   expect(await screen.findByRole('heading', { name: 'No books in this view.' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Authors (0)' })).toBeTruthy();
   await act(async () => { await repository.commit({ kind: 'replace', books: [] }, await repository.readRevision()); });
   expect(await screen.findByRole('heading', { name: 'Start your shelf' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Authors (0)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Pages (0)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ISBN (0)' })).toBeTruthy();
 });
