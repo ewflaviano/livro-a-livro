@@ -18,6 +18,15 @@ export function ReviewDetailsPage() {
   const matches = useMemo(() => booksMissingDetail(
     state.status === 'ready' ? state.snapshot.books : [], reviewDetailsView.detail, locale,
   ), [state, reviewDetailsView.detail, locale]);
+  const counts = useMemo(() => {
+    const result: Record<MissingDetail, number> = { authors: 0, pages: 0, isbn: 0 };
+    if (state.status === 'ready') for (const book of state.snapshot.books) {
+      if (book.authors.length === 0) result.authors += 1;
+      if (book.pageCount === null) result.pages += 1;
+      if (book.isbn === null) result.isbn += 1;
+    }
+    return result;
+  }, [state]);
   const totalPages = Math.max(1, Math.ceil(matches.length / pageSize));
   const page = Math.min(reviewDetailsView.page, totalPages);
   const visible = matches.slice((page - 1) * pageSize, page * pageSize);
@@ -71,17 +80,18 @@ export function ReviewDetailsPage() {
   return <section className="page-content review-details-page" aria-labelledby="review-details-title">
     <Link className="back-link" to="/dados"><ArrowLeft aria-hidden="true" />{t('backToData')}</Link>
     <h1 id="review-details-title" ref={heading} tabIndex={-1}>{t('reviewDetailsTitle')}</h1>
-    {state.status !== 'ready' ? <LibraryState state={state.status} onRetry={retry} /> : state.snapshot.books.length === 0 ?
-      <div className="notice-panel"><h2>{t('reviewDetailsLibraryEmpty')}</h2><p>{t('reviewDetailsLibraryEmptyHelp')}</p>
-        <Link className="button button-primary" to="/adicionar" state={{ returnTo: path }}>{t('addBook')}</Link></div> : <>
+    {state.status !== 'ready' ? <LibraryState state={state.status} onRetry={retry} /> : <>
         <p className="review-details-intro">{t('reviewDetailsIntro')}</p>
         <fieldset className="review-details-filter"><legend>{t('reviewDetailsFilter')}</legend>
           <div className="segmented-control">{details.map(detail =>
             <button key={detail} type="button" aria-pressed={reviewDetailsView.detail === detail}
               onClick={() => { setListChanged(false); setReviewDetailsView({ detail, page: 1, returnBookId: null }); }}>
-              {t(fieldKeys[detail])}
+              {t(fieldKeys[detail])} <span>({formatNumber(locale, counts[detail])})</span>
             </button>)}</div>
         </fieldset>
+        {state.snapshot.books.length === 0 ?
+          <div className="notice-panel"><h2>{t('reviewDetailsLibraryEmpty')}</h2><p>{t('reviewDetailsLibraryEmptyHelp')}</p>
+            <Link className="button button-primary" to="/adicionar" state={{ returnTo: path }}>{t('addBook')}</Link></div> : <>
         <p className="review-details-count" aria-live="polite">{t(matches.length === 1 ? 'reviewDetailsCountOne' : 'reviewDetailsCount',
           { count: formatNumber(locale, matches.length), field: reviewDetailsView.detail === 'isbn' ? 'ISBN' :
             t(fieldKeys[reviewDetailsView.detail]).toLocaleLowerCase(locale) })}</p>
@@ -109,6 +119,7 @@ export function ReviewDetailsPage() {
           </nav>}
         </>}
         <p className="review-details-local">{t('reviewDetailsLocal')}</p>
+        </>}
       </>}
   </section>;
 }
