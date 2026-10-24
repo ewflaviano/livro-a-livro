@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { createBook, type Book } from '../../domain/book';
@@ -21,8 +21,8 @@ beforeEach(() => {
 });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function setup(books: Book[], locale: Locale = 'pt-BR') {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+async function setup(books: Book[], locale: Locale = 'pt-BR', name = crypto.randomUUID()) {
+  const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   const service = createShelfService(repository);
   render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/notas']}>
@@ -38,7 +38,7 @@ it('searches private notes offline, renders literal text and restores focus afte
   const before = await repository.readAll();
   expect(await screen.findByText('2 livros com observações')).toBeTruthy();
   expect(screen.queryByText('Sem nota')).toBeNull();
-  const search = screen.getByRole('searchbox', { name: 'Buscar nas observações' });
+  const search = await screen.findByRole('searchbox', { name: 'Buscar nas observações' });
   await userEvent.type(search, 'conversa');
   expect(screen.getByText('1 livro com observações')).toBeTruthy();
   expect(screen.getByText('Lembrar da conversa <b>literal</b>').innerHTML).not.toContain('<b>');
@@ -54,6 +54,48 @@ it('searches private notes offline, renders literal text and restores focus afte
   expect((screen.getByRole('searchbox', { name: 'Buscar nas observações' }) as HTMLInputElement).value).toBe('conversa');
   expect(window.scrollTo).toHaveBeenCalledWith(0, 350);
   expect(await repository.readAll()).toEqual(before);
+});
+
+it.each([
+  ['pt-BR', 'Caderno de observações', 'Voltar para notas', 'O Caderno mudou; este livro não está mais nesta lista.'],
+  ['en', 'Notes notebook', 'Back to notes', 'The notebook changed; this book is no longer in this list.'],
+] as const)('focuses the notebook after its only note is removed in %s', async (locale, title, backLabel, message) => {
+  const entry = book('Livro fictício', 'Observação fictícia');
+  const repository = await setup([entry], locale);
+  await userEvent.click(await screen.findByRole('link', { name: /Abrir Livro fictício|Open Livro fictício/ }));
+  await screen.findByRole('link', { name: backLabel });
+  await act(async () => {
+    await repository.commit({ kind: 'put', book: { ...entry, note: '' } }, await repository.readRevision());
+  });
+  vi.stubGlobal('scrollY', 350);
+  await userEvent.click(screen.getByRole('link', { name: backLabel }));
+  const heading = await screen.findByRole('heading', { name: title });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(document.querySelector('.notes-page .local-note[role="status"]')?.textContent).toBe(message);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+  expect((await repository.readBook(entry.id)).book?.note).toBe('');
+});
+
+it('keeps a search and focuses the heading when a concurrent note change removes its result', async () => {
+  const entry = book('Primeiro', 'Trecho alvo');
+  const another = book('Segundo', 'Outro trecho');
+  const name = crypto.randomUUID();
+  await setup([entry, another], 'pt-BR', name);
+  const search = await screen.findByRole('searchbox', { name: 'Buscar nas observações' });
+  await userEvent.type(search, 'alvo');
+  await userEvent.click(await screen.findByRole('link', { name: /Abrir Primeiro/ }));
+  await screen.findByRole('link', { name: 'Voltar para notas' });
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await act(async () => {
+    await anotherConnection.commit({ kind: 'put', book: { ...entry, note: 'Trecho alterado' } }, await anotherConnection.readRevision());
+  });
+  anotherConnection.close();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para notas' }));
+  const heading = await screen.findByRole('heading', { name: 'Caderno de observações' });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect((screen.getByRole('searchbox', { name: 'Buscar nas observações' }) as HTMLInputElement).value).toBe('alvo');
+  expect(screen.getByText('O Caderno mudou; este livro não está mais nesta lista.')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Nenhuma observação encontrada.' })).toBeTruthy();
 });
 
 it('shows empty and no-match states in English', async () => {
@@ -72,7 +114,7 @@ it.each([
 ] as const)('announces the settled result count without moving focus in %s', async (locale, searchLabel, none, all, clearLabel) => {
   await setup([book('Primeiro', 'Observação A'), book('Segundo', 'Observação B')], locale);
   const search = await screen.findByRole('searchbox', { name: searchLabel });
-  const status = document.querySelector<HTMLElement>('.notes-page [role="status"]');
+  const status = document.querySelector<HTMLElement>('.notes-page .notes-count-status');
   expect(status?.getAttribute('aria-atomic')).toBe('true');
   expect(status?.textContent).toBe('');
   await userEvent.type(search, 'ausente');
