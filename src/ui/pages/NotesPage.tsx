@@ -26,6 +26,7 @@ export function NotesPage() {
   const searchChanged = useRef(false);
   const [announcedCount, setAnnouncedCount] = useState<number | null>(null);
   const [listChanged, setListChanged] = useState(false);
+  const [returnUnverified, setReturnUnverified] = useState(false);
   const pageNavigation = useRef(false);
   const returnOnEntry = useRef(notesView.returnBookId);
   const restoredOnEntry = useRef(false);
@@ -76,6 +77,7 @@ export function NotesPage() {
     if (!id) { restoredOnEntry.current = true; window.scrollTo(0, 0); return; }
     if (returnRevision === 'failed') {
       restoredOnEntry.current = true;
+      setReturnUnverified(true);
       setListChanged(true);
       heading.current?.focus({ preventScroll: true });
       window.scrollTo(0, 0);
@@ -93,7 +95,8 @@ export function NotesPage() {
     }
     let active = true;
     const timer = window.setTimeout(() => {
-      const fallback = () => {
+      const fallback = (unverified = false) => {
+        if (unverified) setReturnUnverified(true);
         setListChanged(true);
         heading.current?.focus({ preventScroll: true });
         window.scrollTo(0, 0);
@@ -115,7 +118,7 @@ export function NotesPage() {
           else window.scrollTo(0, positions.get('/notas') ?? 0);
           setNotesView(view => ({ ...view, returnBookId: null }));
         } else fallback();
-      }).catch(() => { if (active) { restoredOnEntry.current = true; fallback(); } });
+      }).catch(() => { if (active) { restoredOnEntry.current = true; fallback(true); } });
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
   }, [state, returnRevision, matches, page, positions, books, setNotesView]);
@@ -123,7 +126,7 @@ export function NotesPage() {
   return <section className="page-content notes-page" aria-labelledby="notes-title">
     <Link className="back-link" to="/estante"><ArrowLeft aria-hidden="true" />{t('backToShelf')}</Link>
     <h1 id="notes-title" ref={heading} tabIndex={-1}>{t('notesNotebook')}</h1>
-    <p className={listChanged ? 'local-note' : 'visually-hidden'} role="status" aria-atomic="true">{listChanged ? t('notesListUpdated') : ''}</p>
+    <p className={listChanged ? 'local-note' : 'visually-hidden'} role="status" aria-atomic="true">{listChanged ? t(returnUnverified ? 'notesReturnUnverified' : 'notesListUpdated') : ''}</p>
     {state.status !== 'ready' ? <LibraryState state={state.status} onRetry={retry} /> : state.snapshot.books.length === 0 ?
       <div className="notice-panel notes-empty"><h2>{t('notesLibraryEmpty')}</h2><p>{t('notesLibraryEmptyHelp')}</p><Link className="button button-primary" to="/adicionar" state={{ returnTo: '/notas', focusNote: true }}>{t('addBook')}</Link></div> : notedBooks.length === 0 ?
       <div className="notice-panel notes-empty"><h2>{t('notesEmpty')}</h2><p>{t('notesEmptyHelp')}</p></div> : <>
