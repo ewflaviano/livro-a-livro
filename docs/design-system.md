@@ -149,6 +149,8 @@ No Caderno de observações (issue #179), a contagem visível da busca muda imed
 
 Na busca da Estante (issue #183), a contagem visível continua imediata. Uma região de status separada, inicialmente vazia, anuncia somente o total completo e o alcance após 500 ms sem mudança de consulta, ano, filtro ou alcance. Inclui zero resultados e limpeza da busca; não anuncia títulos, autoria, ISBN, consulta ou toda a coleção. O aviso visual de busca vazia não é uma segunda região viva.
 
+Ao voltar de uma ficha para **Revisar fichas**, confirmar a revisão local antes de restaurar foco e rolagem. Se o livro saiu do filtro, focar o título da página, voltar ao topo e anunciar que a lista mudou. Se a revisão não puder ser confirmada, focar o título e informar a incerteza sem afirmar que a lista foi atualizada. Manter o filtro e a navegação locais.
+
 ### Confirmação e retorno
 
 Exclusão de um livro pede “Excluir [título] desta estante?” e explica que registro, avaliação e nota serão removidos deste dispositivo. Cancelar vem antes de Excluir. Importação que substitui dados sempre exige resumo e confirmação específica. No produto, usar `dialog` nativo ou equivalente acessível: título, foco inicial seguro, foco contido, Escape para cancelar e retorno ao acionador. Demonstrações estáticas de confirmação devem usar painéis identificados como amostra, não janelas modais ativas.

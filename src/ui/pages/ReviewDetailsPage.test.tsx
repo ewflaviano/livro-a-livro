@@ -22,8 +22,8 @@ beforeEach(() => {
 });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function setup(books: Book[], locale: Locale = 'pt-BR') {
-  const repository = await openLibraryRepository({ name: crypto.randomUUID(), channelFactory: null });
+async function setup(books: Book[], locale: Locale = 'pt-BR', name = crypto.randomUUID()) {
+  const repository = await openLibraryRepository({ name, channelFactory: null });
   await repository.commit({ kind: 'replace', books }, await repository.readRevision());
   const service = createShelfService(repository);
   render(<LocalePreview locale={locale}><MemoryRouter initialEntries={['/dados']}>
@@ -73,10 +73,105 @@ it('preserves the filter and focuses a valid destination after editing a book ou
   await screen.findByText('Livro salvo neste dispositivo.');
   await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
   expect(await screen.findByRole('heading', { name: 'Nenhum livro neste recorte.' })).toBeTruthy();
-  expect(screen.getByText('A ficha mudou; a lista foi atualizada.')).toBeTruthy();
+  expect(await screen.findByText('A ficha mudou; a lista foi atualizada.')).toBeTruthy();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Revisar fichas', level: 1 })));
   expect(screen.getByRole('button', { name: 'Autoria (0)' }).getAttribute('aria-pressed')).toBe('true');
   expect((await repository.readAll()).books[0].authors).toEqual(['Autora fictícia']);
+});
+
+it.each([
+  ['pt-BR', 'Revisar fichas', 'Nenhum livro neste recorte.', 'A ficha mudou; a lista foi atualizada.'],
+  ['en', 'Review book details', 'No books in this view.', 'The book details changed; this list has been updated.'],
+] as const)('refreshes a concurrent edit before restoring focus in %s', async (locale, title, empty, message) => {
+  const original = book('Livro de teste', 2026, { authors: [] });
+  const name = crypto.randomUUID();
+  await setup([original], locale, name);
+  await userEvent.click(screen.getByRole('link', { name: locale === 'en' ? /Open details for Livro de teste/ : /Abrir ficha de Livro de teste/ }));
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await act(async () => {
+    await anotherConnection.commit({ kind: 'put', book: { ...original, authors: ['Autora fictícia'] } }, await anotherConnection.readRevision());
+  });
+  anotherConnection.close();
+  vi.stubGlobal('scrollY', 320);
+  await userEvent.click(screen.getByRole('link', { name: locale === 'en' ? 'Back to Review book details' : 'Voltar para Revisar fichas' }));
+  const heading = await screen.findByRole('heading', { name: title, level: 1 });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(screen.getByRole('heading', { name: empty })).toBeTruthy();
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+});
+
+it('keeps a concurrently updated item in focus when it still matches the filter', async () => {
+  const original = book('Livro mantido', 2026, { authors: [] });
+  const name = crypto.randomUUID();
+  await setup([original], 'pt-BR', name);
+  vi.stubGlobal('scrollY', 300);
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro mantido na estante de 2026' }));
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await act(async () => {
+    await anotherConnection.commit({ kind: 'put', book: { ...original, title: 'Livro atualizado' } }, await anotherConnection.readRevision());
+  });
+  anotherConnection.close();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const link = await screen.findByRole('link', { name: 'Abrir ficha de Livro atualizado na estante de 2026' });
+  await waitFor(() => expect(document.activeElement).toBe(link));
+  expect(window.scrollTo).toHaveBeenCalledWith(0, 300);
+});
+
+it('does not claim a refreshed list when its return revision cannot be read', async () => {
+  const original = book('Livro de teste', 2026, { authors: [] });
+  const repository = await setup([original]);
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro de teste na estante de 2026' }));
+  vi.spyOn(repository, 'readRevision').mockRejectedValueOnce(new Error('synthetic read failure'));
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const heading = await screen.findByRole('heading', { name: 'Revisar fichas', level: 1 });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(screen.getByText('Não foi possível confirmar a posição do livro em Revisar fichas. Confira a lista.')).toBeTruthy();
+  expect(screen.queryByText('A ficha mudou; a lista foi atualizada.')).toBeNull();
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+});
+
+it('moves focus to the heading when a concurrent deletion leaves the library empty', async () => {
+  const original = book('Livro removido', 2026, { authors: [] });
+  const name = crypto.randomUUID();
+  await setup([original], 'pt-BR', name);
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro removido na estante de 2026' }));
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await act(async () => {
+    await anotherConnection.commit({ kind: 'delete', id: original.id }, await anotherConnection.readRevision());
+  });
+  anotherConnection.close();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const heading = await screen.findByRole('heading', { name: 'Revisar fichas', level: 1 });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(screen.getByRole('heading', { name: 'Comece sua estante' })).toBeTruthy();
+  expect(screen.getByText('A ficha mudou; a lista foi atualizada.')).toBeTruthy();
+});
+
+it('reports an unverified return if refreshing the local snapshot fails', async () => {
+  const original = book('Livro de teste', 2026, { authors: [] });
+  const name = crypto.randomUUID();
+  const repository = await setup([original], 'pt-BR', name);
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro de teste na estante de 2026' }));
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await anotherConnection.commit({ kind: 'put', book: { ...original, authors: ['Autora fictícia'] } }, await anotherConnection.readRevision());
+  anotherConnection.close();
+  vi.spyOn(repository, 'readBackupSnapshot').mockRejectedValueOnce(new Error('synthetic snapshot failure'));
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const heading = await screen.findByRole('heading', { name: 'Revisar fichas', level: 1 });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(screen.getByText('Não foi possível confirmar a posição do livro em Revisar fichas. Confira a lista.')).toBeTruthy();
+});
+
+it('bounds a stalled local revision check on return', async () => {
+  const original = book('Livro de teste', 2026, { authors: [] });
+  const repository = await setup([original]);
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro de teste na estante de 2026' }));
+  vi.spyOn(repository, 'checkForChanges').mockImplementation(() => new Promise(() => {}));
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const heading = await screen.findByRole('heading', { name: 'Revisar fichas', level: 1 });
+  await waitFor(() => expect(document.activeElement).toBe(heading), { timeout: 3500 });
+  expect(screen.getByText('Não foi possível confirmar a posição do livro em Revisar fichas. Confira a lista.')).toBeTruthy();
 });
 
 it('paginates large lists and restores the selected record and scroll position', async () => {
@@ -93,6 +188,22 @@ it('paginates large lists and restores the selected record and scroll position',
   await waitFor(() => expect(document.activeElement).toBe(restored));
   expect(screen.getByText('Página 2 de 2')).toBeTruthy();
   expect(window.scrollTo).toHaveBeenCalledWith(0, 320);
+});
+
+it('follows a matching book moved to another page by a concurrent edit', async () => {
+  const entries = Array.from({ length: 25 }, (_, index) => book(`Livro ${String(index + 1).padStart(2, '0')}`, 2026, { authors: [] }));
+  const name = crypto.randomUUID();
+  await setup(entries, 'pt-BR', name);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Páginas de fichas' })).getByRole('button', { name: 'Próxima' }));
+  await userEvent.click(screen.getByRole('link', { name: 'Abrir ficha de Livro 25 na estante de 2026' }));
+  const anotherConnection = await openLibraryRepository({ name, channelFactory: null });
+  await anotherConnection.commit({ kind: 'put', book: { ...entries[24], title: 'Livro 00' } }, await anotherConnection.readRevision());
+  anotherConnection.close();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Revisar fichas' }));
+  const moved = await screen.findByRole('link', { name: 'Abrir ficha de Livro 00 na estante de 2026' });
+  await waitFor(() => expect(document.activeElement).toBe(moved));
+  expect(screen.getByText('Página 1 de 2')).toBeTruthy();
+  expect(window.scrollTo).not.toHaveBeenCalledWith(0, 320);
 });
 
 it('responds to local revisions and distinguishes an empty library in English', async () => {
