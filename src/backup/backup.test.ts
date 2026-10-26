@@ -10,6 +10,7 @@ import { createBook, parseBook } from '../domain/book';
 import type { LibraryRepository } from '../ports/library-repository';
 import { createBackupService } from '../services/backup-service';
 import { parseBackupText, serializeBackup } from './serialize';
+import { parseExportV1 } from './schema';
 
 const text = JSON.stringify(fixture);
 const file = (value = text) => ({ size: new Blob([value]).size, text: async () => value });
@@ -154,6 +155,14 @@ describe('portable V1 backup', () => {
   it('refuses over 10000 books without partial writes', () => {
     expect(() => parseBackupText(JSON.stringify({ ...fixture, books: Array(10001).fill(fixture.books[0]) })))
       .toThrow('ImportTooLarge');
+  });
+
+  it('rejects too many covers before visiting their contents', () => {
+    const covers = Array(101).fill(null);
+    const read = vi.fn(() => { throw new Error('cover entry was read'); });
+    Object.defineProperty(covers, 0, { get: read });
+    expect(() => parseExportV1({ ...fixture, coverMedia: covers })).toThrow('InvalidBackup');
+    expect(read).not.toHaveBeenCalled();
   });
 
   it('checks actual bytes before an injected parser even when the declared size is small', async () => {
