@@ -61,6 +61,25 @@ it('opens a local author index across years and restores the book link after ret
   expect(await repository.readRevision()).toEqual(revision);
 });
 
+it('preserves the original author search when following another authorship from a book', async () => {
+  const first = book('Atlas fictício', ['Ana', 'Bia']);
+  await setup([first, book('Maré fictícia', ['Bia'])]);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));
+  const search = screen.getByRole('searchbox', { name: 'Buscar autor' });
+  await userEvent.type(search, 'Ana');
+  await userEvent.click(within(screen.getByRole('list', { name: 'Índice de autores' })).getByRole('button', { name: /Ana/ }));
+  await userEvent.click(screen.getByRole('link', { name: /Atlas fictício/ }));
+  await userEvent.click(await screen.findByRole('link', { name: 'Bia — ver livros desta autoria' }));
+  expect(await screen.findByText('Maré fictícia')).toBeTruthy();
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para Atlas fictício' }));
+  const authorLink = await screen.findByRole('link', { name: 'Bia — ver livros desta autoria' });
+  await waitFor(() => expect(document.activeElement).toBe(authorLink));
+  await userEvent.click(screen.getByRole('link', { name: 'Voltar para autores' }));
+  const restored = await screen.findByRole('link', { name: /Atlas fictício/ });
+  await waitFor(() => expect(document.activeElement).toBe(restored));
+  expect((screen.getByRole('searchbox', { name: 'Buscar autor' }) as HTMLInputElement).value).toBe('Ana');
+});
+
 it('moves focus to a book in its new author group after an edit', async () => {
   await setup([book('Livro A', ['Ana']), book('Livro B', ['Bia'])]);
   await userEvent.click(within(screen.getByRole('navigation', { name: 'Navegação mobile' })).getByRole('link', { name: 'Autores' }));

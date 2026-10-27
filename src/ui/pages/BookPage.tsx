@@ -16,6 +16,8 @@ import { useLocale } from '../../i18n/context';
 import { formatNumber } from '../../i18n/locale';
 import { DomainError } from '../../domain/errors';
 import type { MessageKey } from '../../i18n/messages';
+import { normalizeName } from '../../domain/book';
+import { readAuthorJump } from './author-jump';
 
 export function useReturnTo() {
   const destination = useLocation().state?.returnTo;
@@ -23,7 +25,11 @@ export function useReturnTo() {
 }
 function BackLink({ returnTo }: { returnTo: string }) {
   const { t } = useLocale();
-  return <Link className="back-link" to={returnTo}><ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : returnTo === '/notas' ? 'backToNotes' : returnTo === '/duplicatas' ? 'backToDuplicates' : returnTo === '/revisar-fichas' ? 'backToReviewDetails' : 'backToShelfBook')}</Link>;
+  const state = useLocation().state;
+  const jump = readAuthorJump(state?.authorJump);
+  return <Link className="back-link" to={returnTo} state={returnTo === '/autores' && jump ?
+    { authorJump: jump, authorJumpPage: state?.authorJumpPage, authorJumpReturnBookId: state?.authorJumpReturnBookId } : undefined}>
+    <ArrowLeft aria-hidden="true" />{t(returnTo === '/autores' ? 'backToAuthors' : returnTo === '/notas' ? 'backToNotes' : returnTo === '/duplicatas' ? 'backToDuplicates' : returnTo === '/revisar-fichas' ? 'backToReviewDetails' : 'backToShelfBook')}</Link>;
 }
 type LoadedBook = { book: Book | null; version: LocalRevision };
 
@@ -72,7 +78,9 @@ function BookDetail({ id }: { id: string }) {
   const location = useLocation();
   const [saved, setSaved] = useState(Boolean(location.state?.saved));
   const noteHeading = useRef<HTMLHeadingElement>(null);
+  const bookHeading = useRef<HTMLHeadingElement>(null);
   const focusedFromNotes = useRef(false);
+  const focusedFromAuthor = useRef(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const completingWrite = useRef(false);
   useEffect(() => { if (busy || removing || completion) return blockPwaUpdate(); }, [busy, removing, completion]);
@@ -117,11 +125,33 @@ function BookDetail({ id }: { id: string }) {
     const timer = window.setTimeout(() => { noteHeading.current?.focus({ preventScroll: true }); noteHeading.current?.scrollIntoView?.({ block: 'start' }); }, 0);
     return () => window.clearTimeout(timer);
   }, [book, editing, location.state]);
+  useLayoutEffect(() => {
+    if (focusedFromAuthor.current || !book || editing || typeof location.state?.focusAuthorKey !== 'string') return;
+    focusedFromAuthor.current = true;
+    const key = location.state.focusAuthorKey;
+    const timer = window.setTimeout(() => {
+      const link = [...document.querySelectorAll<HTMLAnchorElement>('.book-author-link')]
+        .find(candidate => candidate.dataset.authorKey === key);
+      (link ?? bookHeading.current)?.focus({ preventScroll: true });
+      (link ?? bookHeading.current)?.scrollIntoView?.({ block: 'nearest' });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [book, editing, location.state]);
   return <section className="page-content"><BackLink returnTo={returnTo} />
     {!loaded || loadError ? <><h1>{t('book')}</h1><LibraryState state={loadError || state.status === 'error' ? 'error' : 'loading'} onRetry={() => { if (!books) retry(); else setAttempt((value) => value + 1); }} /></> :
       !book ? <><h1>{t('bookNotFound')}</h1><p>{t('bookNotFoundExplanation')}</p></> : <>
         <div className="book-detail-heading"><BookCover cover={book.cover} title={book.title} />
-          <div><p className="eyebrow">{t('shelfOfYear', { year: formatShelfYear(book.shelfYear) })}</p><h1>{book.title}</h1><p>{book.authors.join(', ') || t('authorUnknown')}</p>
+          <div><p className="eyebrow">{t('shelfOfYear', { year: formatShelfYear(book.shelfYear) })}</p><h1 ref={bookHeading} tabIndex={-1}>{book.title}</h1>
+            {book.authors.length === 0 || editing ? <p>{book.authors.join(', ') || t('authorUnknown')}</p> :
+              <div className="book-author-links" role="group" aria-label={t('bookAuthorship')}>
+                {book.authors.map(name => {
+                  const authorKey = normalizeName(name);
+                  return <Link key={authorKey} className="book-author-link" data-author-key={authorKey} to="/autores"
+                    state={{ authorJump: { sourceBookId: book.id, authorKey, sourceReturnTo: returnTo } }}>
+                    {t('seeBooksByAuthor', { author: name.trim().replace(/\s+/gu, ' ') })}
+                  </Link>;
+                })}
+              </div>}
             <span className={`reading-status reading-status--${book.status}`}>{labels[book.status]}</span>
             {!editing && <div className={`book-detail-actions${book.status === 'reading' ? ' book-detail-actions--reading' : ''}`}>
               {book.status === 'reading' && <button className="button button-primary" disabled={busy} onClick={() => {
