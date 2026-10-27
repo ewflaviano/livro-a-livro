@@ -143,6 +143,8 @@ h2 { font-size: var(--text-h2); }
 .confirm-dialog h2 { margin-top: 0; }
 .book-detail-heading { display: grid; grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
 .book-detail-heading p { overflow-wrap: anywhere; }
+.book-author-links { display: grid; justify-items: start; margin-block: var(--space-2); }
+.book-author-link { display: flex; align-items: center; min-height: var(--target-min); overflow-wrap: anywhere; text-underline-offset: .2em; }
 .book-detail-actions { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-3); margin-top: var(--space-6); }
 .book-options summary { list-style: none; }
 .book-options summary::-webkit-details-marker { display: none; }
@@ -239,6 +241,7 @@ h2 { font-size: var(--text-h2); }
 .shelf-title-group h1 { margin: 0; }
 .authors-page { overflow-wrap: anywhere; }
 .authors-intro { color: var(--color-text-secondary); }
+.author-jump-clear { margin-bottom: var(--space-5); }
 .authors-search { display: grid; gap: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
 .authors-search span { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--target-min); padding-inline: var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); }
 .authors-search span:focus-within { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); }
@@ -250,6 +253,9 @@ h2 { font-size: var(--text-h2); }
 .author-group { min-width: 0; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
 .author-group-toggle { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--target-min); padding: var(--space-3) var(--space-4); border: 0; background: transparent; color: var(--color-text); font: inherit; text-align: start; cursor: pointer; }
 .author-group-toggle:hover { background: var(--color-surface-subtle); }
+.author-group-toggle--static { cursor: default; }
+.author-group-toggle--static:hover { background: transparent; }
+.authors-page .back-link { overflow-wrap: anywhere; }
 .author-monogram { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: var(--radius-control); background: var(--color-selected-bg); color: var(--color-selected-text); font-family: var(--font-editorial); font-size: var(--text-h3); }
 .author-group-label { display: grid; min-width: 0; flex: 1; gap: var(--space-1); }
 .author-group-label strong { overflow-wrap: anywhere; }

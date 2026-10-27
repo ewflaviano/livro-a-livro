@@ -115,6 +115,7 @@ describe('manual books and private detail', () => {
     const edit = await screen.findByRole('button', { name: 'Editar livro' });
     expect(edit.closest('.book-detail-heading')).toBeTruthy();
     expect(screen.getByText('Quero ler')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Autoria' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Marcar como lido' })).toBeNull();
     expect(screen.queryByText('Não informadas')).toBeNull();
     expect(screen.queryByText('Sem avaliação')).toBeNull();
@@ -129,12 +130,75 @@ describe('manual books and private detail', () => {
     const original = synthetic({ authors: ['Autora sintética'], pageCount: 123, publicationYear: 2020, isbn: '9780306406157', rating: 5, note: 'Nota privada' });
     await setup([original], `/livro/${original.id}`);
     await screen.findByRole('button', { name: 'Editar livro' });
-    expect(screen.getByText('Autora sintética')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Autora sintética — ver livros desta autoria' })).toBeTruthy();
     expect(screen.getByText('123')).toBeTruthy();
     expect(screen.getByText('2020')).toBeTruthy();
     expect(screen.getByText('9780306406157')).toBeTruthy();
     expect(screen.getByLabelText('Avaliação: 5 de 5 estrelas')).toBeTruthy();
     expect(screen.getByText('Nota privada')).toBeTruthy();
+  });
+
+  it.each([
+    ['pt-BR' as const, 'Ana — ver livros desta autoria', 'Ver índice completo de autores', 'Voltar para Livro inicial'],
+    ['en' as const, 'Ana — view books by this author', 'View full author index', 'Back to Livro inicial'],
+  ])('opens only the exact author group from a book and restores focus in %s', async (locale, authorLinkName, allAuthors, backName) => {
+    const first = synthetic({ title: 'Livro inicial', authors: ['Ana', 'Bia'] });
+    const second = synthetic({ title: 'Outro livro', authors: ['ana'], shelfYear: 2024 });
+    const near = synthetic({ title: 'Nome parecido', authors: ['Ana Maria'] });
+    const { repository } = await setup([first, second, near], `/livro/${first.id}`, locale);
+    const before = await repository.readAll();
+    const link = await screen.findByRole('link', { name: authorLinkName });
+    await userEvent.click(link);
+    const indexElement = await screen.findByRole('list', { name: locale === 'en' ? 'Author index' : 'Índice de autores' });
+    const index = within(indexElement);
+    await waitFor(() => expect(indexElement.children).toHaveLength(1));
+    expect(index.getByText('Ana')).toBeTruthy();
+    expect(index.getByRole('link', { name: /Outro livro/ }).textContent).toContain('2024');
+    expect(screen.queryByText('Ana Maria')).toBeNull();
+    await userEvent.click(screen.getByRole('link', { name: backName }));
+    const restored = await screen.findByRole('link', { name: authorLinkName });
+    await waitFor(() => expect(document.activeElement).toBe(restored));
+    await userEvent.click(screen.getByRole('link', { name: locale === 'en' ? 'Bia — view books by this author' : 'Bia — ver livros desta autoria' }));
+    const coauthorIndexElement = await screen.findByRole('list', { name: locale === 'en' ? 'Author index' : 'Índice de autores' });
+    const coauthorIndex = within(coauthorIndexElement);
+    await waitFor(() => expect(coauthorIndexElement.children).toHaveLength(1));
+    expect(coauthorIndex.getByText('Bia')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: allAuthors }));
+    expect(screen.getByText('Ana Maria')).toBeTruthy();
+    expect(await repository.readAll()).toEqual(before);
+  });
+
+  it('shows the full-index escape when the selected author disappears after a local update', async () => {
+    const first = synthetic({ title: 'Livro inicial', authors: ['Ana'] });
+    const { repository, service } = await setup([first], `/livro/${first.id}`);
+    await userEvent.click(await screen.findByRole('link', { name: 'Ana — ver livros desta autoria' }));
+    expect(await screen.findByText('Ana')).toBeTruthy();
+    await act(async () => {
+      await repository.commit({ kind: 'put', book: { ...first, authors: [] } }, await repository.readRevision());
+      await service.books.checkForChanges();
+    });
+    expect(await screen.findByRole('heading', { name: 'Esta autoria não está mais no índice.' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Ver índice completo de autores' }));
+    expect(await screen.findByRole('heading', { name: 'Nenhuma autoria informada ainda.' })).toBeTruthy();
+  });
+
+  it('keeps the selected group and book page when opening another book from it', async () => {
+    const books = Array.from({ length: 25 }, (_, index) => synthetic({
+      title: `Livro ${String(index).padStart(2, '0')}`, authors: ['Ana'],
+    }));
+    await setup(books, `/livro/${books[0].id}`);
+    await userEvent.click(await screen.findByRole('link', { name: 'Ana — ver livros desta autoria' }));
+    const pages = await screen.findByRole('navigation', { name: 'Páginas de livros deste autor' });
+    await userEvent.click(within(pages).getByRole('button', { name: 'Próxima' }));
+    expect(screen.getByText('Página 2 de 2')).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: /Livro 24/ }));
+    await userEvent.click(await screen.findByRole('link', { name: 'Voltar para autores' }));
+    const restored = await screen.findByRole('link', { name: /Livro 24/ });
+    await waitFor(() => expect(document.activeElement).toBe(restored));
+    expect(screen.getByText('Página 2 de 2')).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar para Livro 00' }));
+    const sourceLink = await screen.findByRole('link', { name: 'Ana — ver livros desta autoria' });
+    await waitFor(() => expect(document.activeElement).toBe(sourceLink));
   });
 
   it.each(['{Enter}', ' '])('opens book options with %s', async key => {
